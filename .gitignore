@@ -1,2 +1,5 @@
-/backend/__pycache__
-/backend/.venv 
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
