@@ -9,3 +9,10 @@ dependencies = [
 
 [tool.uv.sources]
 tau2 = { path = "../tau2-bench", editable = true }
+
+[dependency-groups]
+dev = ["pytest>=8", "mypy>=1.10"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
