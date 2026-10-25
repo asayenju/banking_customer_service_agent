@@ -13,6 +13,7 @@ from typing import Literal, Optional
 
 from tau2.domains.banking_knowledge.tools import KnowledgeTools
 
+from banking_tools.args import build_args_model
 from banking_tools.types import Reversibility, ToolKind, ToolSpec
 
 Source = Literal["visible", "discoverable"]
@@ -109,6 +110,7 @@ def build_catalog() -> dict[str, ToolSpec]:
             reversibility=reversibility,
             description=_description(name),
             source=source,
+            args_model=build_args_model(name),
         )
         for name, (source, kind, reversibility) in _LABELS.items()
     }

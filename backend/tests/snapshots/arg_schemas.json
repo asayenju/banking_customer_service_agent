@@ -1,0 +1,1272 @@
+{
+  "activate_debit_card_8291": {
+    "additionalProperties": false,
+    "properties": {
+      "card_id": {
+        "title": "Card Id",
+        "type": "string"
+      },
+      "cvv": {
+        "title": "Cvv",
+        "type": "string"
+      },
+      "expiration_date": {
+        "title": "Expiration Date",
+        "type": "string"
+      },
+      "last_4_digits": {
+        "title": "Last 4 Digits",
+        "type": "string"
+      },
+      "pin": {
+        "title": "Pin",
+        "type": "string"
+      }
+    },
+    "required": [
+      "card_id",
+      "last_4_digits",
+      "expiration_date",
+      "cvv",
+      "pin"
+    ],
+    "title": "ActivateDebitCard8291Args",
+    "type": "object"
+  },
+  "activate_debit_card_8292": {
+    "additionalProperties": false,
+    "properties": {
+      "card_id": {
+        "title": "Card Id",
+        "type": "string"
+      },
+      "cvv": {
+        "title": "Cvv",
+        "type": "string"
+      },
+      "expiration_date": {
+        "title": "Expiration Date",
+        "type": "string"
+      },
+      "last_4_digits": {
+        "title": "Last 4 Digits",
+        "type": "string"
+      },
+      "pin": {
+        "title": "Pin",
+        "type": "string"
+      }
+    },
+    "required": [
+      "card_id",
+      "last_4_digits",
+      "expiration_date",
+      "cvv",
+      "pin"
+    ],
+    "title": "ActivateDebitCard8292Args",
+    "type": "object"
+  },
+  "activate_debit_card_8293": {
+    "additionalProperties": false,
+    "properties": {
+      "card_id": {
+        "title": "Card Id",
+        "type": "string"
+      },
+      "cvv": {
+        "title": "Cvv",
+        "type": "string"
+      },
+      "expiration_date": {
+        "title": "Expiration Date",
+        "type": "string"
+      },
+      "last_4_digits": {
+        "title": "Last 4 Digits",
+        "type": "string"
+      },
+      "pin": {
+        "title": "Pin",
+        "type": "string"
+      }
+    },
+    "required": [
+      "card_id",
+      "last_4_digits",
+      "expiration_date",
+      "cvv",
+      "pin"
+    ],
+    "title": "ActivateDebitCard8293Args",
+    "type": "object"
+  },
+  "apply_checking_account_credit_5829": {
+    "additionalProperties": false,
+    "properties": {
+      "account_id": {
+        "title": "Account Id",
+        "type": "string"
+      },
+      "amount": {
+        "title": "Amount",
+        "type": "number"
+      },
+      "credit_type": {
+        "title": "Credit Type",
+        "type": "string"
+      }
+    },
+    "required": [
+      "account_id",
+      "amount",
+      "credit_type"
+    ],
+    "title": "ApplyCheckingAccountCredit5829Args",
+    "type": "object"
+  },
+  "apply_credit_card_account_flag_6147": {
+    "additionalProperties": false,
+    "properties": {
+      "credit_card_account_id": {
+        "title": "Credit Card Account Id",
+        "type": "string"
+      },
+      "expiration_date": {
+        "title": "Expiration Date",
+        "type": "string"
+      },
+      "flag_type": {
+        "title": "Flag Type",
+        "type": "string"
+      },
+      "reason": {
+        "title": "Reason",
+        "type": "string"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "credit_card_account_id",
+      "user_id",
+      "flag_type",
+      "expiration_date",
+      "reason"
+    ],
+    "title": "ApplyCreditCardAccountFlag6147Args",
+    "type": "object"
+  },
+  "apply_savings_account_credit_6831": {
+    "additionalProperties": false,
+    "properties": {
+      "account_id": {
+        "title": "Account Id",
+        "type": "string"
+      },
+      "amount": {
+        "title": "Amount",
+        "type": "number"
+      },
+      "credit_type": {
+        "title": "Credit Type",
+        "type": "string"
+      }
+    },
+    "required": [
+      "account_id",
+      "amount",
+      "credit_type"
+    ],
+    "title": "ApplySavingsAccountCredit6831Args",
+    "type": "object"
+  },
+  "apply_statement_credit_8472": {
+    "additionalProperties": false,
+    "properties": {
+      "amount": {
+        "title": "Amount",
+        "type": "number"
+      },
+      "credit_card_account_id": {
+        "title": "Credit Card Account Id",
+        "type": "string"
+      },
+      "reason": {
+        "title": "Reason",
+        "type": "string"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "user_id",
+      "credit_card_account_id",
+      "amount",
+      "reason"
+    ],
+    "title": "ApplyStatementCredit8472Args",
+    "type": "object"
+  },
+  "approve_credit_limit_increase_5847": {
+    "additionalProperties": false,
+    "properties": {
+      "credit_card_account_id": {
+        "title": "Credit Card Account Id",
+        "type": "string"
+      },
+      "new_credit_limit": {
+        "title": "New Credit Limit",
+        "type": "integer"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "credit_card_account_id",
+      "user_id",
+      "new_credit_limit"
+    ],
+    "title": "ApproveCreditLimitIncrease5847Args",
+    "type": "object"
+  },
+  "change_debit_card_pin_6285": {
+    "additionalProperties": false,
+    "properties": {
+      "card_id": {
+        "title": "Card Id",
+        "type": "string"
+      },
+      "current_pin": {
+        "title": "Current Pin",
+        "type": "string"
+      },
+      "new_pin": {
+        "title": "New Pin",
+        "type": "string"
+      }
+    },
+    "required": [
+      "card_id",
+      "current_pin",
+      "new_pin"
+    ],
+    "title": "ChangeDebitCardPin6285Args",
+    "type": "object"
+  },
+  "change_user_email": {
+    "additionalProperties": false,
+    "properties": {
+      "new_email": {
+        "title": "New Email",
+        "type": "string"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "user_id",
+      "new_email"
+    ],
+    "title": "ChangeUserEmailArgs",
+    "type": "object"
+  },
+  "clear_debit_card_fraud_alert_4892": {
+    "additionalProperties": false,
+    "properties": {
+      "card_id": {
+        "title": "Card Id",
+        "type": "string"
+      },
+      "reason": {
+        "title": "Reason",
+        "type": "string"
+      }
+    },
+    "required": [
+      "card_id",
+      "reason"
+    ],
+    "title": "ClearDebitCardFraudAlert4892Args",
+    "type": "object"
+  },
+  "close_bank_account_7392": {
+    "additionalProperties": false,
+    "properties": {
+      "account_id": {
+        "title": "Account Id",
+        "type": "string"
+      },
+      "reason": {
+        "default": "Customer requested closure",
+        "title": "Reason",
+        "type": "string"
+      },
+      "waive_early_closure_fee": {
+        "default": false,
+        "title": "Waive Early Closure Fee",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "account_id"
+    ],
+    "title": "CloseBankAccount7392Args",
+    "type": "object"
+  },
+  "close_credit_card_account_7834": {
+    "additionalProperties": false,
+    "properties": {
+      "credit_card_account_id": {
+        "title": "Credit Card Account Id",
+        "type": "string"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "credit_card_account_id",
+      "user_id"
+    ],
+    "title": "CloseCreditCardAccount7834Args",
+    "type": "object"
+  },
+  "close_debit_card_4721": {
+    "additionalProperties": false,
+    "properties": {
+      "card_id": {
+        "title": "Card Id",
+        "type": "string"
+      },
+      "reason": {
+        "title": "Reason",
+        "type": "string"
+      }
+    },
+    "required": [
+      "card_id",
+      "reason"
+    ],
+    "title": "CloseDebitCard4721Args",
+    "type": "object"
+  },
+  "deny_credit_limit_increase_5848": {
+    "additionalProperties": false,
+    "properties": {
+      "credit_card_account_id": {
+        "title": "Credit Card Account Id",
+        "type": "string"
+      },
+      "denial_reason": {
+        "title": "Denial Reason",
+        "type": "string"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "credit_card_account_id",
+      "user_id",
+      "denial_reason"
+    ],
+    "title": "DenyCreditLimitIncrease5848Args",
+    "type": "object"
+  },
+  "emergency_credit_bureau_incident_transfer_1114": {
+    "additionalProperties": false,
+    "properties": {},
+    "title": "EmergencyCreditBureauIncidentTransfer1114Args",
+    "type": "object"
+  },
+  "file_credit_card_transaction_dispute_4829": {
+    "additionalProperties": false,
+    "properties": {
+      "address": {
+        "title": "Address",
+        "type": "string"
+      },
+      "card_action": {
+        "title": "Card Action",
+        "type": "string"
+      },
+      "card_last_4_digits": {
+        "title": "Card Last 4 Digits",
+        "type": "string"
+      },
+      "contacted_merchant": {
+        "title": "Contacted Merchant",
+        "type": "boolean"
+      },
+      "dispute_reason": {
+        "title": "Dispute Reason",
+        "type": "string"
+      },
+      "eligible_for_provisional_credit": {
+        "title": "Eligible For Provisional Credit",
+        "type": "boolean"
+      },
+      "email": {
+        "title": "Email",
+        "type": "string"
+      },
+      "full_name": {
+        "title": "Full Name",
+        "type": "string"
+      },
+      "issue_noticed_date": {
+        "title": "Issue Noticed Date",
+        "type": "string"
+      },
+      "partial_refund_amount": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Partial Refund Amount"
+      },
+      "phone": {
+        "title": "Phone",
+        "type": "string"
+      },
+      "purchase_date": {
+        "title": "Purchase Date",
+        "type": "string"
+      },
+      "resolution_requested": {
+        "title": "Resolution Requested",
+        "type": "string"
+      },
+      "transaction_id": {
+        "title": "Transaction Id",
+        "type": "string"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "transaction_id",
+      "card_action",
+      "card_last_4_digits",
+      "full_name",
+      "user_id",
+      "phone",
+      "email",
+      "address",
+      "contacted_merchant",
+      "purchase_date",
+      "issue_noticed_date",
+      "dispute_reason",
+      "resolution_requested",
+      "eligible_for_provisional_credit"
+    ],
+    "title": "FileCreditCardTransactionDispute4829Args",
+    "type": "object"
+  },
+  "file_debit_card_transaction_dispute_6281": {
+    "additionalProperties": false,
+    "properties": {
+      "account_id": {
+        "title": "Account Id",
+        "type": "string"
+      },
+      "card_action": {
+        "title": "Card Action",
+        "type": "string"
+      },
+      "card_id": {
+        "title": "Card Id",
+        "type": "string"
+      },
+      "card_in_possession": {
+        "title": "Card In Possession",
+        "type": "boolean"
+      },
+      "contacted_merchant": {
+        "title": "Contacted Merchant",
+        "type": "boolean"
+      },
+      "customer_max_liability_amount": {
+        "title": "Customer Max Liability Amount",
+        "type": "number"
+      },
+      "discovery_date": {
+        "title": "Discovery Date",
+        "type": "string"
+      },
+      "dispute_category": {
+        "title": "Dispute Category",
+        "type": "string"
+      },
+      "disputed_amount": {
+        "title": "Disputed Amount",
+        "type": "number"
+      },
+      "pin_compromised": {
+        "title": "Pin Compromised",
+        "type": "string"
+      },
+      "police_report_filed": {
+        "title": "Police Report Filed",
+        "type": "boolean"
+      },
+      "provisional_credit_eligible": {
+        "title": "Provisional Credit Eligible",
+        "type": "boolean"
+      },
+      "transaction_date": {
+        "title": "Transaction Date",
+        "type": "string"
+      },
+      "transaction_id": {
+        "title": "Transaction Id",
+        "type": "string"
+      },
+      "transaction_type": {
+        "title": "Transaction Type",
+        "type": "string"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      },
+      "written_statement_provided": {
+        "title": "Written Statement Provided",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "transaction_id",
+      "account_id",
+      "card_id",
+      "user_id",
+      "dispute_category",
+      "transaction_date",
+      "discovery_date",
+      "disputed_amount",
+      "transaction_type",
+      "card_in_possession",
+      "pin_compromised",
+      "contacted_merchant",
+      "police_report_filed",
+      "written_statement_provided",
+      "provisional_credit_eligible",
+      "customer_max_liability_amount",
+      "card_action"
+    ],
+    "title": "FileDebitCardTransactionDispute6281Args",
+    "type": "object"
+  },
+  "freeze_debit_card_3892": {
+    "additionalProperties": false,
+    "properties": {
+      "card_id": {
+        "title": "Card Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "card_id"
+    ],
+    "title": "FreezeDebitCard3892Args",
+    "type": "object"
+  },
+  "get_all_user_accounts_by_user_id_3847": {
+    "additionalProperties": false,
+    "properties": {
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "user_id"
+    ],
+    "title": "GetAllUserAccountsByUserId3847Args",
+    "type": "object"
+  },
+  "get_atm_deposit_images_8473": {
+    "additionalProperties": false,
+    "properties": {
+      "transaction_id": {
+        "title": "Transaction Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "transaction_id"
+    ],
+    "title": "GetAtmDepositImages8473Args",
+    "type": "object"
+  },
+  "get_bank_account_transactions_9173": {
+    "additionalProperties": false,
+    "properties": {
+      "account_id": {
+        "title": "Account Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "account_id"
+    ],
+    "title": "GetBankAccountTransactions9173Args",
+    "type": "object"
+  },
+  "get_closure_reason_history_8293": {
+    "additionalProperties": false,
+    "properties": {
+      "credit_card_account_id": {
+        "title": "Credit Card Account Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "credit_card_account_id"
+    ],
+    "title": "GetClosureReasonHistory8293Args",
+    "type": "object"
+  },
+  "get_credit_card_accounts_by_user": {
+    "additionalProperties": false,
+    "properties": {
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "user_id"
+    ],
+    "title": "GetCreditCardAccountsByUserArgs",
+    "type": "object"
+  },
+  "get_credit_card_transactions_by_user": {
+    "additionalProperties": false,
+    "properties": {
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "user_id"
+    ],
+    "title": "GetCreditCardTransactionsByUserArgs",
+    "type": "object"
+  },
+  "get_credit_limit_increase_history_4829": {
+    "additionalProperties": false,
+    "properties": {
+      "credit_card_account_id": {
+        "title": "Credit Card Account Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "credit_card_account_id"
+    ],
+    "title": "GetCreditLimitIncreaseHistory4829Args",
+    "type": "object"
+  },
+  "get_current_time": {
+    "additionalProperties": false,
+    "properties": {},
+    "title": "GetCurrentTimeArgs",
+    "type": "object"
+  },
+  "get_debit_cards_by_account_id_7823": {
+    "additionalProperties": false,
+    "properties": {
+      "account_id": {
+        "title": "Account Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "account_id"
+    ],
+    "title": "GetDebitCardsByAccountId7823Args",
+    "type": "object"
+  },
+  "get_debit_dispute_status_7483": {
+    "additionalProperties": false,
+    "properties": {
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "user_id"
+    ],
+    "title": "GetDebitDisputeStatus7483Args",
+    "type": "object"
+  },
+  "get_payment_history_6183": {
+    "additionalProperties": false,
+    "properties": {
+      "credit_card_account_id": {
+        "title": "Credit Card Account Id",
+        "type": "string"
+      },
+      "months": {
+        "title": "Months",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "credit_card_account_id",
+      "months"
+    ],
+    "title": "GetPaymentHistory6183Args",
+    "type": "object"
+  },
+  "get_pending_replacement_orders_5765": {
+    "additionalProperties": false,
+    "properties": {
+      "credit_card_account_id": {
+        "title": "Credit Card Account Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "credit_card_account_id"
+    ],
+    "title": "GetPendingReplacementOrders5765Args",
+    "type": "object"
+  },
+  "get_referrals_by_user": {
+    "additionalProperties": false,
+    "properties": {
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "user_id"
+    ],
+    "title": "GetReferralsByUserArgs",
+    "type": "object"
+  },
+  "get_user_dispute_history_7291": {
+    "additionalProperties": false,
+    "properties": {
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "user_id"
+    ],
+    "title": "GetUserDisputeHistory7291Args",
+    "type": "object"
+  },
+  "get_user_information_by_email": {
+    "additionalProperties": false,
+    "properties": {
+      "email": {
+        "title": "Email",
+        "type": "string"
+      }
+    },
+    "required": [
+      "email"
+    ],
+    "title": "GetUserInformationByEmailArgs",
+    "type": "object"
+  },
+  "get_user_information_by_id": {
+    "additionalProperties": false,
+    "properties": {
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "user_id"
+    ],
+    "title": "GetUserInformationByIdArgs",
+    "type": "object"
+  },
+  "get_user_information_by_name": {
+    "additionalProperties": false,
+    "properties": {
+      "customer_name": {
+        "title": "Customer Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "customer_name"
+    ],
+    "title": "GetUserInformationByNameArgs",
+    "type": "object"
+  },
+  "initial_transfer_to_human_agent_0218": {
+    "additionalProperties": false,
+    "properties": {},
+    "title": "InitialTransferToHumanAgent0218Args",
+    "type": "object"
+  },
+  "initial_transfer_to_human_agent_1822": {
+    "additionalProperties": false,
+    "properties": {},
+    "title": "InitialTransferToHumanAgent1822Args",
+    "type": "object"
+  },
+  "log_credit_card_closure_reason_4521": {
+    "additionalProperties": false,
+    "properties": {
+      "closure_reason": {
+        "title": "Closure Reason",
+        "type": "string"
+      },
+      "credit_card_account_id": {
+        "title": "Credit Card Account Id",
+        "type": "string"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "credit_card_account_id",
+      "user_id",
+      "closure_reason"
+    ],
+    "title": "LogCreditCardClosureReason4521Args",
+    "type": "object"
+  },
+  "log_verification": {
+    "additionalProperties": false,
+    "properties": {
+      "address": {
+        "title": "Address",
+        "type": "string"
+      },
+      "date_of_birth": {
+        "title": "Date Of Birth",
+        "type": "string"
+      },
+      "email": {
+        "title": "Email",
+        "type": "string"
+      },
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
+      "phone_number": {
+        "title": "Phone Number",
+        "type": "string"
+      },
+      "time_verified": {
+        "title": "Time Verified",
+        "type": "string"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name",
+      "user_id",
+      "address",
+      "email",
+      "phone_number",
+      "date_of_birth",
+      "time_verified"
+    ],
+    "title": "LogVerificationArgs",
+    "type": "object"
+  },
+  "open_bank_account_4821": {
+    "additionalProperties": false,
+    "properties": {
+      "account_class": {
+        "title": "Account Class",
+        "type": "string"
+      },
+      "account_type": {
+        "title": "Account Type",
+        "type": "string"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "user_id",
+      "account_type",
+      "account_class"
+    ],
+    "title": "OpenBankAccount4821Args",
+    "type": "object"
+  },
+  "order_debit_card_5739": {
+    "additionalProperties": false,
+    "properties": {
+      "account_id": {
+        "title": "Account Id",
+        "type": "string"
+      },
+      "card_design": {
+        "title": "Card Design",
+        "type": "string"
+      },
+      "delivery_fee": {
+        "title": "Delivery Fee",
+        "type": "number"
+      },
+      "delivery_option": {
+        "title": "Delivery Option",
+        "type": "string"
+      },
+      "design_fee": {
+        "title": "Design Fee",
+        "type": "number"
+      },
+      "excess_replacement_fee": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Excess Replacement Fee"
+      },
+      "shipping_address": {
+        "title": "Shipping Address",
+        "type": "string"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "account_id",
+      "user_id",
+      "delivery_option",
+      "delivery_fee",
+      "card_design",
+      "design_fee",
+      "shipping_address"
+    ],
+    "title": "OrderDebitCard5739Args",
+    "type": "object"
+  },
+  "order_replacement_credit_card_7291": {
+    "additionalProperties": false,
+    "properties": {
+      "credit_card_account_id": {
+        "title": "Credit Card Account Id",
+        "type": "string"
+      },
+      "expedited_shipping": {
+        "default": false,
+        "title": "Expedited Shipping",
+        "type": "boolean"
+      },
+      "reason": {
+        "title": "Reason",
+        "type": "string"
+      },
+      "shipping_address": {
+        "title": "Shipping Address",
+        "type": "string"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "credit_card_account_id",
+      "user_id",
+      "shipping_address",
+      "reason"
+    ],
+    "title": "OrderReplacementCreditCard7291Args",
+    "type": "object"
+  },
+  "pay_credit_card_from_checking_9182": {
+    "additionalProperties": false,
+    "properties": {
+      "amount": {
+        "title": "Amount",
+        "type": "number"
+      },
+      "checking_account_id": {
+        "title": "Checking Account Id",
+        "type": "string"
+      },
+      "credit_card_account_id": {
+        "title": "Credit Card Account Id",
+        "type": "string"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "user_id",
+      "checking_account_id",
+      "credit_card_account_id",
+      "amount"
+    ],
+    "title": "PayCreditCardFromChecking9182Args",
+    "type": "object"
+  },
+  "request_temporary_debit_card_limit_increase_8374": {
+    "additionalProperties": false,
+    "properties": {
+      "card_id": {
+        "title": "Card Id",
+        "type": "string"
+      },
+      "limit_type": {
+        "title": "Limit Type",
+        "type": "string"
+      },
+      "new_limit": {
+        "title": "New Limit",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "card_id",
+      "limit_type",
+      "new_limit"
+    ],
+    "title": "RequestTemporaryDebitCardLimitIncrease8374Args",
+    "type": "object"
+  },
+  "reset_debit_card_pin_6284": {
+    "additionalProperties": false,
+    "properties": {
+      "card_id": {
+        "title": "Card Id",
+        "type": "string"
+      },
+      "last_4_digits": {
+        "title": "Last 4 Digits",
+        "type": "string"
+      },
+      "new_pin": {
+        "title": "New Pin",
+        "type": "string"
+      }
+    },
+    "required": [
+      "card_id",
+      "last_4_digits",
+      "new_pin"
+    ],
+    "title": "ResetDebitCardPin6284Args",
+    "type": "object"
+  },
+  "set_debit_card_recurring_block_7382": {
+    "additionalProperties": false,
+    "properties": {
+      "block_recurring": {
+        "title": "Block Recurring",
+        "type": "boolean"
+      },
+      "card_id": {
+        "title": "Card Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "card_id",
+      "block_recurring"
+    ],
+    "title": "SetDebitCardRecurringBlock7382Args",
+    "type": "object"
+  },
+  "submit_credit_limit_increase_request_7392": {
+    "additionalProperties": false,
+    "properties": {
+      "credit_card_account_id": {
+        "title": "Credit Card Account Id",
+        "type": "string"
+      },
+      "requested_increase_amount": {
+        "title": "Requested Increase Amount",
+        "type": "integer"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "credit_card_account_id",
+      "user_id",
+      "requested_increase_amount"
+    ],
+    "title": "SubmitCreditLimitIncreaseRequest7392Args",
+    "type": "object"
+  },
+  "submit_interest_discrepancy_report_7294": {
+    "additionalProperties": false,
+    "properties": {
+      "account_id": {
+        "title": "Account Id",
+        "type": "string"
+      },
+      "actual_apy": {
+        "title": "Actual Apy",
+        "type": "number"
+      },
+      "amount_difference": {
+        "title": "Amount Difference",
+        "type": "number"
+      },
+      "expected_apy": {
+        "title": "Expected Apy",
+        "type": "number"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "account_id",
+      "user_id",
+      "expected_apy",
+      "actual_apy",
+      "amount_difference"
+    ],
+    "title": "SubmitInterestDiscrepancyReport7294Args",
+    "type": "object"
+  },
+  "transfer_funds_between_bank_accounts_7291": {
+    "additionalProperties": false,
+    "properties": {
+      "amount": {
+        "title": "Amount",
+        "type": "number"
+      },
+      "destination_account_id": {
+        "title": "Destination Account Id",
+        "type": "string"
+      },
+      "source_account_id": {
+        "title": "Source Account Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "source_account_id",
+      "destination_account_id",
+      "amount"
+    ],
+    "title": "TransferFundsBetweenBankAccounts7291Args",
+    "type": "object"
+  },
+  "transfer_to_human_agents": {
+    "additionalProperties": false,
+    "properties": {
+      "reason": {
+        "default": "other",
+        "enum": [
+          "fraud_or_security_concern",
+          "account_closure_request",
+          "deceased_account_holder",
+          "legal_or_regulatory_matter",
+          "account_ownership_dispute",
+          "complex_billing_dispute",
+          "abusive_customer_behavior",
+          "third_party_inquiry",
+          "technical_system_error",
+          "unconfirmed_external_communication",
+          "customer_demands_after_unavailable_offer_refusal",
+          "kb_search_unsuccessful_customer_requests_transfer",
+          "specialized_department_required",
+          "accessibility_or_special_needs",
+          "customer_frustrated_demands_human",
+          "supervisor_request_service_complaint",
+          "customer_requests_human_no_specific_reason",
+          "request_completed_customer_wants_human_followup",
+          "other"
+        ],
+        "title": "Reason",
+        "type": "string"
+      },
+      "summary": {
+        "title": "Summary",
+        "type": "string"
+      }
+    },
+    "required": [
+      "summary"
+    ],
+    "title": "TransferToHumanAgentsArgs",
+    "type": "object"
+  },
+  "unfreeze_debit_card_3893": {
+    "additionalProperties": false,
+    "properties": {
+      "card_id": {
+        "title": "Card Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "card_id"
+    ],
+    "title": "UnfreezeDebitCard3893Args",
+    "type": "object"
+  },
+  "update_transaction_rewards_3847": {
+    "additionalProperties": false,
+    "properties": {
+      "new_rewards_earned": {
+        "title": "New Rewards Earned",
+        "type": "string"
+      },
+      "transaction_id": {
+        "title": "Transaction Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "transaction_id",
+      "new_rewards_earned"
+    ],
+    "title": "UpdateTransactionRewards3847Args",
+    "type": "object"
+  }
+}
