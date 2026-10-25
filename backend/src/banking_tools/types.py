@@ -1,7 +1,8 @@
 """Core types shared by every banking tool."""
 
+from datetime import datetime
 from enum import StrEnum
-from typing import Literal, Optional, Self
+from typing import Any, Literal, Optional, Self
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -40,6 +41,19 @@ class ToolSpec(BaseModel):
                 f"{self.kind.value} tool '{self.name}' must not declare a reversibility"
             )
         return self
+
+
+class AuditEntry(BaseModel):
+    """One executed write call. Sensitive arguments are redacted before storage."""
+
+    model_config = ConfigDict(frozen=True)
+
+    audit_id: str
+    tool: str
+    reversibility: Reversibility
+    arguments: dict[str, Any]
+    ok: bool
+    timestamp: datetime
 
 
 class ToolResult(BaseModel):

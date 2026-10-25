@@ -9,6 +9,9 @@ the build.
 the caller read beforehand. Every other write is irreversible.
 """
 
+from collections.abc import Mapping
+from functools import cache
+from types import MappingProxyType
 from typing import Literal, Optional
 
 from tau2.domains.banking_knowledge.tools import KnowledgeTools
@@ -114,6 +117,12 @@ def build_catalog() -> dict[str, ToolSpec]:
         )
         for name, (source, kind, reversibility) in _LABELS.items()
     }
+
+
+@cache
+def get_registry() -> Mapping[str, ToolSpec]:
+    """The catalog, built once and shared read-only (ToolSpec is frozen)."""
+    return MappingProxyType(build_catalog())
 
 
 def render_markdown() -> str:
