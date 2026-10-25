@@ -1,0 +1,3 @@
+[submodule "tau2-bench"]
+	path = tau2-bench
+	url = https://github.com/asayenju/tau2-bench.git
