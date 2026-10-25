@@ -13,6 +13,11 @@ tau2 = { path = "../tau2-bench", editable = true }
 [dependency-groups]
 dev = ["pytest>=8", "mypy>=1.10"]
 
+[tool.pyright]
+extraPaths = ["src"]
+venvPath = "."
+venv = ".venv"
+
 [[tool.mypy.overrides]]
 module = ["tau2.*"]
 ignore_missing_imports = true
