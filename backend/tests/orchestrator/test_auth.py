@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 from pydantic import ValidationError
 
@@ -6,9 +8,12 @@ from orchestrator.auth import (
     MAX_FAILED_ATTEMPTS,
     AuthState,
     CustomerRecord,
+    ScriptedDirectory,
+    gate,
+    gate_intents,
+    reject_unknown,
     requires_verification,
     verify,
-    gate,
 )
 from orchestrator.types import Decomposition, HandOff, Intent, IntentKind
 
@@ -215,6 +220,50 @@ def test_gate_hands_off_blocked_intents_after_three_failures_and_asks_nothing():
     assert result.questions == ()
     assert isinstance(result.hand_off, HandOff)
     assert result.hand_off.intent_ids == ("b",)
+
+
+def find(directory, claims):
+    return asyncio.run(directory.find(claims))
+
+
+@pytest.mark.parametrize(
+    ("claims", "found"),
+    [
+        ({"user_id": "u_kenji01"}, RECORD),
+        ({"email": "KENJI.tanaka@example.com"}, RECORD),
+        ({"phone_number": "206-555-0293"}, RECORD),
+        ({"email": "fatima@example.com"}, OTHER_RECORD),
+        ({"email": "nobody@example.com"}, None),
+        ({"date_of_birth": "03/14/1990"}, None),
+        ({"bypass_code": "9K2X"}, None),
+        ({}, None),
+    ],
+)
+def test_the_scripted_directory_finds_a_record_by_id_email_or_phone(claims, found):
+    assert find(ScriptedDirectory(RECORD, OTHER_RECORD), claims) == found
+
+
+def test_a_claim_that_matches_no_record_counts_as_a_failed_attempt():
+    state = reject_unknown(AuthState(), {"email": "nobody@example.com"})
+    assert state.failed_attempts == 1 and not state.verified
+
+
+@pytest.mark.parametrize("junk", [{}, {"bypass_code": "9K2X"}, {"email": "  "}])
+def test_a_claim_with_no_real_field_costs_nothing(junk):
+    assert reject_unknown(AuthState(), junk) == AuthState()
+
+
+def test_rejecting_an_unknown_record_cannot_unlock_or_unverify():
+    verified = verify(AuthState(), RECORD, {**RIGHT_EMAIL, **RIGHT_PHONE})
+    assert reject_unknown(verified, {"email": "x@example.com"}) == verified
+    assert reject_unknown(locked_state(), {"email": "x@example.com"}) == locked_state()
+
+
+def test_gate_intents_accepts_intents_that_depend_on_ones_outside_the_list():
+    # Dependencies on finished intents would not survive building a Decomposition.
+    orphan = Intent(id="b", kind=IntentKind.FREEZE_CARD, summary="s", depends_on=("done-earlier",))
+    result = gate_intents(AuthState(), [orphan])
+    assert result.blocked == ("b",)
 
 
 def test_gate_with_no_intents_is_empty():

@@ -13,14 +13,14 @@ customer says about authority, codes or supervisors can verify them.
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Optional
+from typing import Annotated, Optional, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from orchestrator.types import Decomposition, HandOff, IntentKind, Question
+from orchestrator.types import Decomposition, HandOff, Intent, IntentKind, Question
 
 IDENTITY_SLOT = "identity_verification"
 REQUIRED_MATCHES = 2
@@ -140,10 +140,52 @@ def verify(
     )
 
 
+def reject_unknown(state: AuthState, claimed: Mapping[str, str]) -> AuthState:
+    """The claims named a customer we cannot find. Giving real identity fields to
+    nobody on file is a failed attempt; sending no real field at all is not."""
+    if state.verified or state.locked:
+        return state
+    if not any(claimed.get(f.value, "").strip() for f in IdentityField):
+        return state
+    return AuthState(
+        candidate_user_id=state.candidate_user_id,
+        matched=state.matched,
+        failed_attempts=state.failed_attempts + 1,
+    )
+
+
+class Directory(Protocol):
+    """Finds the record a caller is claiming to be. Verification is done by ``verify``."""
+
+    async def find(self, claims: Mapping[str, str]) -> Optional[CustomerRecord]: ...
+
+
+class ScriptedDirectory:
+    """Looks a record up by user id, email or phone; anything else finds nobody."""
+
+    def __init__(self, *records: CustomerRecord) -> None:
+        self._records = records
+
+    async def find(self, claims: Mapping[str, str]) -> Optional[CustomerRecord]:
+        for record in self._records:
+            user_id = claims.get("user_id", "").strip().casefold()
+            if user_id and user_id == record.user_id.casefold():
+                return record
+            for field in (IdentityField.EMAIL, IdentityField.PHONE_NUMBER):
+                claimed = claims.get(field.value, "").strip()
+                if claimed and _matches(field, claimed, record):
+                    return record
+        return None
+
+
 def gate(state: AuthState, decomposition: Decomposition) -> GateResult:
+    return gate_intents(state, decomposition.intents)
+
+
+def gate_intents(state: AuthState, intents: Sequence[Intent]) -> GateResult:
     allowed: list[str] = []
     blocked: list[str] = []
-    for intent in decomposition.intents:
+    for intent in intents:
         if state.verified or not requires_verification(intent.kind):
             allowed.append(intent.id)
         else:
