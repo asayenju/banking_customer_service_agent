@@ -29,6 +29,7 @@ def test_the_closed_list_includes_the_catch_alls():
     assert IntentKind.UNCLEAR_OR_GREETING.value == "UNCLEAR_OR_GREETING"
     assert IntentKind.FEE_OR_INTEREST_ADJUSTMENT.value == "FEE_OR_INTEREST_ADJUSTMENT"
     assert IntentKind.CARD_CONTROLS.value == "CARD_CONTROLS"
+    assert IntentKind.GENERAL_QUESTION.value == "GENERAL_QUESTION"
 
 
 def test_intent_defaults_are_empty():

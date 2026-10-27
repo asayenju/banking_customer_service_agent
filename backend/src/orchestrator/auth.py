@@ -26,10 +26,16 @@ IDENTITY_SLOT = "identity_verification"
 REQUIRED_MATCHES = 2
 MAX_FAILED_ATTEMPTS = 3
 
-# Needs no verified caller: greetings, a request for a human, and what we cannot
-# place (which hands off anyway). Everything else touches an account.
+# Needs no verified caller: greetings, general product and policy questions, a
+# request for a human, and what we cannot place (which hands off anyway).
+# Everything else touches an account.
 OPEN_KINDS = frozenset(
-    {IntentKind.UNCLEAR_OR_GREETING, IntentKind.REQUEST_HUMAN, IntentKind.OTHER}
+    {
+        IntentKind.UNCLEAR_OR_GREETING,
+        IntentKind.GENERAL_QUESTION,
+        IntentKind.REQUEST_HUMAN,
+        IntentKind.OTHER,
+    }
 )
 
 _DATE_FORMATS = ("%m/%d/%Y", "%Y-%m-%d", "%B %d, %Y", "%b %d, %Y", "%B %d %Y", "%b %d %Y")
