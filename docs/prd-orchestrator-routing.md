@@ -65,6 +65,7 @@ New modules beside the decomposer PRD's `types.py`, `validate.py` and `loop.py`;
 - `trace.py`: ordered `TraceEvent`s (scored, decided, routed, started, finished, skipped, asked, escalated), each failure carrying a reason.
 - `reply.py`: one customer message from results, errors and questions (template for tests).
 - `orchestrator.py`: turn handler and cross-turn state (pending confirmations, per-intent try counters, idempotency keys).
+- `decomposer.py`: the per-turn `Interpretation` (new or updated intents, yes, withdrawn, identity claims) and the `Decomposer` Protocol with a scripted fake. The real LLM decomposer from the decomposer PRD plugs in here later.
 - `mocks/`: `MockDirectRoute`, `MockSubAgent` and mock tools, each with scripted outcomes: success, slow, timeout, malformed, partial, raises.
 
 Reuse: `banking_tools.get_registry()` for reversibility and `ToolKind`, the redaction in `banking_tools/session.py`, and the decomposer PRD's `Decomposition`, `Intent` and `LLMClient` fake. Style matches `banking_tools`: frozen strict pydantic, `StrEnum`, mypy strict, offline pytest, hard-coded ids.
