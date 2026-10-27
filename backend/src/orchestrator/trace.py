@@ -20,6 +20,7 @@ class TraceKind(StrEnum):
     SKIPPED = "skipped"
     ASKED = "asked"
     ESCALATED = "escalated"
+    FLAGGED = "flagged"
 
 
 _NEEDS_A_REASON = frozenset({TraceKind.FAILED, TraceKind.SKIPPED, TraceKind.ESCALATED})
@@ -33,6 +34,8 @@ class TraceEvent(BaseModel):
     intent_id: Optional[str] = None
     detail: str = ""
     reason: Optional[str] = None
+    # 1-based execution wave, so a test can see what ran together.
+    wave: Optional[int] = None
 
     @model_validator(mode="after")
     def _failures_say_why(self) -> Self:
