@@ -107,7 +107,7 @@ Each scenario is one customer message (or a scripted `Decomposition`), scripted 
 8. **AgentBench is not a fit** for validating this layer. It measures raw multi-turn model reasoning, not policy-following, verification or escalation.
 
 ## Issues and acceptance criteria
-Prerequisite: the decomposer PRD's types issue (its issue 2). Routing tests feed scripted `Decomposition`s, so they do not wait for the decomposer itself. Issue text will be created in GitHub from this document; the criteria are repeated here.
+Prerequisite: the decomposer PRD's types issue (its issue 2, GitHub #18). Routing tests feed scripted `Decomposition`s, so they do not wait for the decomposer itself. Issue text will be created in GitHub from this document; the criteria are repeated here.
 
 1. **Bands, route table and trace types**
    - 0.85 proceeds, 0.65 asks, 0.6499 escalates, tested at the boundaries.
