@@ -11,6 +11,7 @@ NEEDS_NONE = [
     TraceKind.STARTED,
     TraceKind.FINISHED,
     TraceKind.ASKED,
+    TraceKind.FLAGGED,
 ]
 
 
@@ -32,6 +33,11 @@ def test_other_events_need_no_reason(kind):
 
 def test_an_event_can_be_about_the_whole_turn():
     assert TraceEvent(kind=TraceKind.ASKED).intent_id is None
+
+
+def test_an_event_can_say_which_wave_it_happened_in():
+    assert TraceEvent(kind=TraceKind.STARTED, intent_id="a", wave=2).wave == 2
+    assert TraceEvent(kind=TraceKind.ASKED).wave is None
 
 
 def test_event_is_frozen():
