@@ -31,8 +31,8 @@ A pipeline in `backend/src/orchestrator/`:
 - **Decision**: `Proceed` (enough is known), `AskCustomer` (questions tied to specific intents), `HandOff` (human needed).
 - **Round**: one ask-and-reply cycle.
 
-### Intent kinds (closed list; draft to confirm)
-`FREEZE_CARD`, `UNFREEZE_CARD`, `ACTIVATE_CARD`, `ORDER_REPLACEMENT_CARD`, `CHANGE_OR_RESET_PIN`, `CLOSE_CARD`, `DISPUTE_TRANSACTION`, `CREDIT_LIMIT_REQUEST`, `TRANSFER_FUNDS`, `PAY_CREDIT_CARD`, `OPEN_ACCOUNT`, `CLOSE_ACCOUNT`, `ACCOUNT_BALANCE_OR_HISTORY`, `LOOKUP_INFO`, `UPDATE_PROFILE`, `REPORT_FRAUD_OR_LOSS`, `REQUEST_HUMAN`, `OTHER`. Anything outside the list is `OTHER`; the model may not invent kinds.
+### Intent kinds (closed list; `CARD_CONTROLS`, `FEE_OR_INTEREST_ADJUSTMENT` and `UNCLEAR_OR_GREETING` added after mapping all 53 catalogued tools)
+`FREEZE_CARD`, `UNFREEZE_CARD`, `ACTIVATE_CARD`, `ORDER_REPLACEMENT_CARD`, `CHANGE_OR_RESET_PIN`, `CLOSE_CARD`, `CARD_CONTROLS`, `DISPUTE_TRANSACTION`, `CREDIT_LIMIT_REQUEST`, `FEE_OR_INTEREST_ADJUSTMENT`, `TRANSFER_FUNDS`, `PAY_CREDIT_CARD`, `OPEN_ACCOUNT`, `CLOSE_ACCOUNT`, `ACCOUNT_BALANCE_OR_HISTORY`, `LOOKUP_INFO`, `UPDATE_PROFILE`, `REPORT_FRAUD_OR_LOSS`, `REQUEST_HUMAN`, `UNCLEAR_OR_GREETING`, `OTHER`. Anything outside the list is `OTHER`; the model may not invent kinds.
 
 ## How
 Package `backend/src/orchestrator/`, tests in `backend/tests/orchestrator/`. Same style as `banking_tools`: frozen strict pydantic models, `StrEnum`, mypy strict, offline tests.
