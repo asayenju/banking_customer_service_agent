@@ -30,7 +30,12 @@ RIGHT_EMAIL = {"email": "kenji.tanaka@example.com"}
 RIGHT_PHONE = {"phone_number": "206-555-0293"}
 RIGHT_DOB = {"date_of_birth": "03/14/1990"}
 WRONG_EMAIL = {"email": "someone.else@example.com"}
-OPEN = (IntentKind.UNCLEAR_OR_GREETING, IntentKind.REQUEST_HUMAN, IntentKind.OTHER)
+OPEN = (
+    IntentKind.UNCLEAR_OR_GREETING,
+    IntentKind.GENERAL_QUESTION,
+    IntentKind.REQUEST_HUMAN,
+    IntentKind.OTHER,
+)
 
 
 def intent(id, kind):

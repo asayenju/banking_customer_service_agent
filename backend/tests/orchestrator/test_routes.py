@@ -20,6 +20,7 @@ def test_every_route_value_is_a_route():
         (IntentKind.ACCOUNT_BALANCE_OR_HISTORY, Route.DIRECT),
         (IntentKind.LOOKUP_INFO, Route.DIRECT),
         (IntentKind.UNCLEAR_OR_GREETING, Route.DIRECT),
+        (IntentKind.GENERAL_QUESTION, Route.SUB_AGENT),
         (IntentKind.DISPUTE_TRANSACTION, Route.SUB_AGENT),
         (IntentKind.CREDIT_LIMIT_REQUEST, Route.SUB_AGENT),
         (IntentKind.CLOSE_CARD, Route.SUB_AGENT),
