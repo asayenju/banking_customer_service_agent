@@ -59,7 +59,7 @@ New modules beside the decomposer PRD's `types.py`, `validate.py` and `loop.py`;
 - `scoring.py`: `IntentScore`, `Scorer` Protocol, scripted fake. One Jev call per message with questions per intent.
 - `routes.py`: route table, urgent set, resource keys, confirmation requirement from `banking_tools.get_registry()` reversibility.
 - `auth.py`: `VerifiedCaller` state, the 2-of-4 check, 3 failed attempts then hand-off.
-- `gate.py`: per-intent decision `Run | Ask | Escalate | Blocked(reason)`.
+- `decision.py`: per-intent decision `Run | Ask | Escalate`, including the explicit-yes rule and its fingerprint. Verification blocking lives in `auth.py`.
 - `plan.py`: execution waves from `depends_on`, resource conflicts and urgency.
 - `executor.py`: async wave runner, failure policy, `Executor` Protocol.
 - `trace.py`: ordered `TraceEvent`s (scored, decided, routed, started, finished, skipped, asked, escalated), each failure carrying a reason.
