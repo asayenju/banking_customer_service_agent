@@ -68,7 +68,7 @@ Issue text will be created in GitHub from this document; the criteria are repeat
    - `litellm` is declared in `backend/pyproject.toml` within tau2's pin; `uv.lock` updated.
    - `LLMClient` Protocol with a LiteLLM implementation and a fake for tests.
    - `uv sync` and `uv run pytest` pass offline; mypy strict is clean.
-2. **Intent types and closed taxonomy**
+2. **Intent types and closed taxonomy** (GitHub #18)
    - Frozen strict pydantic models for `Intent`, `Decomposition`, `Decision`.
    - Every non-excluded tool in the catalog maps to an `IntentKind` or to `OTHER`, checked by a test.
    - A JSON schema snapshot test exists.
@@ -89,20 +89,20 @@ Issue text will be created in GitHub from this document; the criteria are repeat
    - PIN, CVV and card numbers are redacted before logging and before any outbound call.
    - Prompt-injection fixtures never change schema validity or kinds and are flagged.
    - Empty, gibberish, very long and non-English inputs produce a defined result.
-7. **Decider protocol and rule-based decider**
+7. **Decider protocol and rule-based decider** (superseded by routing PRD issue #10; not created)
    - `Decision` is a typed union; rules cover proceed, ask and hand-off.
    - An irreversible intent (per `banking_tools` labels) with unresolved slots never gets `Proceed`.
    - `REQUEST_HUMAN`, out-of-scope, and an intent reaching its 3-try cap produce `HandOff`.
-8. **Clarification question generation**
+8. **Clarification question generation** (superseded by routing PRD issue #14; not created)
    - One batched customer message per round, each question tied to intent ids.
    - No question for a slot already answered in history.
    - Tested with the fake LLM.
-9. **Clarification loop**
+9. **Clarification loop** (superseded by routing PRD issue #15; not created)
    - Answers merge into existing intents without re-deriving the rest.
    - After 3 ask attempts for an intent, that intent is `HandOff`; other intents continue.
    - A customer changing their mind supersedes the earlier intent.
    - Fully deterministic with the fake LLM.
-10. **Jev adapter**
+10. **Jev adapter** (the scorer seam is routing PRD issue #8; the adapter itself is still to be created later)
     - Implements `Decider`; model version pinned; key read from an env var.
     - `typesafe_sdk` is an optional dependency; importing the package without it works.
     - Timeout or error falls back to hand-off or the rule decider.
