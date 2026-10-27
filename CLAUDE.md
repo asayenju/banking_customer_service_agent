@@ -5,6 +5,7 @@ Typed backend around tau2-bench's `banking_knowledge` domain. Goal: a determinis
 ## Layout
 - `backend/` Python 3.12 (`>=3.12,<3.14`), managed with `uv`.
   - `src/banking_tools/`: typed wrapper over 53 tau2 tools. `types.py` (`ToolKind`, `Reversibility`, `ToolSpec`, `AuditEntry`, `ToolResult`), `catalog.py` (the labelled table, `get_registry()`, `EXCLUDED`, `render_markdown()`), `args.py` (pydantic arg models built from tau2 signatures), `session.py` (`BankingSession`).
+  - `src/orchestrator/`: `types.py` (`IntentKind`, `Intent`, `Decomposition`, `Decision`), `taxonomy.py` (tool to intent kind table, checked against the catalog). Tests in `tests/orchestrator/` (snapshot in `tests/orchestrator/snapshots/`).
   - `src/main.py`: FastAPI hello-world stub. `src/models/` is empty.
   - `tests/`: `test_types.py`, `test_catalog.py`, `test_args.py` (snapshot in `tests/snapshots/arg_schemas.json`), `test_session.py`.
 - `tau2-bench/`: git submodule (fork `asayenju/tau2-bench`), installed as an editable path dependency. Never edit it. Domain code: `tau2-bench/src/tau2/domains/banking_knowledge/`; data: `tau2-bench/data/tau2/domains/banking_knowledge/` (`tasks.json` has 97 tasks with free-text user instructions and expected tool actions).
@@ -15,7 +16,7 @@ Typed backend around tau2-bench's `banking_knowledge` domain. Goal: a determinis
 - `uv run pytest` (offline, no API keys needed)
 - `uv run mypy --strict src/banking_tools`
 - Refresh the args snapshot: `UPDATE_SNAPSHOTS=1 uv run pytest tests/test_args.py`
-- macOS hidden `.pth` fix if imports fail: `chflags -R nohidden backend/.venv`
+- macOS hidden `.pth` fix if `tau2` imports fail outside pytest: `chflags -R nohidden backend/.venv`. iCloud (`~/Documents`) re-hides the venv's editable `.pth` file and Python 3.12 skips hidden ones. pytest no longer depends on it (`pythonpath` includes `../tau2-bench/src`).
 
 ## Conventions
 - Models are pydantic, frozen and strict (`extra="forbid"`, `strict=True`, `frozen=True`); enums are `StrEnum`; full type annotations, mypy strict.

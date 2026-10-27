@@ -23,5 +23,8 @@ module = ["tau2.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+# tau2-bench/src is listed explicitly so tests do not depend on the venv's
+# editable .pth file: on macOS with ~/Documents synced to iCloud that file gets
+# the hidden flag, and Python 3.12 silently skips hidden .pth files.
+pythonpath = ["src", "../tau2-bench/src"]
 testpaths = ["tests"]
