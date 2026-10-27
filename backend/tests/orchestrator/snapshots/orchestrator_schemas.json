@@ -1,0 +1,400 @@
+{
+  "Decision": {
+    "$defs": {
+      "AskCustomer": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "ask_customer",
+            "default": "ask_customer",
+            "title": "Kind",
+            "type": "string"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/$defs/Question"
+            },
+            "minItems": 1,
+            "title": "Questions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "questions"
+        ],
+        "title": "AskCustomer",
+        "type": "object"
+      },
+      "HandOff": {
+        "additionalProperties": false,
+        "properties": {
+          "intent_ids": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Intent Ids",
+            "type": "array"
+          },
+          "kind": {
+            "const": "hand_off",
+            "default": "hand_off",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "HandOff",
+        "type": "object"
+      },
+      "Proceed": {
+        "additionalProperties": false,
+        "properties": {
+          "intent_ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Intent Ids",
+            "type": "array"
+          },
+          "kind": {
+            "const": "proceed",
+            "default": "proceed",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent_ids"
+        ],
+        "title": "Proceed",
+        "type": "object"
+      },
+      "Question": {
+        "additionalProperties": false,
+        "description": "A missing detail for one intent. The wording is phrased later by an LLM.",
+        "properties": {
+          "intent_id": {
+            "title": "Intent Id",
+            "type": "string"
+          },
+          "slot": {
+            "title": "Slot",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Text"
+          }
+        },
+        "required": [
+          "intent_id",
+          "slot"
+        ],
+        "title": "Question",
+        "type": "object"
+      }
+    },
+    "discriminator": {
+      "mapping": {
+        "ask_customer": "#/$defs/AskCustomer",
+        "hand_off": "#/$defs/HandOff",
+        "proceed": "#/$defs/Proceed"
+      },
+      "propertyName": "kind"
+    },
+    "oneOf": [
+      {
+        "$ref": "#/$defs/Proceed"
+      },
+      {
+        "$ref": "#/$defs/AskCustomer"
+      },
+      {
+        "$ref": "#/$defs/HandOff"
+      }
+    ]
+  },
+  "Decomposition": {
+    "$defs": {
+      "Conflict": {
+        "additionalProperties": false,
+        "description": "Intents that cannot all be honoured, e.g. freeze and unfreeze the same card.",
+        "properties": {
+          "intent_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Intent Ids",
+            "type": "array"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "intent_ids",
+          "reason"
+        ],
+        "title": "Conflict",
+        "type": "object"
+      },
+      "Flag": {
+        "enum": [
+          "injection_suspected",
+          "possible_dropped_intent"
+        ],
+        "title": "Flag",
+        "type": "string"
+      },
+      "Intent": {
+        "additionalProperties": false,
+        "description": "One customer goal, with the details found for it and what it waits on.",
+        "properties": {
+          "depends_on": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Depends On",
+            "type": "array"
+          },
+          "id": {
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/$defs/IntentKind"
+          },
+          "missing_slots": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Slots",
+            "type": "array"
+          },
+          "slots": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Slots",
+            "type": "object"
+          },
+          "source_span": {
+            "anyOf": [
+              {
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ],
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source Span"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "summary"
+        ],
+        "title": "Intent",
+        "type": "object"
+      },
+      "IntentKind": {
+        "enum": [
+          "FREEZE_CARD",
+          "UNFREEZE_CARD",
+          "ACTIVATE_CARD",
+          "ORDER_REPLACEMENT_CARD",
+          "CHANGE_OR_RESET_PIN",
+          "CLOSE_CARD",
+          "CARD_CONTROLS",
+          "DISPUTE_TRANSACTION",
+          "CREDIT_LIMIT_REQUEST",
+          "FEE_OR_INTEREST_ADJUSTMENT",
+          "TRANSFER_FUNDS",
+          "PAY_CREDIT_CARD",
+          "OPEN_ACCOUNT",
+          "CLOSE_ACCOUNT",
+          "ACCOUNT_BALANCE_OR_HISTORY",
+          "LOOKUP_INFO",
+          "UPDATE_PROFILE",
+          "REPORT_FRAUD_OR_LOSS",
+          "REQUEST_HUMAN",
+          "UNCLEAR_OR_GREETING",
+          "OTHER"
+        ],
+        "title": "IntentKind",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "conflicts": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/Conflict"
+        },
+        "title": "Conflicts",
+        "type": "array"
+      },
+      "flags": {
+        "default": [],
+        "items": {
+          "$ref": "#/$defs/Flag"
+        },
+        "title": "Flags",
+        "type": "array"
+      },
+      "intents": {
+        "items": {
+          "$ref": "#/$defs/Intent"
+        },
+        "title": "Intents",
+        "type": "array"
+      },
+      "schema_version": {
+        "default": 1,
+        "title": "Schema Version",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "intents"
+    ],
+    "title": "Decomposition",
+    "type": "object"
+  },
+  "Intent": {
+    "$defs": {
+      "IntentKind": {
+        "enum": [
+          "FREEZE_CARD",
+          "UNFREEZE_CARD",
+          "ACTIVATE_CARD",
+          "ORDER_REPLACEMENT_CARD",
+          "CHANGE_OR_RESET_PIN",
+          "CLOSE_CARD",
+          "CARD_CONTROLS",
+          "DISPUTE_TRANSACTION",
+          "CREDIT_LIMIT_REQUEST",
+          "FEE_OR_INTEREST_ADJUSTMENT",
+          "TRANSFER_FUNDS",
+          "PAY_CREDIT_CARD",
+          "OPEN_ACCOUNT",
+          "CLOSE_ACCOUNT",
+          "ACCOUNT_BALANCE_OR_HISTORY",
+          "LOOKUP_INFO",
+          "UPDATE_PROFILE",
+          "REPORT_FRAUD_OR_LOSS",
+          "REQUEST_HUMAN",
+          "UNCLEAR_OR_GREETING",
+          "OTHER"
+        ],
+        "title": "IntentKind",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "description": "One customer goal, with the details found for it and what it waits on.",
+    "properties": {
+      "depends_on": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Depends On",
+        "type": "array"
+      },
+      "id": {
+        "minLength": 1,
+        "title": "Id",
+        "type": "string"
+      },
+      "kind": {
+        "$ref": "#/$defs/IntentKind"
+      },
+      "missing_slots": {
+        "default": [],
+        "items": {
+          "type": "string"
+        },
+        "title": "Missing Slots",
+        "type": "array"
+      },
+      "slots": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "title": "Slots",
+        "type": "object"
+      },
+      "source_span": {
+        "anyOf": [
+          {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Source Span"
+      },
+      "summary": {
+        "title": "Summary",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "kind",
+      "summary"
+    ],
+    "title": "Intent",
+    "type": "object"
+  }
+}
