@@ -1,5 +1,7 @@
 # PRD: Intent decomposer and decision gate
 
+Routing, execution, per-intent decisions, the verified-caller gate and the 0.85 / 0.65 bands are specified in `docs/prd-orchestrator-routing.md`. Where the two differ, that document wins.
+
 ## Why
 A customer message often holds several requests: "My debit card was stolen so freeze it, dispute the $200 charge from yesterday, tell me my savings balance, and if the card's closed move what's left to checking." The orchestrator needs this as structured, validated intents before it can choose tools. A prompt that returns free text drops intents, merges or splits them differently on each run, loses dependencies ("if the card's closed..."), and can be steered by text inside the message. The orchestrator also needs a reliable answer to "do we know enough to act, do we need to ask, or is this a human's job?" before any banking tool runs. The tool wrapper already labels which tools are irreversible; this stage must respect that and never act on guesses.
 
@@ -8,7 +10,7 @@ A pipeline in `backend/src/orchestrator/`:
 1. **Decompose.** A LiteLLM call turns the message (plus conversation history) into a typed `Decomposition`.
 2. **Validate.** Pure code checks the result.
 3. **Decide.** A `Decider` returns `Proceed`, `AskCustomer` or `HandOff`. Implementations: a rule-based decider (default) and a Jev adapter.
-4. **Ask.** If the decision is `AskCustomer`, an LLM phrases one batched message. The customer's reply goes back to step 1 and is merged into the existing intents, up to a round cap, then hand-off.
+4. **Ask.** If the decision is `AskCustomer`, an LLM phrases one batched message. The customer's reply goes back to step 1 and is merged into the existing intents. Each intent has its own try counter: after 3 ask attempts that intent hands off.
 
 ### Goals
 - 3+ intents in one message are all captured, stable across runs, and ordered canonically.
@@ -18,7 +20,7 @@ A pipeline in `backend/src/orchestrator/`:
 - The decomposer and decider are swappable behind Protocols.
 
 ### Non-goals
-- Choosing or executing banking tools (next PRD).
+- Choosing or executing banking tools (see `docs/prd-orchestrator-routing.md`).
 - HTTP endpoints, UI, voice.
 - Training a dedicated model (a comparison is in the evaluation issue).
 - Changing tau2-bench or `banking_tools`.
@@ -90,21 +92,21 @@ Issue text will be created in GitHub from this document; the criteria are repeat
 7. **Decider protocol and rule-based decider**
    - `Decision` is a typed union; rules cover proceed, ask and hand-off.
    - An irreversible intent (per `banking_tools` labels) with unresolved slots never gets `Proceed`.
-   - `REQUEST_HUMAN`, out-of-scope, and reaching the round cap produce `HandOff`.
+   - `REQUEST_HUMAN`, out-of-scope, and an intent reaching its 3-try cap produce `HandOff`.
 8. **Clarification question generation**
    - One batched customer message per round, each question tied to intent ids.
    - No question for a slot already answered in history.
    - Tested with the fake LLM.
 9. **Clarification loop**
    - Answers merge into existing intents without re-deriving the rest.
-   - After 3 rounds the result is `HandOff`.
+   - After 3 ask attempts for an intent, that intent is `HandOff`; other intents continue.
    - A customer changing their mind supersedes the earlier intent.
    - Fully deterministic with the fake LLM.
 10. **Jev adapter**
     - Implements `Decider`; model version pinned; key read from an env var.
     - `typesafe_sdk` is an optional dependency; importing the package without it works.
     - Timeout or error falls back to hand-off or the rule decider.
-    - Confidence thresholds are set per consequence level; high confidence never turns an irreversible action into `Proceed` with unresolved slots.
+    - Implements the per-intent `Scorer` Protocol from the routing PRD; bands are fixed at 0.85 (proceed) and 0.65 (escalate below); high confidence never turns an irreversible action into `Proceed` with unresolved slots or without the customer's explicit yes.
     - Contract tests use a fake client; one live test is skipped without a key.
 11. **Evaluation harness over tau2 tasks**
     - Runs the decomposer on user instructions from `tasks.json`; reports intent-count stability over N runs and precision/recall against expected tool actions.
@@ -124,7 +126,7 @@ Confirmed:
 
 My calls, open to change:
 - The decomposer is a pure function that never talks to the customer; the orchestrator owns the loop.
-- Round cap is 3.
+- Try cap is 3 per intent, not per conversation (confirmed; see the routing PRD).
 - Rule-based decider is the default until the Jev key is fetched; Jev is an optional dependency.
-- Jev thresholds stay uncalibrated until shadow-mode data exists.
+- Jev thresholds (0.85 / 0.65) stay uncalibrated placeholders until shadow-mode data exists.
 - The intent list above is a draft derived from the 53 catalogued tools.
