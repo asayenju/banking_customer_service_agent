@@ -5,7 +5,7 @@ Typed backend around tau2-bench's `banking_knowledge` domain. Goal: a determinis
 ## Layout
 - `backend/` Python 3.12 (`>=3.12,<3.14`), managed with `uv`.
   - `src/banking_tools/`: typed wrapper over 53 tau2 tools. `types.py` (`ToolKind`, `Reversibility`, `ToolSpec`, `AuditEntry`, `ToolResult`), `catalog.py` (the labelled table, `get_registry()`, `EXCLUDED`, `render_markdown()`), `args.py` (pydantic arg models built from tau2 signatures), `session.py` (`BankingSession`).
-  - `src/orchestrator/`: `types.py` (`IntentKind`, `Intent`, `Decomposition`, `Decision`), `taxonomy.py` (tool to intent kind table, checked against the catalog). Tests in `tests/orchestrator/` (snapshot in `tests/orchestrator/snapshots/`).
+  - `src/orchestrator/`: the central agent's decision layer, spec in `docs/prd-orchestrator-routing.md`. `types.py` (`IntentKind` 22 kinds, `Intent`, `Decomposition`, `Decision`), `taxonomy.py` (tool to kind, checked against the catalog), `bands.py` (0.85/0.65), `scoring.py` (`Scorer` Protocol, per-intent confidence), `auth.py` (2-of-4 verified-caller gate), `decision.py` (run/ask/escalate, explicit yes bound to a fingerprint), `unclear.py` (greeting pre-check, help menu), `routes.py`, `plan.py` (waves), `executor.py`, `mocks.py` (`ScriptedRoute`), `reply.py`, `decomposer.py` (`Interpretation`, `Decomposer` Protocol), `orchestrator.py` (`Orchestrator.handle_turn`), `trace.py`. Tests in `tests/orchestrator/`; whole-conversation scenarios in `test_scenarios.py` using `scenario_kit.py`; schema snapshot in `tests/orchestrator/snapshots/`.
   - `src/main.py`: FastAPI hello-world stub. `src/models/` is empty.
   - `tests/`: `test_types.py`, `test_catalog.py`, `test_args.py` (snapshot in `tests/snapshots/arg_schemas.json`), `test_session.py`.
 - `tau2-bench/`: git submodule (fork `asayenju/tau2-bench`), installed as an editable path dependency. Never edit it. Domain code: `tau2-bench/src/tau2/domains/banking_knowledge/`; data: `tau2-bench/data/tau2/domains/banking_knowledge/` (`tasks.json` has 97 tasks with free-text user instructions and expected tool actions).
@@ -14,8 +14,10 @@ Typed backend around tau2-bench's `banking_knowledge` domain. Goal: a determinis
 ## Commands (run in `backend/`)
 - `uv sync`
 - `uv run pytest` (offline, no API keys needed)
-- `uv run mypy --strict src/banking_tools`
+- `uv run mypy --strict src/banking_tools src/orchestrator`
 - Refresh the args snapshot: `UPDATE_SNAPSHOTS=1 uv run pytest tests/test_args.py`
+- Refresh the orchestrator schema snapshot: `UPDATE_SNAPSHOTS=1 uv run pytest tests/orchestrator/test_intent_types.py`
+- `tau2 tasks subset` needs `rank_bm25`, which is not installed; read `tasks.json` directly to sample tasks.
 - macOS hidden `.pth` fix if `tau2` imports fail outside pytest: `chflags -R nohidden backend/.venv`. iCloud (`~/Documents`) re-hides the venv's editable `.pth` file and Python 3.12 skips hidden ones. pytest no longer depends on it (`pythonpath` includes `../tau2-bench/src`).
 
 ## Conventions
@@ -24,13 +26,15 @@ Typed backend around tau2-bench's `banking_knowledge` domain. Goal: a determinis
 - One `BankingSession` per scenario, each with a deep copy of the pristine DB; sessions never share state. Audit log redacts `pin`, `new_pin`, `current_pin`, `cvv`.
 - Tool labels: read / write (reversible or irreversible) / handoff. The catalog is the source of truth, not tau2's decorators.
 - Tests are pytest, offline, hard-coded ids (e.g. `CARD = "dbc_lj82d4f1a9_bluest"`), no shared fixtures for DB isolation.
+- Orchestrator tests are scripted end to end (decomposer, scorer, directory, routes) and assert on the `Trace`. Every row of the PRD edge-case table needs a `@covers(...)` scenario in `test_scenarios.py`; a test reads the table and fails if one is missing.
+- Safety rules to keep: irreversible actions never run without the customer's yes to the exact details; the list of kinds that skip a yes (`decision.NO_YES_NEEDED`) and the read-only list (`plan.READ_ONLY_KINDS`) are explicit so new kinds fail closed; error messages from routes and scorers are recorded by exception type only, never text.
 - Commits: one sentence, no prefix, issue in the sentence ("Close Issue #4 as ..."). Single linear branch `main`.
 - Issues are created from the PRD with `gh issue create`; acceptance criteria are repeated in the PRD.
 
 ## LLM / Jev
 - `litellm` is only a transitive dependency via tau2 (pinned `>=1.80.15,<1.82.7`). Keep any direct pin inside that range.
-- No env or config handling exists yet in the backend. API keys come from env vars, never committed.
+- No env or config handling exists yet in the backend, and nothing in it calls a model today: the decomposer, scorer and routes are scripted. Keys are first needed when the real LiteLLM decomposer and the Jev adapter are built. API keys come from env vars, never committed; `.env` and `.env.*` are git-ignored (`.env.example` is not).
 - Jev (TypeSafe AI) is a hosted non-LLM decision model: `typesafe_sdk`, `client.system_one(state=..., questions=...)`, typed Choice/Score/yes-no answers with probabilities, no text generation. Pin the version (e.g. `jev-1.13.0`, not `jev-latest`). It is weak on numbers, dates and adversarial text, so deterministic checks run first, and its confidence never authorizes an irreversible action.
 
 ## Current work
-Decomposer + decision gate: `docs/prd-decomposer.md`, new package `backend/src/orchestrator/`.
+The routing layer is built and tested against scripted parts (`docs/prd-orchestrator-routing.md`, issues #7 to #18). Next, from `docs/prd-decomposer.md`: the `litellm` dependency and `LLMClient` seam (issue 1), the real LLM decomposer behind `orchestrator.decomposer.Decomposer` (issues 3 to 6), the Jev adapter behind `orchestrator.scoring.Scorer` (issue 10), and the opt-in evaluation harness (issue 11). Its issues 7 to 9 are superseded by the routing PRD. After that, real sub-agents behind `executor.RouteRunner`. Known follow-ups are listed under "Decisions" in the routing PRD.
