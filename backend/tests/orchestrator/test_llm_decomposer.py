@@ -15,6 +15,7 @@ STOLEN = (
 def raw(id, kind, summary="s", slots=None, depends_on=(), span=None):
     return {
         "id": id,
+        "evidence": "e",
         "kind": kind,
         "summary": summary,
         "slots": [{"name": k, "value": v} for k, v in (slots or {}).items()],

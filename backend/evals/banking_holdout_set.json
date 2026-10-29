@@ -1,0 +1,228 @@
+[
+  {
+    "task_id": "task_037",
+    "message": "Hi, I need some help. I was looking at my credit card statement and my balance seems higher than it should be. Can you show me my recent transactions? I want to see what's been charged to my Silver Rewards Card.",
+    "stated": [],
+    "expected": [
+      "DISPUTE_TRANSACTION",
+      "ORDER_REPLACEMENT_CARD"
+    ]
+  },
+  {
+    "task_id": "task_047",
+    "message": "Hi, I'd like to close my Silver Zoom Card. I've found a business card at another bank that seems to have better rewards for my needs. I've been looking at the Global Business Travel Plus card, which offers 3.5% back on travel and advertising purchases, plus no foreign transaction fees. I do a lot of international shipping for my delivery business and travel for vendor meetings, so the Silver Zoom Card isn't really cutting it for those expenses. \n\nAlso, I'm considering closing my personal Platinum Rewards Card because the annual fee is too high for what I get. Can you help me with this?",
+    "stated": [
+      "CLOSE_CARD"
+    ],
+    "expected": [
+      "CLOSE_CARD",
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ]
+  },
+  {
+    "task_id": "task_057",
+    "message": "Hi, I'm looking to open a new checking account since I've been a customer for a year now. I need an account with no overdraft fees, and I want to link a savings account for overdraft protection. It's also really important for me to get my paycheck early, at least a day before payday. I can keep around $500 to $700 in the account, so I hope that's enough to avoid any monthly fees. Also, do you have any eco-friendly account options? And what's your best premium checking account? I\u2019d appreciate your recommendation for just one account that meets all my needs. Thanks!",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_049",
+    "message": "Hi, I need to close several of my credit cards. I have four cards with Rho-Bank and I want to get rid of all of them. Let's start with my Green Rewards Card.",
+    "stated": [
+      "CLOSE_CARD"
+    ],
+    "expected": [
+      "CLOSE_CARD",
+      "FEE_OR_INTEREST_ADJUSTMENT",
+      "REQUEST_HUMAN"
+    ]
+  },
+  {
+    "task_id": "task_038",
+    "message": "Hi, I need help with some Amazon charges on my card. I'm seeing some charges I have problems with and I want to dispute them. Can you assist me with this?",
+    "stated": [
+      "DISPUTE_TRANSACTION"
+    ],
+    "expected": [
+      "DISPUTE_TRANSACTION",
+      "ORDER_REPLACEMENT_CARD"
+    ]
+  },
+  {
+    "task_id": "task_058",
+    "message": "Hi! I already have a Light Blue checking account with you guys. I've saved up $20,000 and I want to put it to work. I'm looking to open both a credit card and a savings account. My goal is to maximize the total money I'll earn over one year - that means the interest I earn minus any annual fees. Can you help me find the best combination?",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_088",
+    "message": "Hi, I need help. My debit card just got declined at an electronics store, and I'm really confused. I was trying to buy a new drawing tablet for my work, and the cashier just said 'declined' without showing me anything. I have my card with me, and I thought everything was fine. Can you check what's going on? I also recently deposited a $3,000 check, so I should have enough money. This is really frustrating because I need that tablet for a project deadline!",
+    "stated": [],
+    "expected": [
+      "CLOSE_CARD",
+      "DISPUTE_TRANSACTION",
+      "ORDER_REPLACEMENT_CARD",
+      "REQUEST_HUMAN"
+    ]
+  },
+  {
+    "task_id": "task_059",
+    "message": "Hi! I have a Light Blue checking account with you already. I've saved up $5,000 and I want to make it grow. I'm looking to open both a credit card and a savings account. I want to maximize what I earn over the next year - interest minus any fees. Can you help me find the best combination?",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_095",
+    "message": "Hi, I need help figuring out my savings interest. I have a Gold savings account with about $96,000, and I only got $450 in interest last month. That seems really low. I also have multiple checking accounts and credit cards with you, and I want to make sure I'm getting the best rates possible. Can you help me with this?",
+    "stated": [],
+    "expected": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ]
+  },
+  {
+    "task_id": "task_039",
+    "message": "Hi, I need help with my credit card. I've got a bunch of issues with my Costco and Amazon charges. There's been some fraud on my account and also some other problems with the charges. I need to dispute them. I noticed all of this today when going through my statement. Can you assist me with this?",
+    "stated": [
+      "DISPUTE_TRANSACTION"
+    ],
+    "expected": [
+      "DISPUTE_TRANSACTION",
+      "ORDER_REPLACEMENT_CARD"
+    ]
+  },
+  {
+    "task_id": "task_063",
+    "message": "Hi! I already have a Light Blue checking account with you. I've saved up $8,000 and I want to put it to work. I'm looking to open both a credit card and a savings account. My goal is to maximize the interest I'll earn over one year. Even a small difference of $10-15 matters to me. \n\nOh, one important thing - I absolutely need paper statements mailed to me. My accountant requires physical copies for tax filing, and I don't fully trust purely digital records. Is that an option with your savings accounts? \n\nAlso, my credit score is around 700. I've worked really hard to build that up over the years, so I only want a card that actually checks credit. I don't trust those 'no credit check' cards. Can you help me find the best combination?",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_096",
+    "message": "Hi, I need help understanding the interest on my savings accounts. I have a Bronze savings with about $30,000 and a Gold Plus savings with around $60,000. I got $64 on the Bronze and only $328 on the Gold Plus last month, and both seem really low for those balances. I also have multiple checking accounts and credit cards with you, and I feel like I might not be getting all the benefits I should. Can you help me figure this out?",
+    "stated": [],
+    "expected": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ]
+  },
+  {
+    "task_id": "task_084",
+    "message": "Hi, I need to file several disputes on my debit cards. I've found some issues that I need help with. I have two debit cards: one for my Evergreen Account and another for my Light Blue Account. There are four transactions I want to dispute. Can you assist me with this?",
+    "stated": [
+      "DISPUTE_TRANSACTION"
+    ],
+    "expected": [
+      "CLOSE_CARD",
+      "DISPUTE_TRANSACTION"
+    ]
+  },
+  {
+    "task_id": "task_064",
+    "message": "Hi! I already have a Light Blue checking account with you. I've saved up $30,000 and I want to put it to work. I'm looking to open both a credit card and a savings account. My goal is to maximize the total money I'll earn over one year - that means the interest I earn minus any annual fees. Even a difference of $50-100 matters to me. Can you help me find the best combination? Also, I have a Rho-Bank+ subscription, and I need to make about 10-12 withdrawals from the savings account each month. I\u2019m not comfortable with cryptocurrency options, and I\u2019d prefer to keep annual fees under $100. Thanks!",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_097",
+    "message": "Hi, I need urgent help with my savings accounts. I have four different savings accounts with your bank, and I'm really frustrated because the interest seems much lower than it should be. Based on my calculations, I should be getting around $583 on my Silver Account, $554 on my Platinum Account, $1,050 on my Diamond Elite Account, and $112 on my Silver Plus Account. However, I only received about $333, $379, $750, and $68. Something is definitely wrong here. Can you help me figure this out?",
+    "stated": [],
+    "expected": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ]
+  },
+  {
+    "task_id": "task_082",
+    "message": "Hi, I need to speak to a human agent. I reviewed my bank statements today and found four transactions I need to dispute - two on each of my debit cards. Some are unauthorized transactions I never made, one is an ATM error, and one is a subscription that won't stop charging me even after I cancelled. \n\nFor context, I lost my Blue Account debit card about three days ago but hadn't reported it yet. I still have my Green Fee-Free Account debit card. Can you help me with this?",
+    "stated": [
+      "DISPUTE_TRANSACTION",
+      "REPORT_FRAUD_OR_LOSS",
+      "REQUEST_HUMAN"
+    ],
+    "expected": [
+      "CLOSE_CARD",
+      "DISPUTE_TRANSACTION",
+      "ORDER_REPLACEMENT_CARD"
+    ]
+  },
+  {
+    "task_id": "task_070",
+    "message": "Hi there! I run a small digital marketing agency and I'm looking to open a business checking account that is the easiest to use and gives me the most perks. I also want things like no overdraft fees and some other requirements. I'm hoping you can tell me which account is the right fit for my needs. I don't want to compare a bunch of options\u2014just point me to the one that works best for my situation. \n\nI travel to meet clients regularly, so I need at least $15 a month in ATM fee rebates. I absolutely cannot have overdraft fees, and if there's a minimum balance requirement, it needs to be reasonable\u2014under ten grand. I'd also like to earn decent interest, at least 1% APY would be nice. Thanks!",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_086",
+    "message": "Hi, I need help with several disputed transactions. I've got problems on two of my debit cards - my Green Fee-Free card ending in 4738 and my Evergreen Account card ending in 9251. There are three issues on each card. Can you assist me with this?",
+    "stated": [
+      "DISPUTE_TRANSACTION"
+    ],
+    "expected": [
+      "CLOSE_CARD",
+      "DISPUTE_TRANSACTION",
+      "ORDER_REPLACEMENT_CARD"
+    ]
+  },
+  {
+    "task_id": "task_071",
+    "message": "Hi there! I run a small creative design studio and I'm looking to open a new business checking account with better features than my current Cobalt Blue, and I also want to open a business savings account to start building reserves. I have specific requirements for both and I'm hoping you can just tell me which accounts are the right fit - I don't want to compare a bunch of options.",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_075",
+    "message": "Hi! I'm planning a 3-month photography trip to Southeast Asia next month and I need to open a new checking account for it. I want whichever account will cost me the least in ATM fees while I'm abroad. I'll probably hit the ATM about 6 times per month, withdrawing around $350 each time. So that's about 18 withdrawals total. Can you help me find the best personal checking account for my situation?",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_085",
+    "message": "Hi, I need help with some disputes on my debit cards. I have a few issues I noticed when reviewing my statements. Can we go through them one at a time?",
+    "stated": [
+      "DISPUTE_TRANSACTION"
+    ],
+    "expected": [
+      "DISPUTE_TRANSACTION"
+    ]
+  },
+  {
+    "task_id": "task_076",
+    "message": "Hi! I'm planning a 2-month work trip to Europe next month and I need to open a new checking account for it. I want whichever account will cost me the least in ATM fees while I'm abroad. I also need early direct deposit because I get paid while traveling and need access to my paycheck quickly. I'll probably hit the ATM about 4 times per month, withdrawing around $300 each time. Can you help me with this?",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "OPEN_ACCOUNT"
+    ]
+  }
+]

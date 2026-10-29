@@ -1,0 +1,534 @@
+[
+  {
+    "task_id": "task_004",
+    "message": "Hi there! I need to change the email on my account because I recently updated it. My name is Kenji Tanaka, and my current email is kenji.tanaka@gmail.com. You can also reach me at my phone number, 206-555-0293. I don\u2019t have my address or date of birth on hand right now, but I hope that\u2019s okay. Can you help me with this?",
+    "stated": [
+      "UPDATE_PROFILE"
+    ],
+    "expected": [
+      "REQUEST_HUMAN"
+    ]
+  },
+  {
+    "task_id": "task_026",
+    "message": "Hi there, I've been going through my rewards statements and something doesn't seem right with my cash back. I have both a Business Silver Rewards Card and a Silver Rewards Card, and I suspect some of my rewards calculations might be off. I can't pull up any statements right now since I don't have my phone, but I\u2019d really appreciate your help in figuring out what's going on. Can you look into this for me?",
+    "stated": [],
+    "expected": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ]
+  },
+  {
+    "task_id": "task_031",
+    "message": "Hi, I need to file a dispute for a charge on my credit card. I stayed at a Marriott hotel, but when I got there, they gave me a standard double room instead of the king suite I booked and paid for. I've called the hotel twice, and they refuse to help me with a refund. I want my money back for the difference. Can you assist me with this?",
+    "stated": [
+      "DISPUTE_TRANSACTION"
+    ],
+    "expected": [
+      "DISPUTE_TRANSACTION"
+    ]
+  },
+  {
+    "task_id": "task_036",
+    "message": "Hi, I need some help. I was looking at my credit card statement and my balance seems higher than it should be. Can you show me my recent transactions? I want to see what's been charged to my Silver Rewards Card.",
+    "stated": [],
+    "expected": [
+      "ORDER_REPLACEMENT_CARD"
+    ]
+  },
+  {
+    "task_id": "task_044",
+    "message": "Hi, I'd like to close my Gold Rewards Card. I've found a card at another bank that has much better rewards. It's the Capital Two Venture X card, which offers 8% cash back on everything, no foreign transaction fees, and a reasonable annual fee of $195. Since I travel to Greece at least twice a year to see my family, the no foreign transaction fees are really important to me. If there's a card with better rewards at Rho-Bank, I\u2019d love to hear about it before I make my final decision.",
+    "stated": [
+      "CLOSE_CARD"
+    ],
+    "expected": [
+      "CLOSE_CARD"
+    ]
+  },
+  {
+    "task_id": "task_050",
+    "message": "Hi, I'd like to request a credit limit increase on my Gold Rewards Card. I have some large purchases coming up for a home renovation project. Can you help me with that?",
+    "stated": [
+      "CREDIT_LIMIT_REQUEST"
+    ],
+    "expected": [
+      "CREDIT_LIMIT_REQUEST"
+    ]
+  },
+  {
+    "task_id": "task_055",
+    "message": "Hi! I already have a Green Account with you that I love for everyday stuff, but I'm looking to open a second checking account and a savings account. Honestly, I tried looking at your website, but there are so many options and reading through all the fine print gives me a headache. I travel internationally to Japan and Europe about 3-4 times a year, and I need a checking account that can help with ATM fees and foreign transaction fees. I can keep around three to four thousand in this account, and it would be great if I could hold different currencies too. \n\nAlso, I want a savings account where I can withdraw a few times a week without fees, earn at least 3% APY, and have daily compounding. Can you just tell me which ONE account is best for each? I trust your recommendation!",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_062",
+    "message": "Hi there! I need help with a pretty big banking overhaul. So here's what I want to do:\n- First, I want to close my Bronze savings account. \n- Second, I need to open a business checking account for my new LLC - I just got my business registered. \n- Third, I want to close my Evergreen checking account. \n- And fourth, I'd like to open a new personal savings account. \nCan you help me with all of this?",
+    "stated": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT",
+      "TRANSFER_FUNDS"
+    ]
+  },
+  {
+    "task_id": "task_077",
+    "message": "Hi, I think I might have lost my wallet with both of my debit cards in it. I have two checking accounts with you - my Bluest Account and my Light Green Account. I've been looking everywhere and I can't find my wallet. I'm not 100% sure it's gone but I'm getting worried about both cards.",
+    "stated": [
+      "REPORT_FRAUD_OR_LOSS"
+    ],
+    "expected": [
+      "ACTIVATE_CARD",
+      "CLOSE_CARD",
+      "FREEZE_CARD",
+      "ORDER_REPLACEMENT_CARD",
+      "UNFREEZE_CARD"
+    ]
+  },
+  {
+    "task_id": "task_005",
+    "message": "Hi there! I\u2019d like to check the balance on my gold rewards card, please. My name is Kenji Tanaka, and my email is kenji.tanaka@gmail.com. You can also reach me at 206-555-0293. I don\u2019t have my address or date of birth on hand right now, but I hope that\u2019s okay. Thanks!",
+    "stated": [],
+    "expected": [
+      "REQUEST_HUMAN",
+      "UPDATE_PROFILE"
+    ]
+  },
+  {
+    "task_id": "task_051",
+    "message": "Hi, I'd like to request a credit limit increase on my Bronze Rewards Card. I'm planning to buy some new design equipment and software for my freelance work. I've been using the card regularly and always pay on time, so I hope that helps my case. Can you assist me with this?",
+    "stated": [
+      "CREDIT_LIMIT_REQUEST"
+    ],
+    "expected": [
+      "CREDIT_LIMIT_REQUEST",
+      "PAY_CREDIT_CARD"
+    ]
+  },
+  {
+    "task_id": "task_090",
+    "message": "Hi, I need help urgently. I've had three different debit cards get locked today - they all say my PIN is wrong or locked or something. I really need access to my money!",
+    "stated": [],
+    "expected": [
+      "CHANGE_OR_RESET_PIN",
+      "CLOSE_CARD",
+      "ORDER_REPLACEMENT_CARD"
+    ]
+  },
+  {
+    "task_id": "task_028",
+    "message": "Hi, I've been looking at my credit card statements and I think some of my cash back rewards might be wrong. Can you help me check? I'm not sure which ones are off, but I really need someone to investigate this for me since I'm not great with technology. I want to make sure everything is accurate, so if there are any errors, I\u2019d like to get them fixed. Thanks!",
+    "stated": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ],
+    "expected": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ]
+  },
+  {
+    "task_id": "task_040",
+    "message": "Hi, I need help disputing some charges. I have issues on two different cards - my personal Gold card and my Business Gold card. There's been some fraud and other problems on both of them. I noticed all of this today when going through my statements. \n\nOn my personal Gold card, there's a fraudulent American Airlines charge, a duplicate from Best Buy, a PECO overcharge, and Spotify keeps charging me after I cancelled. On my business card, there's fraud from Uline, a duplicate from Grainger, a wrong item from Best Buy, and a missing refund from Comcast. \n\nI want to keep both cards active, and I\u2019d like provisional credit on whatever qualifies, especially for the Grainger and Uline charges since they\u2019re affecting my business cash flow. Thanks!",
+    "stated": [
+      "DISPUTE_TRANSACTION"
+    ],
+    "expected": [
+      "DISPUTE_TRANSACTION"
+    ]
+  },
+  {
+    "task_id": "task_087",
+    "message": "Hi, I'm having the worst day. I've had THREE different debit cards decline on me today! The first was at a restaurant, the second at a gas station, and the third at a grocery store. They all showed 'CODE 05' or 'Do Not Honor'. Can you help me figure out what's going on with all of them?",
+    "stated": [],
+    "expected": [
+      "CARD_CONTROLS",
+      "CLOSE_CARD",
+      "DISPUTE_TRANSACTION",
+      "ORDER_REPLACEMENT_CARD",
+      "UNFREEZE_CARD"
+    ]
+  },
+  {
+    "task_id": "task_056",
+    "message": "Hi, I run a landscaping business and I need to open a better business checking account. I already have a Navy Blue business checking with you, but it's pretty basic - I want something with more features. I've looked at your website, but there are way too many options. Can you just tell me which account is right for me?",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "OPEN_ACCOUNT",
+      "TRANSFER_FUNDS"
+    ]
+  },
+  {
+    "task_id": "task_060",
+    "message": "Hi, I need some help managing my accounts. I have two checking accounts with you - a Green Account and a Blue Account - and honestly, having two checking accounts is getting confusing. First, I want to close my Green Account and just keep the Blue one going forward. The Green Account is empty - I already moved the money out. And second, I've also been meaning to open a savings account. I have specific needs for that, so I\u2019d love your recommendations!",
+    "stated": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_043",
+    "message": "Hi, I'd like to close my Platinum Rewards Card. The annual fee is just too expensive for me right now.",
+    "stated": [
+      "CLOSE_CARD"
+    ],
+    "expected": [
+      "CLOSE_CARD",
+      "FEE_OR_INTEREST_ADJUSTMENT",
+      "PAY_CREDIT_CARD"
+    ]
+  },
+  {
+    "task_id": "task_008",
+    "message": "Hi there! I recently received some flyers in the mail about your credit card promotional offers, and I want to redeem one of them. One of the offers says if I spend $10,000 in the first 2 months, I can get a $1,000 statement credit. I think that would be really beneficial for me. Can you help me with that?",
+    "stated": [],
+    "expected": [
+      "REQUEST_HUMAN"
+    ]
+  },
+  {
+    "task_id": "task_052",
+    "message": "Hi, I'd like to request a credit limit increase on my Bronze Rewards Card. I've been a loyal customer and I always pay on time. It's been about two months since my last increase, and I thought the cooldown period was only 60 days according to your website. So, I believe I should be eligible for another increase now. Can you help me with this?",
+    "stated": [
+      "CREDIT_LIMIT_REQUEST"
+    ],
+    "expected": [
+      "CREDIT_LIMIT_REQUEST"
+    ]
+  },
+  {
+    "task_id": "task_080",
+    "message": "Hi, I think my wallet was just stolen and I need help immediately. I have five cards with you - three debit cards for my Blue Account, Green Fee-Free Account, and Green Account, plus two credit cards - a Gold Rewards Card and an EcoCard. I want to freeze all of them right away.",
+    "stated": [
+      "FREEZE_CARD"
+    ],
+    "expected": [
+      "ACTIVATE_CARD",
+      "CLOSE_CARD",
+      "DISPUTE_TRANSACTION",
+      "FREEZE_CARD",
+      "ORDER_REPLACEMENT_CARD",
+      "UNFREEZE_CARD"
+    ]
+  },
+  {
+    "task_id": "task_061",
+    "message": "Hi, I need some help managing my accounts. I have two checking accounts with you - a Green Account and a Silver Account - and honestly, having two checking accounts is getting confusing. First, I want to close my Green Account and just keep the Silver one going forward. The Green Account is empty - I already moved the money out. And second, I've also been meaning to open a savings account. I have some specific needs for that, so I\u2019d love to discuss it. Thanks!",
+    "stated": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_092",
+    "message": "Hi, I'm having a nightmare week. I've got four debit cards that are all PIN locked and I can't access any of my money. I really need help getting these sorted out.",
+    "stated": [
+      "CHANGE_OR_RESET_PIN"
+    ],
+    "expected": [
+      "CHANGE_OR_RESET_PIN",
+      "CLOSE_CARD",
+      "ORDER_REPLACEMENT_CARD",
+      "REQUEST_HUMAN"
+    ]
+  },
+  {
+    "task_id": "task_072",
+    "message": "Hi, I've been looking at my recent bank statements and something seems off with my ATM fees. I have two checking accounts with you - a Bluest Account and a Light Green Account - and some of the fees charged in November don't look right. Can you help me figure out what's going on?",
+    "stated": [],
+    "expected": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ]
+  },
+  {
+    "task_id": "task_089",
+    "message": "Hi, I need help. I'm at an ATM right now and I've had THREE different debit cards decline on me: my Green Account card, my Blue Account card, and my daughter's teen account card. I really need cash because my car broke down and I need to pay the tow truck driver who only takes cash! The screen just said 'transaction declined' or something like that. I know I have plenty of money in my accounts, so I don't understand why this is happening. Can you help me get this sorted out?",
+    "stated": [],
+    "expected": [
+      "CREDIT_LIMIT_REQUEST"
+    ]
+  },
+  {
+    "task_id": "task_045",
+    "message": "Hi, I'd like to close my Business Silver Rewards Card. I found a better card at another bank and I don't really use this one much anymore. I've been looking at the Pursuit Ink Business Preferred card because it offers 3x points on travel and advertising purchases, plus no foreign transaction fees, which is perfect for my consulting work. Can you help me with this?",
+    "stated": [
+      "CLOSE_CARD"
+    ],
+    "expected": [
+      "CLOSE_CARD",
+      "FEE_OR_INTEREST_ADJUSTMENT",
+      "PAY_CREDIT_CARD"
+    ]
+  },
+  {
+    "task_id": "task_078",
+    "message": "Hi, I lost my wallet and all three of my debit cards were in it. I need to freeze all of them right away and get replacements. My name is Mei-Lin Chen, and my phone number is 619-555-0284. You can also reach me at meiling.chen@outlook.com. My date of birth is 07/18/1991, and I live at 3245 Sunset Boulevard, San Diego, CA 92103. Please let me know what I need to do to get this sorted out.",
+    "stated": [
+      "FREEZE_CARD",
+      "ORDER_REPLACEMENT_CARD"
+    ],
+    "expected": [
+      "CLOSE_CARD",
+      "FREEZE_CARD",
+      "ORDER_REPLACEMENT_CARD",
+      "UNFREEZE_CARD"
+    ]
+  },
+  {
+    "task_id": "task_065",
+    "message": "Hi! I have a Light Blue checking account with you, but I want to swap it for something better - it's pretty basic and I feel like I'm missing out on better perks. I already moved my money out of it. So I'd like to close it and open a new checking account with better benefits. Oh, and I've also been meaning to open a savings account. I've saved up $6,000 and want to earn the highest possible interest rate on it. Can you help me with that?",
+    "stated": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_012",
+    "message": "Hi, I'm traveling to Japan next month and I want to make sure my Platinum Rewards Card doesn't get blocked. How do I set up a travel notification? I\u2019ve been a customer for a few years and really like your services, so I want to avoid any issues while I'm abroad. Is there a form I need to fill out, or can I do this through the app? Also, how far in advance do I need to set this up? Thanks!",
+    "stated": [],
+    "expected": [
+      "REQUEST_HUMAN"
+    ]
+  },
+  {
+    "task_id": "task_041",
+    "message": "Hi, I need help disputing some charges. I have issues on four different cards - my personal Gold card, my Crypto-Cash Back card, my EcoCard, and my Business Gold card. There's been fraud and other problems on all of them. \n\nI noticed all of this today when going through my statements. \n\nCan you help me with this?",
+    "stated": [
+      "DISPUTE_TRANSACTION"
+    ],
+    "expected": [
+      "DISPUTE_TRANSACTION"
+    ]
+  },
+  {
+    "task_id": "task_053",
+    "message": "Hi, I need help with two things on my Silver Rewards Card. First, I want to dispute a charge from TechDirect Online for $1,247.99 - I ordered a laptop exactly 5 weeks ago on 10/10/2025 and never received it. They won't respond to my emails. Second, I'd also like to request a credit limit increase from $15,000 to about $22,500. Can you help me with both of these?",
+    "stated": [
+      "CREDIT_LIMIT_REQUEST",
+      "DISPUTE_TRANSACTION"
+    ],
+    "expected": [
+      "CREDIT_LIMIT_REQUEST",
+      "DISPUTE_TRANSACTION"
+    ]
+  },
+  {
+    "task_id": "task_091",
+    "message": "Hi, I'm having a terrible day. I've got four debit cards that are all PIN locked and I can't access any of my money. Can you help me get them unlocked?",
+    "stated": [
+      "CHANGE_OR_RESET_PIN"
+    ],
+    "expected": [
+      "CHANGE_OR_RESET_PIN",
+      "CLOSE_CARD",
+      "DISPUTE_TRANSACTION",
+      "ORDER_REPLACEMENT_CARD"
+    ]
+  },
+  {
+    "task_id": "task_066",
+    "message": "Hi! I have a Light Blue checking account with you, but I want to swap it for something better - it's pretty basic and I feel like I'm missing out on better perks. I already moved my money out of it. So I'd like to close it and open a new checking account with better benefits. Oh, and I've also been meaning to open a savings account. I've saved up $6,000 and want to earn the absolute highest possible interest rate on it. Can you help me with that?",
+    "stated": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_048",
+    "message": "Hi, I need to close several of my credit cards. I have four cards with Rho-Bank: the Green Rewards Card, EcoCard, Gold Rewards Card, and Crypto-Cash Back card. Let's start with my Green Rewards Card. I'm looking to simplify my finances, so I want to close all of them. Can you help me with that?",
+    "stated": [
+      "CLOSE_CARD"
+    ],
+    "expected": [
+      "CLOSE_CARD",
+      "FEE_OR_INTEREST_ADJUSTMENT",
+      "PAY_CREDIT_CARD"
+    ]
+  },
+  {
+    "task_id": "task_014",
+    "message": "Hi! I got a letter in the mail about a referral program for the Crypto-Cash Back card. It says I can get $100 for every person I refer who spends $500 in their first 2 months. I'm really excited about this and want to share it with some friends who are interested in crypto. How can I get a referral link for this offer?",
+    "stated": [],
+    "expected": [
+      "REQUEST_HUMAN"
+    ]
+  },
+  {
+    "task_id": "task_079",
+    "message": "Hi, my wallet was stolen about an hour ago and I need to freeze all my debit cards immediately. I have three checking accounts with you - my Evergreen Account, my Light Blue Account, and my Green Account. Can you help me with this?",
+    "stated": [
+      "FREEZE_CARD"
+    ],
+    "expected": [
+      "CLOSE_CARD",
+      "FREEZE_CARD",
+      "ORDER_REPLACEMENT_CARD",
+      "UNFREEZE_CARD"
+    ]
+  },
+  {
+    "task_id": "task_067",
+    "message": "Hi! I have a Light Blue checking account with you, but I want to swap it for something better - it's pretty basic and I feel like I'm missing out on better perks. I already moved my money out of it. So I'd like to close it and open a new checking account with better benefits. Oh, and I've also been meaning to open a savings account. I've saved up $100,000 and want to earn the absolute highest possible interest rate on it. Can you help me with that?",
+    "stated": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_032",
+    "message": "Hi, I'm having a serious problem. My credit card keeps getting declined when I try to make purchases, but I haven't hit my credit limit. I checked my account and I still have plenty of available credit. What's going on?",
+    "stated": [],
+    "expected": [
+      "REQUEST_HUMAN"
+    ]
+  },
+  {
+    "task_id": "task_073",
+    "message": "Hi, I've been going through my bank statements and something seems off with my ATM fees. I have three checking accounts with you - a Blue Account, a Green Account, and a Light Green Account - and some of the fees charged in November don't look right. Can you help me figure out what's going on?",
+    "stated": [],
+    "expected": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ]
+  },
+  {
+    "task_id": "task_081",
+    "message": "Hi, I think my wallet was just stolen and I need help immediately. I have five cards with you - three debit cards for my Blue Account, Green Fee-Free Account, and Green Account, plus two credit cards - a Gold Rewards Card and an EcoCard. I want to freeze all of them right away. Actually, this is really stressful - can you please transfer me to a human agent? I'd feel more comfortable talking to a real person about this.",
+    "stated": [
+      "FREEZE_CARD",
+      "REQUEST_HUMAN"
+    ],
+    "expected": [
+      "CLOSE_CARD",
+      "DISPUTE_TRANSACTION",
+      "FREEZE_CARD",
+      "ORDER_REPLACEMENT_CARD",
+      "REQUEST_HUMAN",
+      "UNFREEZE_CARD"
+    ]
+  },
+  {
+    "task_id": "task_068",
+    "message": "Hi! I have a Light Blue checking account with you, but I want to swap it for something better - it's pretty basic and I feel like I'm missing out on better perks. I already moved my money out of it. So I'd like to close it and open a new checking account with better benefits. Oh, and I've also been meaning to open a savings account. I've saved up $25,000 and want to earn the absolute highest possible interest rate on it. Can you help me with that?",
+    "stated": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_074",
+    "message": "Hi, I've been going through my bank statements and something seems off with my ATM fees. I have four checking accounts with you - a Purple Account, a Light Blue Account, a Dark Green Account, and an Evergreen Account - and some of the fees charged in November don't look right. Can you help me figure out what's going on?",
+    "stated": [],
+    "expected": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ]
+  },
+  {
+    "task_id": "task_054",
+    "message": "Hi, I need help with a few things on my Gold Rewards Card. Most urgently, there's a fraudulent charge from CloudSync Storage for $487.50 that I need to dispute right away - I've never used that service and I'm worried about my card security. I'd also like a replacement card sent to me since my card info was clearly compromised. Oh, and I've also been meaning to request a credit limit increase for a renovation project, but let's handle the fraud situation first since that's the priority. Can you help me with all of this?",
+    "stated": [
+      "CREDIT_LIMIT_REQUEST",
+      "DISPUTE_TRANSACTION",
+      "ORDER_REPLACEMENT_CARD"
+    ],
+    "expected": [
+      "CREDIT_LIMIT_REQUEST",
+      "DISPUTE_TRANSACTION",
+      "ORDER_REPLACEMENT_CARD"
+    ]
+  },
+  {
+    "task_id": "task_069",
+    "message": "Hi! I have a Light Blue checking account with you, but I want to swap it for something better - it's pretty basic and I feel like I'm missing out on better perks. I already moved my money out of it. So I'd like to close it and open a new checking account with better benefits. Oh, and I've also been meaning to open a savings account. I've saved up $10,000 and want to earn the absolute highest possible interest rate on it. Can you help me with that?",
+    "stated": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "CLOSE_ACCOUNT",
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "task_033",
+    "message": "Hi, I need help with a serious issue. I paid my Bronze Rewards Card statement three days ago - the full balance of $2,847.53. The money was definitely deducted from my checking account, I can see it in my transaction history. But when I look at my credit card account, it still shows the full statement balance as unpaid. My statement cycle closes in two days and I really can't afford to pay interest on money I've already paid.",
+    "stated": [],
+    "expected": [
+      "REQUEST_HUMAN"
+    ]
+  },
+  {
+    "task_id": "task_093",
+    "message": "Hi, I think there might be something wrong with my interest payments. I have a savings account with you, and my monthly interest just seems... low? I'm not sure exactly what I should be getting, but it doesn't feel right.",
+    "stated": [],
+    "expected": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ]
+  },
+  {
+    "task_id": "task_034",
+    "message": "Where is my direct deposit?! It's Friday and my paycheck should be here but it's not showing up in my account. I've been a customer for years and this has never happened before. My rent is due tomorrow!",
+    "stated": [],
+    "expected": [
+      "REQUEST_HUMAN"
+    ]
+  },
+  {
+    "task_id": "task_083",
+    "message": "Hi, I need help with some disputed transactions. I found four charges across two of my debit cards that I need to address - they're all different situations. One is an ATM that shorted me cash, one is something I ordered but never received, one is a duplicate charge, and one is... well, a family situation where someone I trusted took more than I authorized. \n\nCan you help me with this? I want to make sure everything is documented properly.",
+    "stated": [
+      "DISPUTE_TRANSACTION"
+    ],
+    "expected": [
+      "DISPUTE_TRANSACTION"
+    ]
+  },
+  {
+    "task_id": "task_094",
+    "message": "Hi, I need to dispute my interest payment. I have a Gold savings account with about $96,000, and I only received $408 in interest this month. Based on my research, the base rate is 5.0%, and my Green checking account gives me a 1% boost, so I should be at 6.0% APY. That means I should have received $480, which is $72 short! If there are any other boosts I might be missing, I want to address that too. Can you help me with this?",
+    "stated": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ],
+    "expected": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ]
+  },
+  {
+    "task_id": "task_035",
+    "message": "Hi, I need help urgently. I just got an alert that my credit score dropped 127 points overnight! Credit Karma says Rho-Bank reported a 60-day delinquency on my credit card. But I've NEVER missed a payment - I have autopay set up! I checked my account and all my payments are current. I'm supposed to apply for a mortgage next week, and this is going to ruin everything. What is going on?! I need this fixed immediately!",
+    "stated": [],
+    "expected": [
+      "REQUEST_HUMAN"
+    ]
+  }
+]
