@@ -68,7 +68,7 @@ uv run mypy --strict src/banking_tools src/orchestrator
 
 ## Orchestrator (`backend/src/orchestrator/`)
 
-The central agent's decision layer. It takes what a customer says, decides per intent whether to act, ask, or hand off to a human, runs the work, and answers once. Everything is plain code except two swappable parts: the LLM that splits a message into intents (the decomposer) and the Jev model that says how sure we are (the scorer). Both are scripted for now, and the tools and sub-agents are mocks, so all of it runs offline with no keys. Specs: [`docs/prd-orchestrator-routing.md`](docs/prd-orchestrator-routing.md) and [`docs/prd-decomposer.md`](docs/prd-decomposer.md).
+The central agent's decision layer. It takes what a customer says, decides per intent whether to act, ask, or hand off to a human, runs the work, and answers once. Everything is plain code except two swappable parts: the LLM that splits a message into intents (the decomposer) and the Jev model that says how sure we are (the scorer). Both have scripted versions for tests and real ones (below); the tools and sub-agents are still mocks, so the test suite runs offline with no keys. Specs: [`docs/prd-orchestrator-routing.md`](docs/prd-orchestrator-routing.md) and [`docs/prd-decomposer.md`](docs/prd-decomposer.md).
 
 ```python
 from orchestrator.orchestrator import Orchestrator
@@ -111,6 +111,22 @@ UPDATE_SNAPSHOTS=1 uv run pytest tests/orchestrator/test_intent_types.py  # afte
 
 `test_scenarios.py` has one scenario per row of the edge-case table in the PRD, plus seven inspired by tau2 banking tasks. A test reads that table, so adding a row without a scenario fails the build. New scenarios use the scripted parts in `tests/orchestrator/scenario_kit.py`.
 
+### Real decomposer and Jev scorer
+
+```python
+from orchestrator.jev import make_jev_scorer          # needs: uv sync --extra jev
+from orchestrator.llm import LiteLLMClient
+from orchestrator.llm_decomposer import LLMDecomposer
+
+orch = Orchestrator(
+    decomposer=LLMDecomposer(LiteLLMClient()),        # OpenAI via LiteLLM, temperature 0, strict JSON schema
+    scorer=make_jev_scorer(),                         # pinned jev-1.13.0
+    directory=..., runners=...,
+)
+```
+
+Keys are read from the repo-root `.env` (git-ignored; see `.env.example`): `OPENAI_KEY`, `JEV_KEY`, and optionally `DECOMPOSER_MODEL` (default `openai/gpt-4o-mini`). The decomposer redacts PINs, CVVs and card numbers before anything leaves the process, bounds retries, and on unusable output returns one `OTHER` intent so a person takes over; it never raises. `validate.py` adds missing required details, orders intents by position in the message, and flags dropped requests and injection attempts. Jev only sees the redacted message, kind and summary; a message flagged as injection is not sent and escalates. Live checks are opt-in: `RUN_LIVE=1 uv run pytest tests/orchestrator/test_jev.py`.
+
 ### Not built yet
 
-The real LLM decomposer, the Jev adapter, real sub-agents, and LLM phrasing of the reply (it is a template today). Until the first two exist nothing here calls a model. When they do, API keys come from environment variables, never from the repo; `.env` files are git-ignored.
+Real sub-agents, LLM phrasing of the reply (a template today), and the opt-in evaluation harness (`docs/prd-decomposer.md` issue 11).

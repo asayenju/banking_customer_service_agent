@@ -130,3 +130,10 @@ My calls, open to change:
 - Rule-based decider is the default until the Jev key is fetched; Jev is an optional dependency.
 - Jev thresholds (0.85 / 0.65) stay uncalibrated placeholders until shadow-mode data exists.
 - The intent list above is a draft derived from the 53 catalogued tools.
+
+## Built (decomposer, issues 1 to 6 and 10)
+- LLM: OpenAI through LiteLLM, default `openai/gpt-4o-mini` (the user asked for a lower-cost OpenAI model), temperature 0, strict JSON schema. `Decomposer.interpret` returns the routing PRD's `Interpretation`, not a bare `Decomposition`.
+- New ids from the model are prefixed with the turn number so a later turn cannot overwrite an earlier intent; `confirmed` and `declined` are limited to open ids and `claims` to the five identity fields.
+- `validate.py` also drops `*_id` slots that hold an amount (found in a live run: `$200` filed as `transaction_id`).
+- Jev: two yes/no questions per intent (kind, scope); slots confidence is 1.0 or 0.0 from code; a message flagged as injection is not sent and escalates (conservative: a benign phrase such as "skip the verification" also escalates).
+- Known limits: the dropped-intent and injection checks are keyword heuristics; spans refer to the redacted, truncated text (used for ordering only); non-OpenAI models are untested; live decomposer quality was checked on one message only until the evaluation harness (issue 11) exists.

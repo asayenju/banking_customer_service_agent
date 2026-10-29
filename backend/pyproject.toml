@@ -5,6 +5,13 @@ requires-python = ">=3.12,<3.14"
 dependencies = [
     "fastapi[standard]>=0.162.0",
     "tau2",
+    "litellm>=1.80.15,<1.82.7",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+jev = [
+    "typesafe-sdk>=0.7.5",
 ]
 
 [tool.uv.sources]
