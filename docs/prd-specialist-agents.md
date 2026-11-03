@@ -321,6 +321,12 @@ Adopted from the design review (open to veto):
 
 Corrections to earlier statements made while writing this PRD: the debit pilot is 13 tasks (12 usable: task 083's gold is invalid; plus 3 spanning debit and credit), not "about 30"; 35 tasks carry a real DB overlay (53 have an `initialization_data` block, 18 of them empty); and the "34 tasks with no agent-side write" were really 25 customer-side or reads-only tasks plus 8 transfer-only tasks (plus task 005, profile-only), found when the manifest (Issue 0.5) was generated from `tasks.json`.
 
+### Pilot result so far (gpt-4o-mini, not the gate model)
+First live run, 12 usable debit tasks, one trial, `openai/gpt-4o-mini`, about $0.10 in all (cap $0.50): **0 of 12**. This is a cheap read, not the gate: the PRD's bar is measured on the configured agent model (`gpt-4o`), which has not been run. What it showed:
+- Safety held every time. Every bad plan was refused at plan time (a made-up close reason, a credit-card tool on a debit card, a closed-before-unfrozen order, a PIN written in the open), so no change was ever made outside an approved plan.
+- The model's failures were of three kinds: it asked the customer for ids it could have looked up (3), it wrote tool arguments that did not fit the tool or put a PIN in the open (4), it proposed steps the validators refused (3). One plan ran to the end with a final state that differed from the reference in 10 places, and one ran out of steps.
+- The run found real defects in our own code, now fixed: the live harness used a new event loop per phase (the client then failed with "Event loop is closed", so half the tasks never reached the model); a PIN typed as bare digits in answer to "what PIN?" was not captured as a secret; and the model was not told each tool's allowed values.
+
 ## GitHub issues
 | Issue | GitHub | Title |
 |---|---|---|

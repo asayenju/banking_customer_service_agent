@@ -47,6 +47,8 @@ _SECRET_FIELD_HELP = (
     "message, like {{secret:pin}}. Never a real value."
 )
 # JSON Schema keywords a strict-mode tool schema may use.
+# A bare 3 to 8 digit number: not part of a word, an amount ($12), a date (11/14), a decimal or a range.
+_BARE_NUMBER = re.compile(r"(?<![\w$.,/:-])\d{3,8}(?![\w%/:-]|[.,]\d)")
 _ALLOWED = frozenset(
     {"type", "properties", "required", "additionalProperties", "description", "enum", "anyOf", "items"}
 )
@@ -58,19 +60,34 @@ class SecretVault:
     def __init__(self) -> None:
         self._values: dict[str, str] = {}
 
-    def capture(self, text: str) -> str:
-        """The text with each PIN, CVV and card number replaced by a reference."""
+    def _name_for(self, kind: str, value: str) -> str:
+        name = kind
+        letter = ord("b")
+        while name in self._values and self._values[name] != value:
+            name = f"{kind}_{chr(letter)}"
+            letter += 1
+        self._values[name] = value
+        return name
 
-        def store(kind: str, value: str) -> str:
-            name = kind
-            letter = ord("b")
-            while name in self._values and self._values[name] != value:
-                name = f"{kind}_{chr(letter)}"
-                letter += 1
-            self._values[name] = value
-            return "{{secret:" + name + "}}"
+    def capture(self, text: str, *, expecting_secret: bool = False) -> str:
+        """The text with each PIN, CVV and card number replaced by a reference.
 
-        return replace_secrets(text, store)
+        ``expecting_secret`` is for the message that answers "what PIN would you like?": the
+        customer may well type just the digits, with no word "pin" beside them. Then any bare
+        number that the cue-based search did not already catch is taken to be the secret.
+        Numbers that are clearly something else (an amount, a date, a decimal) are left alone.
+        """
+        cleaned = replace_secrets(text, lambda kind, value: "{{secret:" + self._name_for(kind, value) + "}}")
+        if expecting_secret:
+            cleaned = _BARE_NUMBER.sub(lambda m: "{{secret:" + self._name_for("pin", m.group(0)) + "}}", cleaned)
+        return cleaned
+
+    def hide(self, text: str, values: Mapping[str, str]) -> str:
+        """Replace known secret values (name -> value) wherever they appear, whatever surrounds them."""
+        for name, value in values.items():
+            if value:
+                text = text.replace(value, self.store(name, value))
+        return text
 
     def store(self, name: str, value: str) -> str:
         """Hold a secret that did not come from text (a form field). Returns its reference."""

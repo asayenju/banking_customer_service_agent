@@ -102,13 +102,21 @@ has been verified. Follow these rules.
 
 
 def _reference(names: Sequence[str]) -> str:
+    """Each tool a plan may use: what it does, whether it can be undone, and what every argument
+    means, in the bank's own words (which list the allowed values, like a close reason)."""
+    from agent.toolbox import _documented
+
     registry = get_registry()
     lines: list[str] = []
     for name in sorted(names):
         schema = tool_schema(registry[name])
-        fields = ", ".join(schema.parameters["properties"]) or "no arguments"
         undo = "can be undone" if registry[name].reversibility is Reversibility.REVERSIBLE else "cannot be undone"
-        lines.append(f"- {name}: {schema.description} ({undo}). Arguments: {fields}.")
+        parameters = (_documented().get(name) or {}).get("parameters") or {}
+        details = "; ".join(
+            f"{arg}: {str((parameters.get(arg) or {}).get('description') or '').strip()}".rstrip(": ")
+            for arg in schema.parameters["properties"]
+        ) or "no arguments"
+        lines.append(f"- {name}: {schema.description} ({undo}). Arguments: {details}.")
     return "\n".join(lines)
 
 

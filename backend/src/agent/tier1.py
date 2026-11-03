@@ -356,6 +356,23 @@ def scripted_turns(reads: Sequence[Step], writes: Sequence[Step], vault: SecretV
     return turns
 
 
+_LOOP: Optional[asyncio.AbstractEventLoop] = None
+
+
+def use_loop(loop: Optional[asyncio.AbstractEventLoop]) -> None:
+    """Run every coroutine of this module on one event loop (or, with None, a fresh one each time).
+
+    A real model client caches its HTTP connection to the loop it first ran on, so a live run
+    that started a new loop per call failed on the second call with "Event loop is closed".
+    """
+    global _LOOP
+    _LOOP = loop
+
+
+def run_async(coro: Any) -> Any:
+    return _LOOP.run_until_complete(coro) if _LOOP is not None else asyncio.run(coro)
+
+
 def plan_and_execute(
     specialist: Specialist, intent: Intent, session: BankingSession, user_id: str, *, label: str
 ) -> int:
@@ -375,11 +392,11 @@ def plan_and_execute(
             approved=approved,
         )
 
-    planned = asyncio.run(specialist.run(intent, context("plan")))
+    planned = run_async(specialist.run(intent, context("plan")))
     if planned.status is not OutcomeStatus.NEEDS_CONFIRMATION or planned.proposal is None:
         detail = planned.error or " / ".join(q.slot for q in planned.questions)
         raise SegmentError(f"{label} was not planned: {planned.status.value} {detail}".strip())
-    done = asyncio.run(specialist.run(intent, context("execute", planned.proposal)))
+    done = run_async(specialist.run(intent, context("execute", planned.proposal)))
     if done.status is not OutcomeStatus.DONE:
         raise SegmentError(f"{label} did not run: {done.status.value} {done.error or ''}".strip())
     return len(unapproved_steps(session.completed_for(intent.id), planned.proposal))

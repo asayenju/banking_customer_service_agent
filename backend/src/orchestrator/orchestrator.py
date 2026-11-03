@@ -60,6 +60,8 @@ from orchestrator.types import Decomposition, Intent, IntentKind, Question
 from orchestrator.unclear import HelpState, handle_unclear, offer_help, precheck
 
 MAX_ASKS = 3
+# Details that are secrets: an answer to a question about one is captured even without a cue word.
+SECRET_SLOTS = frozenset({"pin", "new_pin", "current_pin", "cvv"})
 
 
 class TurnResult(BaseModel):
@@ -136,7 +138,7 @@ class Orchestrator:
         route_timeout: Optional[float] = None,
         route_timeouts: Optional[Mapping[Route, float]] = None,
         session_for: Optional[Callable[[SessionRequest], AgentSession]] = None,
-        capture_secrets: Optional[Callable[[str], str]] = None,
+        capture_secrets: Optional[Callable[..., str]] = None,
         scorer_timeout: float = SCORER_TIMEOUT_SECONDS,
     ) -> None:
         self._decomposer = decomposer
@@ -154,6 +156,8 @@ class Orchestrator:
         # Swaps a PIN or CVV in the customer's words for a reference, before anything else
         # (a greeting check, the decomposer, the scorer) sees the message.
         self._capture_secrets = capture_secrets
+        # The details we asked the customer for in the last reply.
+        self._last_asked: frozenset[str] = frozenset()
         # Intents that stopped partway: what they had committed, and the intent itself,
         # kept so "try again" finds it. They are not run again until the customer says so.
         self._progress: dict[str, tuple[CompletedStep, ...]] = {}
@@ -259,7 +263,8 @@ class Orchestrator:
 
     async def _turn(self, message: str) -> TurnResult:
         if self._capture_secrets is not None:
-            message = self._capture_secrets(message)
+            # Just asked for a PIN or a security code? Then bare digits in the answer are one.
+            message = self._capture_secrets(message, expecting_secret=bool(self._last_asked & SECRET_SLOTS))
         events: list[TraceEvent] = []
         if not self._awaiting:
             unclear = precheck(message)
@@ -444,6 +449,9 @@ class Orchestrator:
 
         ordered = tuple(decisions.values())
         self._awaiting = any(d.action is Action.ASK for d in ordered)
+        self._last_asked = frozenset(
+            q.slot for d in ordered if d.action is Action.ASK for q in d.questions
+        )
         reported = previewed + tuple(
             o
             for o in executed.outcomes
