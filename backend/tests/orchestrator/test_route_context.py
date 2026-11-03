@@ -3,6 +3,7 @@ import asyncio
 import pytest
 from scenario_kit import GOOD_CLAIMS, RECORD, S, World, I, interp
 
+from orchestrator.context import scoped
 from banking_tools import BankingSession, ScopedSession
 from orchestrator.executor import (
     ROUTE_TIMEOUTS,
@@ -105,7 +106,7 @@ def world_with_session(runner, shared):
         [interp(freeze_intent(), claims=GOOD_CLAIMS)],
         [[S("frz", 0.97)]],
         direct=runner,
-        session_for=lambda intent_id, progress: ScopedSession(shared, intent_id, progress),
+        session_for=scoped(shared),
         route_timeout=0.1,
     )
 
