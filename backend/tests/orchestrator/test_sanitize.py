@@ -22,6 +22,9 @@ from orchestrator.sanitize import redact
         ("my pin will be changed to 7351", "7351"),
         ("PIN to 7351", "7351"),
         ("set the cvv to 739", "739"),
+        ("7351 is my new pin", "7351"),
+        ("2468 was the old pin", "2468"),
+        ("1357 is the current pin on it", "1357"),
     ],
 )
 def test_secrets_are_removed(text: str, gone: str) -> None:
