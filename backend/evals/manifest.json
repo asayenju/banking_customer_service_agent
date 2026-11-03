@@ -962,7 +962,7 @@
   "human_transfer": false,
   "trap": false,
   "pilot": true,
-  "excluded_reason": "ACTION basis: compare the four dispute calls, not the database"
+  "excluded_reason": "ACTION basis, and the gold's dispute calls omit customer_max_liability_amount, which the bank's tool requires: a typed call cannot reproduce it"
  },
  {
   "task_id": "task_084",

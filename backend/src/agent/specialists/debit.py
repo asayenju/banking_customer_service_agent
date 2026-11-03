@@ -21,6 +21,7 @@ model reads, because the tier is not a field in the database.
 """
 
 from collections.abc import Mapping
+from datetime import date, datetime
 from typing import Any, Optional
 
 from agent.specialist import SpecialistConfig, Validator, ValidationContext
@@ -266,6 +267,54 @@ def temporary_limit(v: ValidationContext, args: Mapping[str, Any]) -> Optional[s
     return None
 
 
+# Dispute categories where only part of the transaction may be in question. Every other
+# category (fraud, a duplicate, goods not received, a charge after cancelling) disputes the
+# whole amount.
+PARTIAL_AMOUNT_CATEGORIES = frozenset({"atm_cash_discrepancy", "incorrect_amount", "atm_deposit_not_credited"})
+
+
+def _day(text: Any) -> Optional[date]:
+    """A date from MM/DD/YYYY, with or without a time after it."""
+    try:
+        return datetime.strptime(str(text)[:10], "%m/%d/%Y").date()
+    except ValueError:
+        return None
+
+
+def dispute(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
+    """Ground the dispute in the records. The bank's tool files whatever it is given, so
+    nothing else stops a made-up transaction, a card from another account, or an amount
+    larger than the charge."""
+    txn = _row(v, "bank_account_transaction_history", args.get("transaction_id"))
+    if txn is None:
+        return "that transaction does not exist"
+    if txn.get("account_id") != args.get("account_id"):
+        return "that transaction is not on that account"
+    card = _card(v, args)
+    if card is None:
+        return "that card does not exist"
+    if card.get("account_id") != args.get("account_id"):
+        return "that card is not linked to that account"
+    charged = abs(float(txn.get("amount") or 0))
+    disputed = float(args.get("disputed_amount") or 0)
+    if disputed <= 0:
+        return "the disputed amount must be more than zero"
+    if disputed > charged:
+        return "the disputed amount is more than the transaction"
+    if args.get("dispute_category") not in PARTIAL_AMOUNT_CATEGORIES and disputed != charged:
+        return "this kind of dispute is for the whole amount of the transaction"
+    happened, found = _day(args.get("transaction_date")), _day(args.get("discovery_date"))
+    if happened is None or found is None:
+        return "dates must be written MM/DD/YYYY"
+    if happened != _day(txn.get("date")):
+        return "the transaction date is not the date on the transaction"
+    if found < happened or found > v.today:
+        return "the customer cannot have noticed it before it happened or after today"
+    if args.get("provisional_credit_eligible") and not args.get("written_statement_provided"):
+        return "provisional credit needs the customer's written statement first"
+    return None
+
+
 def clear_alert(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
     card = _card(v, args)
     if card is None:
@@ -283,6 +332,7 @@ def clear_alert(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
 
 
 VALIDATORS: dict[str, Validator] = {
+    "file_debit_card_transaction_dispute_6281": dispute,
     "change_debit_card_pin_6285": change_pin,
     "reset_debit_card_pin_6284": reset_pin,
     "set_debit_card_recurring_block_7382": recurring_block,
