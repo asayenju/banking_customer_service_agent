@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from orchestrator.context import RouteContext
 from orchestrator.plan import Plan
-from orchestrator.plan_preview import PlanPreview
+from orchestrator.plan_preview import PlanPreview, unapproved_steps
 from orchestrator.routes import Route, route_for
 from orchestrator.trace import Trace, TraceEvent, TraceKind
 from orchestrator.types import Intent, Question
@@ -132,6 +132,23 @@ def _reconciled(outcome: RouteOutcome, ctx: RouteContext) -> RouteOutcome:
     )
 
 
+def _checked_against_plan(outcome: RouteOutcome, ctx: RouteContext) -> RouteOutcome:
+    """The alarm for a hole in the pre-call checks: a write the customer never approved.
+
+    It cannot undo the write. It stops the run being reported as a success, and the
+    reconciliation that follows turns it into a PARTIAL that offers a human.
+    """
+    if ctx.approved is None or ctx.session is None or ctx.mode != "execute":
+        return outcome
+    try:
+        extra = unapproved_steps(tuple(ctx.session.completed()), ctx.approved)
+    except Exception:
+        return outcome
+    if not extra:
+        return outcome
+    return _failed(outcome.intent_id, "made a change that was not in the approved plan")
+
+
 async def _run_one(
     intent: Intent,
     wave: int,
@@ -163,6 +180,7 @@ async def _run_one(
             outcome = _failed(intent.id, f"route failed: {type(exc).__name__}")
         if outcome.status is OutcomeStatus.NEEDS_CONFIRMATION and ctx.mode == "execute":
             outcome = _failed(intent.id, "a route asked for approval after it was given")
+        outcome = _checked_against_plan(outcome, ctx)
         outcome = _reconciled(outcome, ctx)
     if outcome.status is OutcomeStatus.DONE:
         events.append(TraceEvent(kind=TraceKind.FINISHED, intent_id=intent.id, wave=wave))
