@@ -378,6 +378,34 @@ def run_plan(plan: Plan, args: argparse.Namespace, make_client: ClientFactory, r
 
 # ------------------------------------------------------------------ running a task for real
 
+def gold_secrets(task: Mapping[str, Any]) -> dict[str, str]:
+    """Every PIN or security code the gold uses, named pin_a, pin_b ... so each gets its own reference."""
+    from agent.tier1 import gold_steps
+    from banking_tools.session import REDACTED_ARGUMENTS
+
+    found: dict[str, str] = {}
+    for step in gold_steps(task):
+        for key in sorted(REDACTED_ARGUMENTS & set(step.args)):
+            value = str(step.args[key])
+            if value and value not in found.values():
+                found[f"{key.replace('new_', '').replace('current_', 'old_')}_{chr(ord('a') + len(found))}"] = value
+    return found
+
+
+def customer_facts(task: Mapping[str, Any]) -> str:
+    """What the simulated customer would say if asked, so the single-shot run is not stuck on a question.
+
+    A live conversation would answer the specialist's questions as the persona does. This
+    harness has no conversation, so the persona's own notes (who they are, what they want,
+    what they give when asked) go in with the opening request. The specialist is still the one
+    that decides what to do about it.
+    """
+    from knowledge.report import opening_message
+
+    notes = str((task.get("user_scenario") or {}).get("instructions") or "").strip()
+    return f"{opening_message(task)}\n\nWhat the customer knows and will tell you if you ask:\n{notes}"
+
+
 def gradeable_clusters(configs: Mapping[str, Any]) -> dict[str, str]:
     """task id -> specialist, for the tasks a built specialist can be graded on offline."""
     from banking_tools.manifest import build_manifest, load_tasks
@@ -424,7 +452,6 @@ def run_live_task(
     from banking_tools.session import BankingSession, Fidelity, _base_db
     from banking_tools.statehash import compare
     from banking_tools.task_state import apply_initial_state
-    from knowledge.report import opening_message
     from orchestrator.types import Intent
 
     task_id = str(task["id"])
@@ -466,7 +493,7 @@ def run_live_task(
             intent = Intent(
                 id=f"{task_id}-{number}",
                 kind=item.kind,
-                summary=vault.capture(opening_message(task)),
+                summary=vault.capture(vault.hide(customer_facts(task), gold_secrets(task))),
                 slots=slots_of(item.writes[0]),
             )
             plan_and_execute(specialist, intent, session, user_id, label=f"segment {number} ({item.kind.value})")
@@ -516,7 +543,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover - the
     def run_task(task_id: str, cassettes: Path, context: RunContext) -> LiveTaskResult:
         return run_live_task(tasks[task_id], configs[gradeable[task_id]], cassettes, context, index=index)
 
-    report = run_plan(plan, args, lambda model: LiteLLMToolClient(model), run_task)
+    from agent import tier1
+
+    loop = asyncio.new_event_loop()  # one loop for the whole run: the model client keeps its connection on it
+    tier1.use_loop(loop)
+    try:
+        report = run_plan(plan, args, lambda model: LiteLLMToolClient(model), run_task)
+    finally:
+        tier1.use_loop(None)
+        loop.close()
     print(report.render())
     if args.out:
         args.out.write_text(json.dumps([r.__dict__ for r in report.results], indent=1))

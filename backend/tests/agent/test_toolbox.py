@@ -248,3 +248,50 @@ def test_the_toolbox_never_raises_whatever_the_model_sends():
 
 def test_the_catalog_has_write_tools_to_protect():
     assert any(spec.kind is ToolKind.WRITE for spec in REGISTRY.values())
+
+
+# ------------------------------------------------------------------ a PIN typed as bare digits
+
+@pytest.mark.parametrize(
+    "text",
+    ["Set it to 2589", "2589", "ok, 2589 then", "how about 5739?", "yes 7351!"],
+)
+def test_when_a_pin_was_just_asked_for_bare_digits_are_the_pin(text):
+    vault = SecretVault()
+    cleaned = vault.capture(text, expecting_secret=True)
+    assert not any(ch.isdigit() for ch in cleaned), cleaned
+    assert vault.resolve("{{secret:pin}}") in ("2589", "5739", "7351")
+
+
+def test_without_having_asked_for_a_pin_a_bare_number_is_left_alone():
+    """The cue words are the only evidence then, and "Set it to 2589" has none."""
+    for text in ("Set it to 2589", "my card ends 4821", "I paid on 2025"):
+        assert SecretVault().capture(text) == text
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["I paid $1500 on 11/14/2025", "the fee is 12.50", "call 555-0100", "my balance is 1,250.75", "in 2025", "ref ABC1234", "30% off", "10:45 am"],
+)
+def test_even_when_a_pin_is_expected_amounts_dates_decimals_and_words_are_not_taken_for_one(text):
+    vault = SecretVault()
+    cleaned = vault.capture(text, expecting_secret=True)
+    if text == "in 2025":
+        assert "2025" not in cleaned, "a bare four digits is exactly what a PIN looks like"
+    else:
+        assert cleaned == text, cleaned
+
+
+def test_a_cue_based_capture_still_wins_and_two_secrets_get_two_references():
+    vault = SecretVault()
+    cleaned = vault.capture("my new pin is 7351 and the old one 2468", expecting_secret=True)
+    assert "7351" not in cleaned and "2468" not in cleaned
+    assert {vault.resolve(r) for r in ("{{secret:pin}}", "{{secret:pin_b}}")} == {"7351", "2468"}
+
+
+def test_hide_replaces_known_values_wherever_they_appear():
+    vault = SecretVault()
+    out = vault.hide('Sure, set it to 2589. Then maybe 5678 for the other.', {"pin_a": "2589", "pin_b": "5678"})
+    assert "2589" not in out and "5678" not in out
+    assert vault.resolve("{{secret:pin_a}}") == "2589" and vault.resolve("{{secret:pin_b}}") == "5678"
+    assert "{{secret:pin_a}}" in out and "{{secret:pin_b}}" in out

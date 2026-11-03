@@ -33,6 +33,7 @@ from agent.tier1 import Segment, gold_steps, plan_items, scripted_turns, Calls
 from agent.toolbox import SecretVault
 from banking_tools.manifest import load_tasks
 from knowledge.index import Document, KnowledgeIndex
+from knowledge.report import opening_message
 
 TASKS = {str(t["id"]): t for t in load_tasks()}
 INDEX = KnowledgeIndex({"doc_bank_accounts_x": Document("doc_bank_accounts_x", "t", "x")})
@@ -411,3 +412,78 @@ def test_trials_repeat_each_task(tmp_path):
 def test_the_cassette_directory_is_git_ignored():
     ignore = (Path(live.__file__).resolve().parents[3] / ".gitignore").read_text()
     assert "backend/evals/cassettes/" in ignore
+
+
+# ------------------------------------------------------------------ one event loop for a whole live run
+
+class LoopBound:
+    """Fails the way a real HTTP client does once the loop it first ran on has been closed."""
+
+    def __init__(self, inner):
+        self.inner, self.loop = inner, None
+
+    async def chat(self, messages, **kwargs):
+        running = asyncio.get_running_loop()
+        if self.loop is None:
+            self.loop = running
+        elif self.loop is not running:
+            raise RuntimeError("Event loop is closed")
+        return await self.inner.chat(messages, **kwargs)
+
+
+def two_tasks(tmp_path, client):
+    results = []
+    for task_id in ("task_084", "task_085"):
+        model = GoldModel(TASKS[task_id])
+        client.inner = model
+        context = RunContext(plan=Plan((task_id,), 1, 0.5, MODEL, 2.5, 10.0), make_client=lambda m: client, rerecord=False)
+        results.append(run_live_task(TASKS[task_id], DEBIT_SPECIALIST, tmp_path / task_id, context, index=INDEX))
+    return results
+
+
+def test_without_a_shared_loop_the_second_task_fails_the_way_it_did_live(tmp_path):
+    first, second = two_tasks(tmp_path, LoopBound(None))
+    assert first.passed is False or second.passed is False
+    assert "model_failed" in (first.note + second.note), "this is the failure the live run hit"
+
+
+def test_with_one_loop_for_the_whole_run_every_task_reaches_the_model(tmp_path):
+    from agent import tier1
+
+    loop = asyncio.new_event_loop()
+    tier1.use_loop(loop)
+    try:
+        results = two_tasks(tmp_path, LoopBound(None))
+    finally:
+        tier1.use_loop(None)
+        loop.close()
+    assert all(r.passed for r in results), [r.note for r in results]
+
+
+def test_the_customers_notes_go_to_the_specialist_so_it_need_not_ask_for_what_the_persona_would_say():
+    facts = live.customer_facts(TASKS["task_084"])
+    assert facts.startswith(opening_message(TASKS["task_084"])[:20])
+    assert "What the customer knows and will tell you if you ask:" in facts
+    assert len(facts) > len(str(TASKS["task_084"]["user_scenario"]["instructions"]))
+
+
+def test_the_gold_pins_are_hidden_from_the_customers_notes_whatever_words_surround_them():
+    from agent.live import gold_secrets
+
+    task = TASKS["task_091"]
+    secrets = gold_secrets(task)
+    assert secrets and all(len(v) == 4 and v.isdigit() for v in secrets.values())
+    vault = SecretVault()
+    cleaned = vault.capture(vault.hide(live.customer_facts(task), secrets))
+    for value in secrets.values():
+        assert value not in cleaned, f"{value} would have reached the model"
+    assert "{{secret:" in cleaned
+    assert all(name.replace("_", "").isalpha() for name in secrets)
+
+
+def test_the_tool_reference_tells_the_model_the_allowed_values_of_each_argument():
+    from agent.specialist import system_prompt
+    from orchestrator.types import IntentKind
+
+    prompt = system_prompt(DEBIT_SPECIALIST, IntentKind.ORDER_REPLACEMENT_CARD)
+    assert "Reason for closing: lost, stolen, fraud_suspected, damaged, no_longer_needed, or account_closing" in prompt
