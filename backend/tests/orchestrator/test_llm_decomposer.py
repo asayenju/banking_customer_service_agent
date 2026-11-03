@@ -139,7 +139,7 @@ def test_order_is_stable_whatever_order_the_model_listed_them() -> None:
 def test_required_slots_are_reported_missing() -> None:
     result = interpret(FakeLLMClient([stolen_card_reply()]), STOLEN)
     freeze = result.decomposition.intents[0]
-    assert freeze.missing_slots == ("card_id",)
+    assert freeze.missing_slots == (), "which card is settled in code, so the customer is not asked for an id"
 
 
 def test_dropped_request_is_flagged() -> None:

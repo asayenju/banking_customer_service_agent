@@ -24,6 +24,7 @@ from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Any, Optional
 
+from agent.cards import owned_cards, which_card
 from agent.specialist import SpecialistConfig, Validator, ValidationContext
 from tau2.domains.banking_knowledge.tools import _validate_pin
 
@@ -174,35 +175,12 @@ CARD_KINDS = frozenset(
 _NAMES_A_RECORD = ("account_id", "transaction_id", "credit_card_account_id")
 
 
-def _owned_cards(db: Any, user_id: str) -> list[Mapping[str, Any]]:
-    return sorted(
-        (c for c in db.debit_cards.data.values() if c.get("user_id") == user_id and c.get("status") != "CLOSED"),
-        key=lambda c: str(c.get("card_id")),
-    )
-
-
-def _describe(db: Any, card: Mapping[str, Any]) -> str:
-    account = db.accounts.data.get(str(card.get("account_id")), {})
-    where = f", on your {account['level']}" if account.get("level") else ""
-    return f"the card ending {card.get('last_4_digits')} ({str(card.get('status')).lower()}{where})"
-
-
-def _which_card(intent: Intent, db: Any, cards: list[Mapping[str, Any]]) -> RouteOutcome:
-    """The list the customer chooses from, written here: never ids, never the model's words."""
-    listing = "\n".join(f"- {_describe(db, c)}" for c in cards)
-    return RouteOutcome(
-        intent_id=intent.id,
-        status=OutcomeStatus.NEEDS_INFO,
-        questions=(Question(intent_id=intent.id, slot="card_id", text=f"Which card do you mean?\n{listing}"),),
-    )
-
-
 def prepare(intent: Intent, user_id: str, db: Any) -> Intent | RouteOutcome:
     """Settle which card is meant, in code, before a model gets involved."""
     if intent.kind not in CARD_KINDS:
         return intent
     named = (intent.slots.get("card_id") or "").strip()
-    cards = _owned_cards(db, user_id)
+    cards = owned_cards(db, user_id)
     if named:
         if any(c.get("card_id") == named for c in cards):
             return intent
@@ -210,11 +188,11 @@ def prepare(intent: Intent, user_id: str, db: Any) -> Intent | RouteOutcome:
             matches = [c for c in cards if c.get("last_4_digits") == named]
             if len(matches) == 1:
                 return intent.model_copy(update={"slots": {**intent.slots, "card_id": str(matches[0]["card_id"])}})
-            return _which_card(intent, db, matches or cards) if (matches or cards) else intent
-        return _which_card(intent, db, cards) if cards else intent
+            return which_card(intent, db, matches or cards) if (matches or cards) else intent
+        return which_card(intent, db, cards) if cards else intent
     if any((intent.slots.get(k) or "").strip() for k in _NAMES_A_RECORD):
         return intent
-    return _which_card(intent, db, cards) if len(cards) > 1 else intent
+    return which_card(intent, db, cards) if len(cards) > 1 else intent
 
 
 def _pin(value: Any) -> Optional[str]:

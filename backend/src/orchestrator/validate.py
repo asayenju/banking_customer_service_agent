@@ -27,14 +27,13 @@ class InvalidDecomposition(ValueError):
 
 
 # Details an intent needs before a tool can run. Kinds not listed need none.
+#
+# Cards are not listed. Customers do not know card ids, so the code that handles a card
+# request (``agent.cards``) picks the card itself: one candidate needs no question, several
+# get a list written by code, and "the one ending 4821" is understood. Asking for an
+# internal id up front would make every freeze a puzzle. Disputes and money movement still
+# ask for their ids, because no code picks a transaction or an account for the customer yet.
 REQUIRED_SLOTS: dict[IntentKind, tuple[str, ...]] = {
-    K.FREEZE_CARD: ("card_id",),
-    K.UNFREEZE_CARD: ("card_id",),
-    K.ACTIVATE_CARD: ("card_id",),
-    K.ORDER_REPLACEMENT_CARD: ("card_id",),
-    K.CHANGE_OR_RESET_PIN: ("card_id",),
-    K.CLOSE_CARD: ("card_id",),
-    K.CARD_CONTROLS: ("card_id",),
     K.DISPUTE_TRANSACTION: ("transaction_id",),
     K.TRANSFER_FUNDS: ("from_account_id", "to_account_id", "amount"),
     K.PAY_CREDIT_CARD: ("account_id", "amount"),
