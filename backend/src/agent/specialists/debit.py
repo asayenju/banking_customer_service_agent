@@ -24,6 +24,8 @@ from collections.abc import Mapping
 from typing import Any, Optional
 
 from agent.specialist import SpecialistConfig, Validator, ValidationContext
+from tau2.domains.banking_knowledge.tools import _validate_pin
+
 from knowledge.scopes import DEBIT
 from orchestrator.executor import OutcomeStatus, RouteOutcome
 from orchestrator.types import Intent, Question
@@ -214,7 +216,78 @@ def prepare(intent: Intent, user_id: str, db: Any) -> Intent | RouteOutcome:
     return _which_card(intent, db, cards) if len(cards) > 1 else intent
 
 
+def _pin(value: Any) -> Optional[str]:
+    """The bank's own PIN rule (four digits, nothing sequential or repeated), not a copy of it."""
+    problem: Optional[str] = _validate_pin(str(value or ""))
+    return problem
+
+
+def _active_card(v: ValidationContext, args: Mapping[str, Any], what: str) -> Optional[str]:
+    card = _card(v, args)
+    if card is None:
+        return "that card does not exist"
+    if card.get("status") != "ACTIVE":
+        return f"only an active card can have {what} (this one is {card.get('status')})"
+    return None
+
+
+def change_pin(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
+    if (problem := _active_card(v, args, "its PIN changed")) is not None:
+        return problem
+    if (problem := _pin(args.get("new_pin"))) is not None:
+        return problem
+    if str(args.get("current_pin")) == str(args.get("new_pin")):
+        return "the new PIN must differ from the current one"
+    return None
+
+
+def reset_pin(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
+    if (problem := _active_card(v, args, "its PIN reset")) is not None:
+        return problem
+    card = _card(v, args)
+    assert card is not None
+    if str(args.get("last_4_digits")) != str(card.get("last_4_digits")):
+        return "the last four digits do not match this card"
+    return _pin(args.get("new_pin"))
+
+
+def recurring_block(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
+    return _active_card(v, args, "recurring payments blocked or allowed")
+
+
+def temporary_limit(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
+    if (problem := _active_card(v, args, "a limit increase")) is not None:
+        return problem
+    if args.get("limit_type") not in ("atm", "purchase"):
+        return "the limit is either atm or purchase"
+    limit = args.get("new_limit")
+    if not isinstance(limit, (int, float)) or isinstance(limit, bool) or limit <= 0 or limit != int(limit):
+        return "the new limit must be a whole number of dollars above zero"
+    return None
+
+
+def clear_alert(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
+    card = _card(v, args)
+    if card is None:
+        return "that card does not exist"
+    reason = args.get("reason")
+    if reason == "velocity_clear":
+        return None if card.get("velocity_blocked") else "this card has no velocity block to clear"
+    if reason != "customer_verified":
+        return "an alert is cleared as customer_verified or velocity_clear"
+    if not card.get("fraud_alert_active"):
+        return "this card has no active fraud alert"
+    if card.get("alert_source") == "bank_initiated":
+        return "the bank raised this alert itself; only the security team can clear it, so hand over to a person"
+    return None
+
+
 VALIDATORS: dict[str, Validator] = {
+    "change_debit_card_pin_6285": change_pin,
+    "reset_debit_card_pin_6284": reset_pin,
+    "set_debit_card_recurring_block_7382": recurring_block,
+    "request_temporary_debit_card_limit_increase_8374": temporary_limit,
+    "clear_debit_card_fraud_alert_4892": clear_alert,
     "freeze_debit_card_3892": freeze,
     "unfreeze_debit_card_3893": unfreeze,
     "close_debit_card_4721": close,

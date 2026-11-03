@@ -18,7 +18,8 @@ _WORD_THEN_DIGITS = re.compile(
     re.IGNORECASE,
 )
 _DIGITS_THEN_WORD = re.compile(
-    rf"\b(\d{{3,8}})\b(\s*(?:is|as)?\s*(?:my|the)?\s*{_SECRET_WORD}\b)", re.IGNORECASE
+    rf"\b(\d{{3,8}})\b(\s*(?:is|was|as|are)?\s*(?:(?:my|the|new|current|old|our)\s+){{0,3}}{_SECRET_WORD}\b)",
+    re.IGNORECASE,
 )
 _CARD_NUMBER = re.compile(r"(?<![\w.])\d(?:[ -]?\d){12,18}(?![\w])")
 

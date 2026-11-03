@@ -136,6 +136,7 @@ class Orchestrator:
         route_timeout: Optional[float] = None,
         route_timeouts: Optional[Mapping[Route, float]] = None,
         session_for: Optional[Callable[[SessionRequest], AgentSession]] = None,
+        capture_secrets: Optional[Callable[[str], str]] = None,
         scorer_timeout: float = SCORER_TIMEOUT_SECONDS,
     ) -> None:
         self._decomposer = decomposer
@@ -150,6 +151,9 @@ class Orchestrator:
             route_timeout if route_timeout is not None else (route_timeouts or ROUTE_TIMEOUTS)
         )
         self._session_for = session_for
+        # Swaps a PIN or CVV in the customer's words for a reference, before anything else
+        # (a greeting check, the decomposer, the scorer) sees the message.
+        self._capture_secrets = capture_secrets
         # Intents that stopped partway: what they had committed, and the intent itself,
         # kept so "try again" finds it. They are not run again until the customer says so.
         self._progress: dict[str, tuple[CompletedStep, ...]] = {}
@@ -254,6 +258,8 @@ class Orchestrator:
             table.pop(intent_id, None)
 
     async def _turn(self, message: str) -> TurnResult:
+        if self._capture_secrets is not None:
+            message = self._capture_secrets(message)
         events: list[TraceEvent] = []
         if not self._awaiting:
             unclear = precheck(message)
@@ -451,7 +457,9 @@ class Orchestrator:
             reply=reply,
             trace=Trace(events=tuple(events)),
             decisions=ordered,
-            outcomes=executed.outcomes,
+            # Settled while previewing (nothing needed changing, or the plan was refused)
+            # first, then what ran.
+            outcomes=previewed + executed.outcomes,
         )
 
     def _keep_for_retry(self, intent_id: str, view: Mapping[str, Intent]) -> None:
