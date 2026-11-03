@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from orchestrator.context import RouteContext
 from orchestrator.plan import Plan
+from orchestrator.plan_preview import PlanPreview
 from orchestrator.routes import Route, route_for
 from orchestrator.trace import Trace, TraceEvent, TraceKind
 from orchestrator.types import Intent, Question
@@ -44,6 +45,8 @@ class OutcomeStatus(StrEnum):
     # Not finished, and not a failure: the route cannot go on without an answer from the
     # customer. The intent stays open and the questions are asked.
     NEEDS_INFO = "needs_info"
+    # Planning only: here is what I would do. Carries the proposal for the customer's yes.
+    NEEDS_CONFIRMATION = "needs_confirmation"
     PARTIAL = "partial"
     FAILED = "failed"
     SKIPPED = "skipped"
@@ -61,14 +64,22 @@ class RouteOutcome(BaseModel):
     # What to ask the customer. Slot names (and wording built by code), never values the
     # customer gave: a PIN must not travel through a question. Only for NEEDS_INFO.
     questions: tuple[Question, ...] = ()
+    # The plan to approve. Only for NEEDS_CONFIRMATION.
+    proposal: Optional[PlanPreview] = None
 
     @model_validator(mode="after")
     def _fields_match_status(self) -> Self:
         asking = self.status is OutcomeStatus.NEEDS_INFO
-        if self.status in (OutcomeStatus.DONE, OutcomeStatus.NEEDS_INFO) and self.error is not None:
+        no_error = (OutcomeStatus.DONE, OutcomeStatus.NEEDS_INFO, OutcomeStatus.NEEDS_CONFIRMATION)
+        if self.status in no_error and self.error is not None:
             raise ValueError(f"a {self.status.value} outcome must not carry an error")
-        if self.status not in (OutcomeStatus.DONE, OutcomeStatus.NEEDS_INFO) and not self.error:
+        if self.status not in no_error and not self.error:
             raise ValueError(f"a {self.status.value} outcome must say why")
+        proposing = self.status is OutcomeStatus.NEEDS_CONFIRMATION
+        if proposing and (self.proposal is None or self.proposal.intent_id != self.intent_id):
+            raise ValueError("a needs_confirmation outcome must carry a plan for its own intent")
+        if not proposing and self.proposal is not None:
+            raise ValueError(f"a {self.status.value} outcome must not carry a plan")
         if asking and not self.questions:
             raise ValueError("a needs_info outcome must carry at least one question")
         if not asking and self.questions:
@@ -104,7 +115,8 @@ def _timeout_for(timeout: float | Mapping[Route, float], route: Route) -> float:
 
 def _reconciled(outcome: RouteOutcome, ctx: RouteContext) -> RouteOutcome:
     """PARTIAL, told from the audit, if a route that did not finish had committed writes."""
-    if outcome.status in (OutcomeStatus.DONE, OutcomeStatus.NEEDS_INFO) or ctx.session is None:
+    settled = (OutcomeStatus.DONE, OutcomeStatus.NEEDS_INFO, OutcomeStatus.NEEDS_CONFIRMATION)
+    if outcome.status in settled or ctx.session is None:
         return outcome
     try:
         steps = tuple(ctx.session.committed_steps())
@@ -149,9 +161,15 @@ async def _run_one(
             outcome = _failed(intent.id, f"timed out after {timeout}s")
         except Exception as exc:
             outcome = _failed(intent.id, f"route failed: {type(exc).__name__}")
+        if outcome.status is OutcomeStatus.NEEDS_CONFIRMATION and ctx.mode == "execute":
+            outcome = _failed(intent.id, "a route asked for approval after it was given")
         outcome = _reconciled(outcome, ctx)
     if outcome.status is OutcomeStatus.DONE:
         events.append(TraceEvent(kind=TraceKind.FINISHED, intent_id=intent.id, wave=wave))
+    elif outcome.status is OutcomeStatus.NEEDS_CONFIRMATION:
+        events.append(
+            TraceEvent(kind=TraceKind.ASKED, intent_id=intent.id, detail="confirmation", wave=wave)
+        )
     elif outcome.status is OutcomeStatus.NEEDS_INFO:
         # Slot names only: the trace never carries what the customer said.
         events.append(
@@ -205,7 +223,8 @@ async def execute_plan(
             if incomplete is not None:
                 reason = (
                     f"waiting for an answer about '{incomplete}'"
-                    if outcomes[incomplete].status is OutcomeStatus.NEEDS_INFO
+                    if outcomes[incomplete].status
+                    in (OutcomeStatus.NEEDS_INFO, OutcomeStatus.NEEDS_CONFIRMATION)
                     else f"dependency '{incomplete}' did not complete"
                 )
                 outcomes[intent_id] = RouteOutcome(

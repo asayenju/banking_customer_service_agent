@@ -14,11 +14,13 @@ it must not come from those words:
   should budget against it instead of waiting to be cancelled.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol
+from typing import Any, Literal, Optional, Protocol
 
+from banking_tools.session import BankingSession, ScopedSession
 from banking_tools.types import CompletedStep
+from orchestrator.plan_preview import PlanPreview
 
 
 class AgentSession(Protocol):
@@ -35,6 +37,22 @@ class AgentSession(Protocol):
         ...
 
 
+Mode = Literal["plan", "execute"]
+
+
+@dataclass(frozen=True)
+class SessionRequest:
+    """What an orchestrator asks its session factory for, one intent at a time."""
+
+    intent_id: str
+    # Writes already committed by an earlier, partly finished run.
+    progress: tuple[CompletedStep, ...] = ()
+    # "plan": reads run, writes are refused (the route is only working out what it would do).
+    # "execute": writes run, but only the ones in ``approved``, if there is a plan.
+    mode: Mode = "execute"
+    approved: Optional[PlanPreview] = None
+
+
 @dataclass(frozen=True)
 class RouteContext:
     intent_id: str
@@ -44,3 +62,22 @@ class RouteContext:
     # Writes committed by an earlier, partly finished run of this same intent. The
     # session skips them if the runner repeats them in the same order.
     progress: tuple[CompletedStep, ...] = ()
+    # "plan": propose what you would do and return NEEDS_CONFIRMATION (or DONE if nothing
+    # would change). "execute": do what ``approved`` says, nothing else.
+    mode: Mode = "execute"
+    approved: Optional[PlanPreview] = None
+
+
+def scoped(session: BankingSession) -> Callable[[SessionRequest], AgentSession]:
+    """A session factory for the orchestrator: one ScopedSession per intent and mode."""
+
+    def make(request: SessionRequest) -> AgentSession:
+        return ScopedSession(
+            session,
+            request.intent_id,
+            request.progress,
+            mode=request.mode,
+            approved=request.approved,
+        )
+
+    return make

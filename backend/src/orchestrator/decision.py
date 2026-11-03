@@ -48,6 +48,9 @@ NO_YES_NEEDED = frozenset(
 
 class Action(StrEnum):
     RUN = "run"
+    # Work out exactly what would be done, without doing it, and ask the customer to
+    # approve that plan. Used for routes that propose plans.
+    PREVIEW = "preview"
     ASK = "ask"
     ESCALATE = "escalate"
 

@@ -39,8 +39,8 @@ from orchestrator.auth import (
     reject_unknown,
     verify,
 )
-from orchestrator.context import AgentSession, RouteContext
-from orchestrator.decision import Action, IntentDecision, decide, fingerprint
+from orchestrator.context import AgentSession, Mode, RouteContext, SessionRequest
+from orchestrator.decision import CONFIRM_SLOT, Action, IntentDecision, decide, fingerprint
 from orchestrator.decomposer import Decomposer, Interpretation
 from orchestrator.executor import (
     ROUTE_TIMEOUTS,
@@ -51,6 +51,7 @@ from orchestrator.executor import (
     execute_plan,
 )
 from orchestrator.plan import Plan, PlanRejected, Waiting, plan
+from orchestrator.plan_preview import PlanPreview
 from orchestrator.reply import Reply, compose_reply
 from orchestrator.routes import Route, route_for
 from orchestrator.scoring import SCORER_TIMEOUT_SECONDS, IntentScore, Scorer, score_intents
@@ -134,7 +135,7 @@ class Orchestrator:
         runners: Mapping[Route, RouteRunner],
         route_timeout: Optional[float] = None,
         route_timeouts: Optional[Mapping[Route, float]] = None,
-        session_for: Optional[Callable[[str, Sequence[CompletedStep]], AgentSession]] = None,
+        session_for: Optional[Callable[[SessionRequest], AgentSession]] = None,
         scorer_timeout: float = SCORER_TIMEOUT_SECONDS,
     ) -> None:
         self._decomposer = decomposer
@@ -154,6 +155,11 @@ class Orchestrator:
         self._progress: dict[str, tuple[CompletedStep, ...]] = {}
         self._resumable: dict[str, Intent] = {}
         self._sessions_this_run: dict[str, AgentSession] = {}
+        # Routes that propose a plan (a runner with ``proposes_plans = True``) first work out
+        # what they would do. The customer's yes then binds to that plan, not to the intent.
+        self._proposals: dict[str, PlanPreview] = {}
+        self._approved: dict[str, PlanPreview] = {}
+        self._mode: Mode = "execute"
         self._scorer_timeout = scorer_timeout
 
         self._active: dict[str, Intent] = {}
@@ -212,7 +218,14 @@ class Orchestrator:
     def _context_for(self, intent: Intent, timeout: float) -> RouteContext:
         """What a runner is given. The caller's identity comes from AuthState alone."""
         progress = self._progress.get(intent.id, ())
-        session = self._session_for(intent.id, progress) if self._session_for else None
+        approved = self._approved.get(intent.id) if self._mode == "execute" else None
+        session = (
+            self._session_for(
+                SessionRequest(intent.id, progress, mode=self._mode, approved=approved)
+            )
+            if self._session_for
+            else None
+        )
         if session is not None:
             self._sessions_this_run[intent.id] = session
         return RouteContext(
@@ -221,6 +234,8 @@ class Orchestrator:
             session=session,
             deadline=asyncio.get_running_loop().time() + timeout,
             progress=progress,
+            mode=self._mode,
+            approved=approved,
         )
 
     def _forget(self, intent_id: str) -> None:
@@ -229,6 +244,8 @@ class Orchestrator:
             self._asks,
             self._runner_asks,
             self._pending_route_questions,
+            self._proposals,
+            self._approved,
             self._prints,
             self._scores,
             self._pending_confirm,
@@ -364,7 +381,17 @@ class Orchestrator:
             await self._verify(interpretation.claims, events)
 
         decisions = await self._decide_all(message, touched, events)
-        run_intents = [self._active[i] for i, d in decisions.items() if d.action is Action.RUN]
+        preview_ids = [i for i, d in decisions.items() if d.action is Action.PREVIEW]
+        previewed: tuple[RouteOutcome, ...] = ()
+        settled: frozenset[str] = frozenset()
+        view = dict(self._active)
+        if preview_ids:
+            previewed, settled = await self._preview(preview_ids, decisions, events)
+        run_intents = [
+            self._active[i]
+            for i, d in decisions.items()
+            if d.action is Action.RUN and i not in settled
+        ]
         the_plan = plan(
             run_intents, done=frozenset(self._done), conflicts=decomposition.conflicts
         )
@@ -379,9 +406,12 @@ class Orchestrator:
         for decision in decisions.values():
             events.extend(_decision_events(decision))
 
-        view = dict(self._active)
         executed = await self._execute(the_plan, {i.id: i for i in run_intents})
         events.extend(executed.trace.events)
+        for outcome in previewed:
+            if outcome.status is OutcomeStatus.DONE:
+                self._done.append(outcome.intent_id)
+            self._forget(outcome.intent_id)
 
         for outcome in executed.outcomes:
             if outcome.status is OutcomeStatus.NEEDS_INFO:
@@ -408,7 +438,7 @@ class Orchestrator:
 
         ordered = tuple(decisions.values())
         self._awaiting = any(d.action is Action.ASK for d in ordered)
-        reported = tuple(
+        reported = previewed + tuple(
             o
             for o in executed.outcomes
             if o.status is not OutcomeStatus.NEEDS_INFO and o.intent_id not in waiting_on_answer
@@ -434,6 +464,88 @@ class Orchestrator:
         if steps:
             self._progress[intent_id] = steps
             self._resumable[intent_id] = intent
+
+    def _previews(self, intent: Intent) -> bool:
+        runner = self._runners.get(route_for(intent.kind))
+        return bool(getattr(runner, "proposes_plans", False))
+
+    def _plan_decision(self, intent: Intent) -> IntentDecision:
+        """Where an intent stands once it passed the confidence and detail checks."""
+        current = fingerprint(intent)
+        proposal = self._proposals.get(intent.id)
+        if proposal is not None and proposal.intent_fp != current:
+            # The details changed since the plan was shown: it, and any yes to it, is stale.
+            self._proposals.pop(intent.id, None)
+            self._pending_confirm.pop(intent.id, None)
+            self._confirmed.pop(intent.id, None)
+            proposal = None
+        if proposal is None:
+            return IntentDecision(
+                intent_id=intent.id, action=Action.PREVIEW, reason="working out exactly what to do"
+            )
+        if proposal.reversible_only or self._confirmed.get(intent.id) == proposal.plan_fp:
+            self._approved[intent.id] = proposal
+            reason = "every step can be undone" if proposal.reversible_only else "plan approved"
+            return IntentDecision(intent_id=intent.id, action=Action.RUN, reason=reason)
+        return self._ask_for_plan(intent.id, proposal, "awaiting the customer's yes to the plan")
+
+    @staticmethod
+    def _ask_for_plan(intent_id: str, proposal: PlanPreview, reason: str) -> IntentDecision:
+        return IntentDecision(
+            intent_id=intent_id,
+            action=Action.ASK,
+            reason=reason,
+            questions=(Question(intent_id=intent_id, slot=CONFIRM_SLOT, text=proposal.rendered),),
+            fingerprint=proposal.plan_fp,
+        )
+
+    async def _preview(
+        self,
+        intent_ids: Sequence[str],
+        decisions: dict[str, IntentDecision],
+        events: list[TraceEvent],
+    ) -> tuple[tuple[RouteOutcome, ...], frozenset[str]]:
+        """Run the routes in plan mode: reads happen, writes are refused, a plan comes back.
+
+        Returns the outcomes that are already final (nothing needed changing, or the route
+        failed) and the ids they belong to, so those are not run again.
+        """
+        for intent_id in intent_ids:
+            events.extend(_decision_events(decisions[intent_id]))
+        self._mode = "plan"
+        try:
+            executed = await self._execute(
+                Plan(waves=(tuple(intent_ids),), waiting=()),
+                {i: self._active[i] for i in intent_ids},
+            )
+        finally:
+            self._mode = "execute"
+        events.extend(executed.trace.events)
+        final: list[RouteOutcome] = []
+        for outcome in executed.outcomes:
+            intent_id = outcome.intent_id
+            if outcome.status is OutcomeStatus.NEEDS_CONFIRMATION and outcome.proposal is not None:
+                proposal = outcome.proposal
+                self._proposals[intent_id] = proposal
+                if proposal.reversible_only:
+                    self._approved[intent_id] = proposal
+                    decisions[intent_id] = IntentDecision(
+                        intent_id=intent_id, action=Action.RUN, reason="every step can be undone"
+                    )
+                else:
+                    self._pending_confirm[intent_id] = proposal.plan_fp
+                    self._asks[intent_id] = self._asks.get(intent_id, 0) + 1
+                    decisions[intent_id] = self._ask_for_plan(
+                        intent_id, proposal, "awaiting the customer's yes to the plan"
+                    )
+            elif outcome.status is OutcomeStatus.NEEDS_INFO:
+                self._route_asked(outcome, decisions, events)
+            else:
+                final.append(outcome)
+                decisions[intent_id] = IntentDecision(
+                    intent_id=intent_id, action=Action.RUN, reason="nothing needed to change"
+                )
+        return tuple(final), frozenset(o.intent_id for o in final)
 
     def _route_asked(
         self,
@@ -545,7 +657,12 @@ class Orchestrator:
                     questions=self._pending_route_questions[intent.id],
                 )
             else:
-                decision = decide(intent, self._scores[intent.id], self._confirmed)
+                previewing = self._previews(intent)
+                # A route that proposes plans gets its yes from the plan, not the intent.
+                already = {intent.id: fingerprint(intent)} if previewing else self._confirmed
+                decision = decide(intent, self._scores[intent.id], already)
+                if previewing and decision.action is Action.RUN:
+                    decision = self._plan_decision(intent)
             decided[intent.id] = decision
 
         result: dict[str, IntentDecision] = {}

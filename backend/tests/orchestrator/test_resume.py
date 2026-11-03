@@ -2,6 +2,7 @@ import asyncio
 
 from scenario_kit import GOOD_CLAIMS, S, World, I, interp
 
+from orchestrator.context import scoped
 from banking_tools import BankingSession, Fidelity, ScopedSession
 from banking_tools.types import CompletedStep
 from orchestrator.executor import OutcomeStatus, RouteOutcome
@@ -43,7 +44,7 @@ def world(runner, shared, *, extra=()):
         [interp(freeze(), *extra, claims=GOOD_CLAIMS)] + [interp(freeze())] * 3,
         [[S("frz", 0.97)] + [S(e.id, 0.97) for e in extra]] + [[S("frz", 0.97)]] * 3,
         direct=runner,
-        session_for=lambda intent_id, progress: ScopedSession(shared, intent_id, progress),
+        session_for=scoped(shared),
     )
 
 
@@ -58,7 +59,7 @@ def test_a_partly_finished_intent_is_kept_for_a_retry_and_not_rerun_on_its_own()
         [interp(freeze(), claims=GOOD_CLAIMS), interp()],
         [[S("frz", 0.97)]],
         direct=runner,
-        session_for=lambda intent_id, progress: ScopedSession(shared, intent_id, progress),
+        session_for=scoped(shared),
     )
     first = w.turn("freeze my card")
     assert [o.status for o in first.outcomes] == [OutcomeStatus.PARTIAL]
@@ -117,7 +118,7 @@ def test_withdrawing_a_partly_finished_intent_drops_it():
         [interp(freeze(), claims=GOOD_CLAIMS), interp(declined=("frz",))],
         [[S("frz", 0.97)]],
         direct=runner,
-        session_for=lambda intent_id, progress: ScopedSession(shared, intent_id, progress),
+        session_for=scoped(shared),
     )
     w.turn("freeze my card")
     assert w.orch.resumable_ids == ("frz",)

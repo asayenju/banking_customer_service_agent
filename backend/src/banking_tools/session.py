@@ -26,7 +26,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from functools import cache
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Protocol
 
 from pydantic import ValidationError
 from tau2.domains.banking_knowledge.data_model import TransactionalDB
@@ -255,11 +255,18 @@ class ScopedSession:
     """One intent's view of a session.
 
     Every write it makes is tagged with the intent, so the executor can reconcile what
-    happened if the route fails partway. If the intent was partly done before, pass the
-    writes it had committed as ``resume``: when the runner repeats those writes in the
-    same order they are not made again, and the original result is reported. Matching is
-    by position, so a legitimate repeat (freeze, unfreeze, freeze) is not mistaken for a
-    retry. The first write that differs ends the skipping, and everything after it runs.
+    happened if the route fails partway.
+
+    Modes. In "plan" mode reads run and every write is refused without being attempted,
+    so a route that is only working out what it would do cannot change anything. In
+    "execute" mode, if the customer approved a plan, a write that is not one of the
+    approved steps is refused: a yes covers what was shown and nothing else.
+
+    Resuming. If the intent was partly done before, pass the writes it had committed as
+    ``resume``: when the runner repeats them in the same order they are not made again
+    and the original result is reported. Matching is by position, so a legitimate repeat
+    (freeze, unfreeze, freeze) is not mistaken for a retry. The first write that differs
+    ends the skipping, and everything after it runs.
     """
 
     def __init__(
@@ -267,13 +274,26 @@ class ScopedSession:
         session: BankingSession,
         intent_id: str,
         resume: Sequence[CompletedStep] = (),
+        *,
+        mode: str = "execute",
+        approved: Optional["ApprovedPlan"] = None,
     ) -> None:
         self._session = session
         self._intent_id = intent_id
         self._resume = tuple(resume)
         self._next = 0
+        self._mode = mode
+        self._approved = approved
 
     def call(self, name: str, arguments: Optional[Mapping[str, Any]] = None) -> ToolResult:
+        spec = get_registry().get(name)
+        is_write = spec is not None and spec.kind is ToolKind.WRITE
+        if is_write and self._mode == "plan":
+            return _refused(name, "this is planning only; changes happen after you approve the plan")
+        if is_write and self._approved is not None and not self._approved.allows(
+            name, _validated_arguments(name, arguments) or dict(arguments or {})
+        ):
+            return _refused(name, "that step is not part of the plan the customer approved")
         if self._next < len(self._resume):
             earlier = self._resume[self._next]
             audited = _audited_arguments(name, arguments)
@@ -296,12 +316,32 @@ class ScopedSession:
         return self._session.completed_for(self._intent_id)
 
 
+class ApprovedPlan(Protocol):
+    """What a scoped session needs from an approved plan."""
+
+    def allows(self, tool: str, arguments: dict[str, Any]) -> bool: ...
+
+
+def _refused(name: str, why: str) -> ToolResult:
+    return ToolResult(tool=name, ok=False, text=f"{ERROR_PREFIX} {why}", error=why)
+
+
+def _validated_arguments(name: str, arguments: Optional[Mapping[str, Any]]) -> Optional[dict[str, Any]]:
+    """The arguments of a write as validated, secrets included; None if they do not validate."""
+    spec = get_registry().get(name)
+    if spec is None or spec.args_model is None:
+        return None
+    try:
+        dumped: dict[str, Any] = spec.args_model.model_validate(dict(arguments or {})).model_dump()
+        return dumped
+    except ValidationError:
+        return None
+
+
 def _audited_arguments(name: str, arguments: Optional[Mapping[str, Any]]) -> Optional[dict[str, Any]]:
     """The arguments of a write as the audit log would store them; None for anything else."""
     spec = get_registry().get(name)
-    if spec is None or spec.args_model is None or spec.kind is not ToolKind.WRITE:
+    if spec is None or spec.kind is not ToolKind.WRITE:
         return None
-    try:
-        return _redact(spec.args_model.model_validate(dict(arguments or {})).model_dump())
-    except ValidationError:
-        return None
+    validated = _validated_arguments(name, arguments)
+    return None if validated is None else _redact(validated)

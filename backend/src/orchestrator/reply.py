@@ -80,7 +80,8 @@ def _batch(
                 Question(
                     intent_id=question.intent_id,
                     slot=question.slot,
-                    text=_wording(intents, question),
+                    # Text a route or the plan preview built is the exact wording to show.
+                    text=question.text or _wording(intents, question),
                 )
             )
     return tuple(batch)
@@ -111,7 +112,8 @@ def compose_reply(
     failed_ids = tuple(
         o.intent_id
         for o in outcomes
-        if o.status not in (OutcomeStatus.DONE, OutcomeStatus.NEEDS_INFO)
+        if o.status
+        not in (OutcomeStatus.DONE, OutcomeStatus.NEEDS_INFO, OutcomeStatus.NEEDS_CONFIRMATION)
     )
     if failed_ids:
         problems = "; ".join(_summary(intents, i) for i in failed_ids)
