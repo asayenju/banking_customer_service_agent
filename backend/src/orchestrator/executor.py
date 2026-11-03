@@ -28,7 +28,7 @@ from orchestrator.context import RouteContext
 from orchestrator.plan import Plan
 from orchestrator.routes import Route, route_for
 from orchestrator.trace import Trace, TraceEvent, TraceKind
-from orchestrator.types import Intent
+from orchestrator.types import Intent, Question
 
 # A direct recipe is a few tool calls; a sub-agent loops over a model and tools.
 ROUTE_TIMEOUTS: Mapping[Route, float] = {
@@ -41,6 +41,9 @@ ROUTE_TIMEOUT_SECONDS = 30.0  # for a route missing from a custom mapping
 
 class OutcomeStatus(StrEnum):
     DONE = "done"
+    # Not finished, and not a failure: the route cannot go on without an answer from the
+    # customer. The intent stays open and the questions are asked.
+    NEEDS_INFO = "needs_info"
     PARTIAL = "partial"
     FAILED = "failed"
     SKIPPED = "skipped"
@@ -53,15 +56,25 @@ class RouteOutcome(BaseModel):
     status: OutcomeStatus
     # What the customer can be told. For PARTIAL, what was done.
     text: str = ""
-    # Why it did not complete. Required unless DONE.
+    # Why it did not complete. Required unless DONE or NEEDS_INFO.
     error: Optional[str] = None
+    # What to ask the customer. Slot names (and wording built by code), never values the
+    # customer gave: a PIN must not travel through a question. Only for NEEDS_INFO.
+    questions: tuple[Question, ...] = ()
 
     @model_validator(mode="after")
-    def _error_matches_status(self) -> Self:
-        if self.status is OutcomeStatus.DONE and self.error is not None:
-            raise ValueError("a done outcome must not carry an error")
-        if self.status is not OutcomeStatus.DONE and not self.error:
+    def _fields_match_status(self) -> Self:
+        asking = self.status is OutcomeStatus.NEEDS_INFO
+        if self.status in (OutcomeStatus.DONE, OutcomeStatus.NEEDS_INFO) and self.error is not None:
+            raise ValueError(f"a {self.status.value} outcome must not carry an error")
+        if self.status not in (OutcomeStatus.DONE, OutcomeStatus.NEEDS_INFO) and not self.error:
             raise ValueError(f"a {self.status.value} outcome must say why")
+        if asking and not self.questions:
+            raise ValueError("a needs_info outcome must carry at least one question")
+        if not asking and self.questions:
+            raise ValueError(f"a {self.status.value} outcome must not carry questions")
+        if any(q.intent_id != self.intent_id for q in self.questions):
+            raise ValueError("a route may only ask about its own intent")
         return self
 
 
@@ -91,7 +104,7 @@ def _timeout_for(timeout: float | Mapping[Route, float], route: Route) -> float:
 
 def _reconciled(outcome: RouteOutcome, ctx: RouteContext) -> RouteOutcome:
     """PARTIAL, told from the audit, if a route that did not finish had committed writes."""
-    if outcome.status is OutcomeStatus.DONE or ctx.session is None:
+    if outcome.status in (OutcomeStatus.DONE, OutcomeStatus.NEEDS_INFO) or ctx.session is None:
         return outcome
     try:
         steps = tuple(ctx.session.committed_steps())
@@ -139,6 +152,16 @@ async def _run_one(
         outcome = _reconciled(outcome, ctx)
     if outcome.status is OutcomeStatus.DONE:
         events.append(TraceEvent(kind=TraceKind.FINISHED, intent_id=intent.id, wave=wave))
+    elif outcome.status is OutcomeStatus.NEEDS_INFO:
+        # Slot names only: the trace never carries what the customer said.
+        events.append(
+            TraceEvent(
+                kind=TraceKind.ASKED,
+                intent_id=intent.id,
+                detail=",".join(q.slot for q in outcome.questions),
+                wave=wave,
+            )
+        )
     else:
         events.append(
             TraceEvent(
@@ -180,7 +203,11 @@ async def execute_plan(
                 None,
             )
             if incomplete is not None:
-                reason = f"dependency '{incomplete}' did not complete"
+                reason = (
+                    f"waiting for an answer about '{incomplete}'"
+                    if outcomes[incomplete].status is OutcomeStatus.NEEDS_INFO
+                    else f"dependency '{incomplete}' did not complete"
+                )
                 outcomes[intent_id] = RouteOutcome(
                     intent_id=intent_id, status=OutcomeStatus.SKIPPED, error=reason
                 )
