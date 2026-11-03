@@ -140,6 +140,18 @@ class BankingSession:
         )
 
     @property
+    def database(self) -> TransactionalDB:
+        """The session's database. For the evaluation harness (comparing states, giving
+        tau2's user toolkit the same database); agent code reads and writes through call()."""
+        return self._db
+
+    @property
+    def toolkit(self) -> KnowledgeTools:
+        """The tau2 toolkit behind the session. Evaluation harness only: it skips
+        validation, the audit log and the lock, so agent code must use call()."""
+        return self._toolkit
+
+    @property
     def audit_log(self) -> tuple[AuditEntry, ...]:
         with self._lock:
             return tuple(self._audit)
