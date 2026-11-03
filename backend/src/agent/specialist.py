@@ -45,7 +45,7 @@ from orchestrator.executor import OutcomeStatus, RouteOutcome
 from orchestrator.plan_preview import PlanPreview, PlanStep, is_reference
 from orchestrator.types import Intent, IntentKind, Question
 
-_DETAIL_NAME = re.compile(r"^[a-z][a-z_]{1,39}$")
+_DETAIL_NAME = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
 _STEP_REF = re.compile(r"^\{\{step_(\d+)\.([a-z_]+)\}\}$")
 
 
@@ -98,7 +98,8 @@ has been verified. Follow these rules.
 - If policy says no, or nothing needs to change, call finish and say so plainly.
 - If a person must take over, call escalate.
 - PINs and card security codes appear as references like {{secret:pin}}. Pass the reference
-  exactly as written. Never write out a secret."""
+  exactly as written. Never write out a secret.
+- If a plan or an answer is not accepted you are told why. Read the reason, correct it, and try again."""
 
 
 def _reference(names: Sequence[str]) -> str:
@@ -202,6 +203,14 @@ class Specialist:
             vault=self._vault,
             extra_tools=[self._search_tool(seen)],
         )
+        refusals: list[str] = []
+
+        def review(name: str, arguments: Mapping[str, Any]) -> Optional[str]:
+            reason = self._review(name, arguments, intent, ctx, seen)
+            if reason:
+                refusals.append(reason)
+            return reason
+
         result = await run_agent(
             self._llm,
             box,
@@ -210,9 +219,11 @@ class Specialist:
             terminals=self.config.terminals,
             budget=self.config.budget,
             deadline=ctx.deadline,
+            review=review,
         )
         if not result.finished:
-            return _failed(intent, f"the specialist stopped: {result.reason.value}")
+            # The last thing the model was told is the most useful thing to report.
+            return _failed(intent, refusals[-1] if refusals else f"the specialist stopped: {result.reason.value}")
         assert result.terminal is not None
         if result.terminal == "finish":
             answer = self._vault.scrub(str(result.arguments["message"]))
@@ -224,6 +235,23 @@ class Specialist:
         if result.terminal == "escalate":
             return _failed(intent, "the specialist asked for a human agent")
         return self._propose(intent, ctx, guarded, result)
+
+    def _review(
+        self, name: str, arguments: Mapping[str, Any], intent: Intent, ctx: RouteContext, seen: set[str]
+    ) -> Optional[str]:
+        """Why a way of ending is not acceptable yet, in words written here; None if it is."""
+        if name == "propose_plan":
+            steps = self._steps_from(arguments.get("steps"), intent, ctx)
+            if isinstance(steps, str):
+                return steps
+            return self._dry_run(steps, intent, str(ctx.verified_user_id))
+        if name == "finish" and self.config.cite_documents:
+            answer = self._vault.scrub(str(arguments.get("message", "")))
+            if not _grounded(answer, seen):
+                return "cite at least one document you found, by its id in square brackets, and only documents your search returned"
+        if name == "ask_customer" and not _clean_details(arguments.get("details")):
+            return "name the details you need in a few words, like card_id"
+        return None
 
     def _request(self, intent: Intent) -> str:
         details = {k: v for k, v in sorted(intent.slots.items())}
@@ -255,7 +283,7 @@ class Specialist:
         return ExtraTool(schema=schema, run=search)
 
     def _ask(self, intent: Intent, result: AgentResult) -> RouteOutcome:
-        names = [d for d in result.arguments.get("details", []) if isinstance(d, str) and _DETAIL_NAME.match(d)]
+        names = _clean_details(result.arguments.get("details"))
         if not names:
             return _failed(intent, "the specialist asked a question that could not be used")
         return RouteOutcome(
@@ -404,6 +432,21 @@ class Specialist:
 
 
 _DOC_ID = re.compile(r"doc_[A-Za-z0-9_()\-]+?_\d{3}\b")
+
+
+def _clean_details(raw: Any) -> list[str]:
+    """Detail names as the model wrote them ("Transaction ID") turned into slot names
+    (transaction_id). A name that carries a long number is dropped: it might be a secret."""
+    if not isinstance(raw, list):
+        return []
+    names: list[str] = []
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        name = re.sub(r"[^a-z0-9]+", "_", item.strip().lower()).strip("_")
+        if _DETAIL_NAME.match(name) and not re.search(r"\d{3}", name) and name not in names:
+            names.append(name)
+    return names
 
 
 def _grounded(answer: str, retrieved: set[str]) -> bool:

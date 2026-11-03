@@ -15,6 +15,12 @@ Budgets (``Budget``):
     call is one inline, uninterruptible step, so a write that starts finishes; what must
     not happen is starting one that a timeout would then cut off from its bookkeeping.
 
+Review. A caller may pass ``review``, a function that looks at the way the model wants to end
+(a plan, an answer, a question) and returns a reason it is not acceptable, or None. The reason
+is handed back to the model as the answer to that call and the run goes on, so a plan the code
+would refuse can be corrected instead of thrown away. A refusal counts as an error, so a model
+that keeps getting it wrong still stops. Reasons must be written by code, never by the model.
+
 How a run ends: the model calls a terminal pseudo-tool (``finish``, ``ask_customer``,
 ``escalate``, ``propose_plan``), or a budget runs out, or the model fails. The model is
 asked for a tool call every turn (``tool_choice="required"``), so there is no free-text
@@ -148,6 +154,9 @@ TERMINALS: Mapping[str, ToolSchema] = {
 }
 
 
+Review = Callable[[str, Mapping[str, Any]], Optional[str]]
+
+
 def _loop_time() -> float:
     return asyncio.get_running_loop().time()
 
@@ -162,6 +171,7 @@ async def run_agent(
     budget: Budget = Budget(),
     deadline: Optional[float] = None,
     clock: Callable[[], float] = _loop_time,
+    review: Optional[Review] = None,
 ) -> AgentResult:
     """Run until the model ends the run or a budget does.
 
@@ -234,9 +244,15 @@ async def run_agent(
             if call.name in terminals:
                 parsed = _terminal_arguments(call, TERMINALS[call.name])
                 if parsed is not None:
-                    return result(StopReason.TERMINAL, call.name, parsed)
+                    reason = _reviewed(review, call.name, parsed)
+                    if reason is None:
+                        return result(StopReason.TERMINAL, call.name, parsed)
+                    messages.append(
+                        tool_message(call.id, f"Not accepted: {reason}. Correct it and call {call.name} again.")
+                    )
+                else:
+                    messages.append(tool_message(call.id, "Error: the arguments did not match the tool's schema."))
                 errors += 1
-                messages.append(tool_message(call.id, "Error: the arguments did not match the tool's schema."))
                 if errors >= budget.max_errors:
                     return result(StopReason.ERRORS)
                 continue
@@ -260,6 +276,16 @@ async def run_agent(
                 errors += 1
                 if errors >= budget.max_errors:
                     return result(StopReason.ERRORS)
+
+
+def _reviewed(review: Optional[Review], name: str, arguments: Mapping[str, Any]) -> Optional[str]:
+    """The reason to send the model back, or None to accept. A review that breaks refuses."""
+    if review is None:
+        return None
+    try:
+        return review(name, arguments)
+    except Exception:
+        return "that could not be checked"
 
 
 def _terminal_arguments(call: ToolCall, schema: ToolSchema) -> Optional[dict[str, Any]]:
