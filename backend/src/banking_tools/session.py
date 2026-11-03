@@ -8,11 +8,14 @@ audit log.
 Differences from tau2's call_discoverable_agent_tool, on purpose:
 - no unlock gate;
 - no row in the `agent_discoverable_tools` table; the audit log here replaces it.
+
+Time is injected. By default it is tau2's locked clock (2025-11-14 03:40 EST), never
+wall time, so audit entries are reproducible and comparable with tau2's runs.
 """
 
 import threading
 from collections.abc import Mapping
-from datetime import UTC, datetime
+from datetime import datetime, timedelta, timezone
 from functools import cache
 from typing import Any, Callable, Optional
 
@@ -20,12 +23,17 @@ from pydantic import ValidationError
 from tau2.domains.banking_knowledge.data_model import TransactionalDB
 from tau2.domains.banking_knowledge.environment import get_db
 from tau2.domains.banking_knowledge.tools import KnowledgeTools
+from tau2.domains.banking_knowledge.utils import get_now
 
 from banking_tools.args import call_kwargs
 from banking_tools.catalog import get_registry
+from banking_tools.task_state import apply_initial_state
 from banking_tools.types import AuditEntry, ToolKind, ToolResult
 
 ERROR_PREFIX = "Error:"
+
+# tau2's clock is a naive datetime documented as EST; mid-November is standard time.
+_EST = timezone(timedelta(hours=-5))
 
 # Argument names that must never reach the audit log.
 REDACTED_ARGUMENTS = frozenset({"pin", "new_pin", "current_pin", "cvv"})
@@ -40,6 +48,12 @@ def _base_db() -> TransactionalDB:
     return db
 
 
+def tau2_now() -> datetime:
+    """tau2's locked "now" with its documented zone attached."""
+    now: datetime = get_now()
+    return now.replace(tzinfo=_EST)
+
+
 def _redact(arguments: Mapping[str, Any]) -> dict[str, Any]:
     return {
         key: REDACTED if key in REDACTED_ARGUMENTS else value
@@ -48,11 +62,24 @@ def _redact(arguments: Mapping[str, Any]) -> dict[str, Any]:
 
 
 class BankingSession:
-    def __init__(self, db: Optional[TransactionalDB] = None) -> None:
+    def __init__(
+        self,
+        db: Optional[TransactionalDB] = None,
+        *,
+        clock: Callable[[], datetime] = tau2_now,
+    ) -> None:
         self._db = db if db is not None else _base_db().model_copy(deep=True)
+        self._clock = clock
         self._toolkit = KnowledgeTools(self._db)
         self._lock = threading.Lock()
         self._audit: list[AuditEntry] = []
+
+    @classmethod
+    def from_task(
+        cls, task: Mapping[str, Any], *, clock: Callable[[], datetime] = tau2_now
+    ) -> "BankingSession":
+        """A session on the task's starting database (the base DB plus its overlay)."""
+        return cls(apply_initial_state(_base_db().model_copy(deep=True), task), clock=clock)
 
     @property
     def audit_log(self) -> tuple[AuditEntry, ...]:
@@ -84,7 +111,7 @@ class BankingSession:
                         reversibility=spec.reversibility,
                         arguments=_redact(args.model_dump()),
                         ok=ok,
-                        timestamp=datetime.now(UTC),
+                        timestamp=self._clock(),
                     )
                 )
         return ToolResult(tool=name, ok=ok, text=text, error=error, audit_id=audit_id)
