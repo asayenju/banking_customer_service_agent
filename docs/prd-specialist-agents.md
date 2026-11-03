@@ -327,6 +327,11 @@ First live run, 12 usable debit tasks, one trial, `openai/gpt-4o-mini`, about $0
 - The model's failures were of three kinds: it asked the customer for ids it could have looked up (3), it wrote tool arguments that did not fit the tool or put a PIN in the open (4), it proposed steps the validators refused (3). One plan ran to the end with a final state that differed from the reference in 10 places, and one ran out of steps.
 - The run found real defects in our own code, now fixed: the live harness used a new event loop per phase (the client then failed with "Event loop is closed", so half the tasks never reached the model); a PIN typed as bare digits in answer to "what PIN?" was not captured as a secret; and the model was not told each tool's allowed values.
 
+### Small gpt-4o run (4 of the 12 tasks; not the gate)
+`openai/gpt-4o`, tasks 089, 084, 087, 090, one trial, about $0.39 as metered (the meter ignores prompt caching, so the true bill is lower): **0 of 4**, but further than mini. Two plans ran to the end and differed from the reference in 4 and 2 places: on 084 the model omitted closing the compromised card and judged provisional credit differently; on 090 it ordered STANDARD delivery where the reference used EXPEDITED (free for that account tier), a fee-tier reading mistake. Task 089 failed because the model asked for a temporary limit ($450) below the card's current one ($500), and 087 because our code rejected a perfectly good question whose detail names had spaces and capitals.
+
+Two changes followed, both tested offline. A plan, answer or question the code refuses is now sent back to the model with the reason (written by code, never containing a secret or another customer's data) so it can correct it; a refusal counts toward the error budget so a model that keeps failing still stops. And the names the model gives for details it needs are tidied (`Transaction ID` becomes `transaction_id`), dropping anything that could be a number.
+
 ## GitHub issues
 | Issue | GitHub | Title |
 |---|---|---|
