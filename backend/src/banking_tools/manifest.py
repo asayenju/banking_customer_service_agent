@@ -165,7 +165,10 @@ def classify(task: Mapping[str, Any]) -> TaskEntry:
     if task_id == "task_005":
         reason = "anomalous gold: the supervisor bypass code cannot be reproduced honestly"
     elif task_id == "task_083":
-        reason = "ACTION basis: compare the four dispute calls, not the database"
+        reason = (
+            "ACTION basis, and the gold's dispute calls omit customer_max_liability_amount, "
+            "which the bank's tool requires: a typed call cannot reproduce it"
+        )
     elif basis == "ACTION" and reason is None:
         reason = "ACTION basis: compare tool calls, not the database"
     return TaskEntry(
