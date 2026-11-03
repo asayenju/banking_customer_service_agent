@@ -9,13 +9,22 @@ Differences from tau2's call_discoverable_agent_tool, on purpose:
 - no unlock gate;
 - no row in the `agent_discoverable_tools` table; the audit log here replaces it.
 
+Two fidelity modes. DIRECT (the default for ``BankingSession()``, and what the
+older tests describe) is the behavior above. TAU2 sends discoverable tools through
+tau2's own ``unlock_discoverable_agent_tool`` and ``call_discoverable_agent_tool``,
+so the database ends up exactly as in a tau2 run, including the
+``agent_discoverable_tools`` audit rows; that is what comparing against tau2's gold
+needs. ``from_task`` defaults to TAU2. The audit log of writes is kept in both.
+
 Time is injected. By default it is tau2's locked clock (2025-11-14 03:40 EST), never
 wall time, so audit entries are reproducible and comparable with tau2's runs.
 """
 
+import json
 import threading
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta, timezone
+from enum import StrEnum
 from functools import cache
 from typing import Any, Callable, Optional
 
@@ -38,6 +47,11 @@ _EST = timezone(timedelta(hours=-5))
 # Argument names that must never reach the audit log.
 REDACTED_ARGUMENTS = frozenset({"pin", "new_pin", "current_pin", "cvv"})
 REDACTED = "***"
+
+
+class Fidelity(StrEnum):
+    DIRECT = "direct"
+    TAU2 = "tau2"
 
 
 @cache
@@ -67,19 +81,63 @@ class BankingSession:
         db: Optional[TransactionalDB] = None,
         *,
         clock: Callable[[], datetime] = tau2_now,
+        fidelity: Fidelity = Fidelity.DIRECT,
+        read_log_allowlist: Iterable[str] = (),
     ) -> None:
         self._db = db if db is not None else _base_db().model_copy(deep=True)
         self._clock = clock
+        self._fidelity = fidelity
         self._toolkit = KnowledgeTools(self._db)
+        # tau2 logs a discoverable read only if the task's gold trajectory names it.
+        self._toolkit.set_read_log_allowlist(set(read_log_allowlist))
         self._lock = threading.Lock()
         self._audit: list[AuditEntry] = []
 
     @classmethod
     def from_task(
-        cls, task: Mapping[str, Any], *, clock: Callable[[], datetime] = tau2_now
+        cls,
+        task: Mapping[str, Any],
+        *,
+        clock: Callable[[], datetime] = tau2_now,
+        fidelity: Fidelity = Fidelity.TAU2,
+        read_log_allowlist: Iterable[str] = (),
     ) -> "BankingSession":
         """A session on the task's starting database (the base DB plus its overlay)."""
-        return cls(apply_initial_state(_base_db().model_copy(deep=True), task), clock=clock)
+        return cls(
+            apply_initial_state(_base_db().model_copy(deep=True), task),
+            clock=clock,
+            fidelity=fidelity,
+            read_log_allowlist=read_log_allowlist,
+        )
+
+    def record_verification(
+        self,
+        *,
+        name: str,
+        user_id: str,
+        address: str,
+        email: str,
+        phone_number: str,
+        date_of_birth: str,
+    ) -> ToolResult:
+        """Log a successful 2-of-4 identity check the way tau2's policy asks.
+
+        The code that verified the caller calls this once; the time is the session
+        clock, formatted as in tau2's gold trajectories. ``verification_history`` is
+        part of tau2's database hash, so skipping this makes a run unmatchable.
+        """
+        return self.call(
+            "log_verification",
+            {
+                "name": name,
+                "user_id": user_id,
+                "address": address,
+                "email": email,
+                "phone_number": phone_number,
+                "date_of_birth": date_of_birth,
+                "time_verified": f"{self._clock():%Y-%m-%d %H:%M:%S} EST",
+            },
+        )
 
     @property
     def audit_log(self) -> tuple[AuditEntry, ...]:
@@ -116,6 +174,17 @@ class BankingSession:
                 )
         return ToolResult(tool=name, ok=ok, text=text, error=error, audit_id=audit_id)
 
+    def _through_tau2_dispatcher(self, name: str, kwargs: dict[str, Any]) -> str:
+        """tau2's own unlock + JSON call, so numbers, errors and audit rows are tau2's."""
+        if name not in self._toolkit.get_agent_discoverable_tools_state():
+            unlocked: str = self._toolkit.unlock_discoverable_agent_tool(name)
+            if unlocked.startswith(ERROR_PREFIX):
+                return unlocked
+        result: str = self._toolkit.call_discoverable_agent_tool(
+            name, json.dumps(kwargs, default=str)
+        )
+        return result
+
     def _method(self, source: str, name: str) -> Callable[..., str]:
         if source == "discoverable":
             return self._toolkit.get_discoverable_tools()[name]  # type: ignore[no-any-return]
@@ -125,7 +194,10 @@ class BankingSession:
         self, source: str, name: str, kwargs: dict[str, Any]
     ) -> tuple[bool, str, Optional[str]]:
         try:
-            text = self._method(source, name)(**kwargs)
+            if self._fidelity is Fidelity.TAU2 and source == "discoverable":
+                text = self._through_tau2_dispatcher(name, kwargs)
+            else:
+                text = self._method(source, name)(**kwargs)
         except Exception as exc:  # tau2 should not raise, but a tool bug must not escape
             message = f"{type(exc).__name__}: {exc}"
             return False, message, message
