@@ -34,7 +34,7 @@ from tau2.domains.banking_knowledge.tools import (
 from agent.llm_tools import ToolCall, ToolSchema
 from banking_tools.catalog import get_registry
 from banking_tools.session import REDACTED_ARGUMENTS
-from banking_tools.types import ToolSpec
+from banking_tools.types import ToolKind, ToolSpec
 from orchestrator.context import AgentSession
 from orchestrator.sanitize import replace_secrets
 
@@ -187,6 +187,11 @@ class ScopedToolBox:
         self._allowed = tuple(sorted(allowed_tools))
         self.vault = vault or SecretVault()
         self._limit = max_result_chars
+
+    def is_write(self, name: str) -> bool:
+        """Does this tool change anything? Unknown names count as writes: fail closed."""
+        spec = get_registry().get(name)
+        return spec is None or spec.kind is not ToolKind.READ
 
     def schemas(self) -> list[ToolSchema]:
         registry = get_registry()
