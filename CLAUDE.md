@@ -47,4 +47,6 @@ Run from `backend/` with `PYTHONPATH=src:../tau2-bench/src` if `orchestrator` is
 - Reports include false write rate on no-action messages and write precision/recall. Latest (3 trials): minimal pairs 1.00, main 0.92, holdout 0.97, holdout2 0.83. Older 5-trial results (temperature 0 still varies a little between runs, so a 1 to 2 point change is noise): main pass@1 0.90, holdout 0.96, holdout2 0.82 (pass^5 0.76). The recurring failure is an extra action from a symptom or a question (`FEE_OR_INTEREST_ADJUSTMENT`, `OPEN_ACCOUNT`, `CARD_CONTROLS`), not a dropped request.
 
 ## Current work
+Next PRD: `docs/prd-specialist-agents.md` (issues #19 to #48, label `specialist-agents`): faithful tau2 session, runner contract changes, then a debit-card pilot before the other specialists. Live evals there are expensive: never run broad, always capped and opt-in.
+
 The decomposer, Jev adapter, evaluation harness and the evidence check are built and tested. Next: settle the label rules above and re-measure on a clean holdout; recheck `WRITE_KIND_ASK_AT` once more labelled data exists (it rests on 10 wrong intents); then real sub-agents behind `executor.RouteRunner`. Known follow-ups are listed under "Decisions" in the routing PRD.
