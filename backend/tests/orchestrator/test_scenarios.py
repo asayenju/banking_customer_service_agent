@@ -87,7 +87,7 @@ def prd_edge_case_rows():
 
 def test_every_edge_case_row_has_a_scenario():
     rows = prd_edge_case_rows()
-    assert len(rows) == 20, "the edge-case table could not be read"
+    assert len(rows) == 21, "the edge-case table could not be read"
     assert set(rows) == set(COVERS), (
         f"rows without a scenario: {sorted(set(rows) - set(COVERS))}; "
         f"scenarios for rows that are gone: {sorted(set(COVERS) - set(rows))}"
@@ -103,7 +103,7 @@ def test_the_tau2_tasks_that_inspired_scenarios_exist():
 # ---------------------------------------------------------------- edge-case table
 
 
-@covers("92/88/40 mixed confidence")
+@covers("98/96/40 mixed confidence")
 def test_mixed_confidence_runs_two_and_hands_one_to_a_human_in_one_reply():
     w = World(
         [
@@ -114,7 +114,7 @@ def test_mixed_confidence_runs_two_and_hands_one_to_a_human_in_one_reply():
                 claims=GOOD_CLAIMS,
             )
         ],
-        [[S("bal", 0.92), S("frz", 0.88), S("fee", 0.40)]],
+        [[S("bal", 0.98), S("frz", 0.96), S("fee", 0.40)]],
     )
     r = w.turn("check my balance, freeze my card, and sort out my fees")
     assert brief(r) == [
@@ -127,11 +127,27 @@ def test_mixed_confidence_runs_two_and_hands_one_to_a_human_in_one_reply():
     assert "handing this to a human agent: summary of fee" in r.reply.text
 
 
+@covers("Reversible write, kind answer under 0.95")
+def test_a_freeze_the_kind_answer_is_unsure_about_asks_first_and_runs_once_sure():
+    freeze = I("frz", K.FREEZE_CARD, {"card_id": "c1"})
+    w = World(
+        [interp(freeze, claims=GOOD_CLAIMS), interp(I("frz", K.FREEZE_CARD, {"card_id": "c1"}))],
+        [[S("frz", 0.9)], [S("frz", 0.97)]],
+    )
+    first = w.turn("I think I want my card frozen")
+    assert brief(first) == ["scored:frz", "decided:frz", "asked:frz"]
+    assert [q.slot for q in first.reply.questions] == ["clarification"]
+    assert w.direct.calls == [] and w.sub.calls == []
+    second = w.turn("yes, freeze card c1")
+    assert brief(second) == ["scored:frz", "decided:frz", "routed:frz@1", "started:frz@1", "finished:frz@1"]
+    assert w.direct.calls == ["frz"]
+
+
 @covers("Escalated intent that others depend on")
 def test_something_that_depends_on_an_escalated_intent_waits_and_is_reported():
     w = World(
         [interp(I("fee", K.FEE_OR_INTEREST_ADJUSTMENT), I("b", depends_on=("fee",)), claims=GOOD_CLAIMS)],
-        [[S("fee", 0.40), S("b", 0.9)]],
+        [[S("fee", 0.40), S("b", 0.96)]],
     )
     r = w.turn("fix my fees, then tell me what changed")
     assert brief(r) == ["scored:fee", "scored:b", "decided:fee", "escalated:fee", "decided:b"]
@@ -163,7 +179,7 @@ def test_two_reads_on_one_account_run_at_the_same_time():
     reads = [I(n, K.ACCOUNT_BALANCE_OR_HISTORY, {"account_id": "a1"}) for n in ("r1", "r2")]
     w = World(
         [interp(*reads, claims=GOOD_CLAIMS)],
-        [[S("r1", 0.9), S("r2", 0.9)]],
+        [[S("r1", 0.96), S("r2", 0.96)]],
         direct=ScriptedRoute({"r1": Behavior.SLOW, "r2": Behavior.SLOW}),
     )
     r = w.turn("what is my balance and my recent history")
@@ -185,7 +201,7 @@ def test_a_stolen_card_is_frozen_before_the_balance_is_read():
                 claims=GOOD_CLAIMS,
             )
         ],
-        [[S("bal", 0.9), S("frz", 0.9)]],
+        [[S("bal", 0.96), S("frz", 0.96)]],
     )
     r = w.turn("my card was stolen, freeze it and tell me my balance")
     assert brief(r) == [
@@ -265,7 +281,7 @@ def test_a_withdrawn_request_never_runs_and_the_new_one_does():
     freeze = I("f", K.FREEZE_CARD, {"card_id": "c1"})
     w = World(
         [interp(close, claims=GOOD_CLAIMS), interp(freeze, declined=["x"])],
-        [[S("x", 0.99)], [S("f", 0.9)]],
+        [[S("x", 0.99)], [S("f", 0.96)]],
     )
     w.turn("close my card")
     r = w.turn("actually no, just freeze it for now")
@@ -278,7 +294,7 @@ def test_a_withdrawn_request_never_runs_and_the_new_one_does():
 
 @covers("Same message submitted twice")
 def test_a_double_submit_does_not_run_anything_twice():
-    w = World([interp(I("a"))], [[S("a", 0.9)]])
+    w = World([interp(I("a"))], [[S("a", 0.96)]])
     first = w.turn("what are your overdraft fees", message_id="msg-7")
     second = w.turn("what are your overdraft fees", message_id="msg-7")
     assert second is first
@@ -292,7 +308,7 @@ def test_a_reply_that_changes_another_intent_leaves_the_asked_one_alone():
     nine = I("z", K.TRANSFER_FUNDS, {"source_account_id": "a1", "amount": "900"})
     w = World(
         [interp(x, five, claims=GOOD_CLAIMS), interp(nine)],
-        [[S("x", 0.9), S("z", 0.99)], [S("z", 0.99)]],
+        [[S("x", 0.96), S("z", 0.99)], [S("z", 0.99)]],
     )
     first = w.turn("freeze my card and move 500 to savings")
     assert brief(first) == [
@@ -307,7 +323,7 @@ def test_a_reply_that_changes_another_intent_leaves_the_asked_one_alone():
 def test_a_route_that_stalls_returns_junk_or_stops_halfway_is_reported_not_raised():
     w = World(
         [interp(I("a"), I("b"), I("c"), I("d", depends_on=("c",)))],
-        [[S("a", 0.9), S("b", 0.9), S("c", 0.9), S("d", 0.9)]],
+        [[S("a", 0.96), S("b", 0.96), S("c", 0.96), S("d", 0.96)]],
         sub=ScriptedRoute({"a": Behavior.TIMEOUT, "b": Behavior.MALFORMED, "c": Behavior.PARTIAL}),
         route_timeout=0.05,
     )
@@ -335,7 +351,7 @@ def test_text_that_tries_to_steer_the_system_changes_nothing_but_the_flag():
 
     def conversation(flags):
         intents = [I("c", K.CLOSE_CARD, {"card_id": "c1"}), I("g", K.GENERAL_QUESTION)]
-        w = World([interp(*intents, claims=GOOD_CLAIMS, flags=flags)], [[S("c", 0.5), S("g", 0.9)]])
+        w = World([interp(*intents, claims=GOOD_CLAIMS, flags=flags)], [[S("c", 0.5), S("g", 0.96)]])
         return w, w.turn(attack)
 
     plain_world, plain = conversation(())
@@ -378,7 +394,7 @@ def test_answering_one_intent_rescores_only_it_while_the_other_keeps_counting():
     z = I("z", K.FEE_OR_INTEREST_ADJUSTMENT, missing=("amount",))
     w = World(
         [interp(x, z, claims=GOOD_CLAIMS), interp(I("x", K.FREEZE_CARD, {"card_id": "c1"})), interp(), interp()],
-        [[S("x", 0.9), S("z", 0.9)], [S("x", 0.9)]],
+        [[S("x", 0.96), S("z", 0.96)], [S("x", 0.96)]],
     )
     w.turn("freeze my card and fix the interest on my savings")
     second = w.turn("the card is c1")
@@ -425,7 +441,7 @@ def test_a_caller_who_can_only_give_two_details_is_still_verified_and_gets_both_
     # Kenji knows his email and phone but not his address or date of birth.
     bal = I("bal", K.ACCOUNT_BALANCE_OR_HISTORY)
     mail = I("mail", K.UPDATE_PROFILE, {"new_email": "kenji.tanaka@gmail.com"})
-    w = World([interp(bal, mail), interp(claims=GOOD_CLAIMS)], [[S("bal", 0.9), S("mail", 0.9)]])
+    w = World([interp(bal, mail), interp(claims=GOOD_CLAIMS)], [[S("bal", 0.96), S("mail", 0.96)]])
     first = w.turn("I would like to check my balance and change my email")
     assert brief(first) == ["decided:bal", "asked:bal", "decided:mail", "asked:mail"]
     assert len(first.reply.questions) == 1
@@ -472,7 +488,7 @@ def test_a_dispute_collects_what_is_missing_then_a_yes_then_runs():
     full = I("d", K.DISPUTE_TRANSACTION, {"card_id": "c1", "transaction_id": "t7", "reason": "room not as booked"})
     w = World(
         [interp(needs, claims=GOOD_CLAIMS), interp(full), interp(confirmed=["d"])],
-        [[S("d", 0.9)], [S("d", 0.95)], [S("d", 0.95)]],
+        [[S("d", 0.96)], [S("d", 0.95)], [S("d", 0.95)]],
     )
     first = w.turn("the hotel gave me a smaller room than I paid for, I want a refund")
     assert [q.slot for q in first.reply.questions] == ["transaction_id", "reason"]
@@ -485,7 +501,7 @@ def test_a_dispute_collects_what_is_missing_then_a_yes_then_runs():
 @inspired_by("task_015")
 def test_product_questions_are_answered_without_asking_who_the_caller_is():
     asks = [I(f"p{n}", K.GENERAL_QUESTION) for n in (1, 2, 3)]
-    w = World([interp(*asks)], [[S("p1", 0.9), S("p2", 0.9), S("p3", 0.9)]])
+    w = World([interp(*asks)], [[S("p1", 0.96), S("p2", 0.96), S("p3", 0.96)]])
     r = w.turn("I got letters about referral bonuses on three different cards, how do they work")
     assert w.sub.calls == ["p1", "p2", "p3"] and r.reply.questions == ()
     assert not w.orch.verified and r.reply.text.count("Done:") == 3
@@ -496,7 +512,7 @@ def test_two_interest_corrections_on_different_accounts_wait_for_a_yes_then_run_
     fixes = [I(f"s{n}", K.FEE_OR_INTEREST_ADJUSTMENT, {"account_id": f"sav{n}"}) for n in (1, 2)]
     w = World(
         [interp(*fixes, claims=GOOD_CLAIMS), interp(confirmed=["s1", "s2"])],
-        [[S("s1", 0.9), S("s2", 0.9)]] * 2,
+        [[S("s1", 0.96), S("s2", 0.96)]] * 2,
         sub=ScriptedRoute(default=Behavior.SLOW),
     )
     first = w.turn("the interest on both of my savings accounts looks too low")

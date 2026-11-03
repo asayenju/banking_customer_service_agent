@@ -23,7 +23,8 @@ from typing import Annotated, Optional, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from orchestrator.bands import Band, band
+from orchestrator.bands import WRITE_KIND_ASK_AT, Band, band
+from orchestrator.plan import READ_ONLY_KINDS
 from orchestrator.routes import Route, route_for
 from orchestrator.scoring import IntentScore
 from orchestrator.types import Intent, IntentKind, Question
@@ -107,13 +108,21 @@ def decide(
         return _escalate(intent, "this kind hands off to a human")
     if score.error is not None:
         return _escalate(intent, f"could not be scored: {score.error}")
-    confidence_band = band(score.confidence)
-    if confidence_band is Band.ESCALATE:
+    # Missing details score slots at 0, which drags the minimum to 0. That is a reason
+    # to ask for them, not to give up on the request, so only how well the request is
+    # understood (kind and scope) can escalate before the missing details are asked for.
+    understood = min(score.kind_confidence, score.scope_confidence)
+    if band(understood) is Band.ESCALATE:
         return _escalate(intent, "confidence below the escalation threshold")
     if intent.missing_slots:
         return _ask_for_details(intent, "details are missing")
+    confidence_band = band(score.confidence)
+    if confidence_band is Band.ESCALATE:
+        return _escalate(intent, "confidence below the escalation threshold")
     if confidence_band is Band.ASK:
         return _ask_for_details(intent, "not sure enough to act yet")
+    if intent.kind not in READ_ONLY_KINDS and score.kind_confidence < WRITE_KIND_ASK_AT:
+        return _ask_for_details(intent, "not sure enough the request is right to act yet")
     if not needs_confirmation(intent.kind):
         return IntentDecision(intent_id=intent.id, action=Action.RUN, reason="ready")
 

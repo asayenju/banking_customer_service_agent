@@ -110,8 +110,19 @@ def test_runner_scores_exact_match_and_reports_pass_at_k_and_pass_hat_k():
     assert s.pass_hat_k == pytest.approx((1 / 3, 1 / 6, 0.0))
     assert s.mean_trial_pass_rate == pytest.approx(1 / 3)
     assert s.policy_pass_rate == pytest.approx(5 / 6)
+    # Task a misses a kind in 1 trial; task b adds a kind in all 3.
+    assert s.trials_with_missed == pytest.approx(1 / 6)
+    assert s.trials_with_extra == pytest.approx(3 / 6)
+    scores = {k.kind: k for k in s.per_kind}
+    assert (scores[K.FREEZE_CARD].true_positive, scores[K.FREEZE_CARD].false_positive, scores[K.FREEZE_CARD].false_negative) == (2, 3, 1)
+    assert (scores[K.CLOSE_CARD].true_positive, scores[K.CLOSE_CARD].false_positive, scores[K.CLOSE_CARD].false_negative) == (6, 0, 0)
+    # Write precision/recall over every kind together: 9 true, 3 false, 1 missed.
+    assert s.write_precision == pytest.approx(8 / 11)
+    assert s.write_recall == pytest.approx(8 / 9)
+    assert s.no_action_tasks == 0 and s.false_write_rate is None
     text = render(s, results)
     assert "pass@2" in text and "pass^3" in text
+    assert "precision" in text and "trials that added an action" in text
 
 
 def test_a_failed_decomposition_counts_as_a_failed_trial():
@@ -139,3 +150,25 @@ def test_auroc_measures_how_well_low_scores_flag_wrong_intents():
     assert auroc([0.9], [0.9]) == 0.5
     assert auroc([0.9, 0.1], [0.5]) == 0.5
     assert auroc([], [0.5]) != auroc([], [0.5])  # nan: no wrong intents, no signal
+
+
+def test_tasks_with_no_write_action_are_only_selected_on_request():
+    write = task(action("call_discoverable_agent_tool", agent_tool_name="close_debit_card_4721"), id="w")
+    quiet = task(id="q")
+    assert [t["id"] for t in select_tasks([write, quiet], 5)] == ["w"]
+    picked = select_tasks([write, quiet], 5, require_actions=False)
+    assert sorted(t["id"] for t in picked) == ["q", "w"]
+
+
+def test_false_write_rate_counts_only_messages_that_ask_the_bank_for_nothing():
+    cases = [
+        EvalCase(task_id="quiet", message="m", stated=(), expected=()),
+        EvalCase(task_id="loud", message="m", stated=(K.CLOSE_CARD,), expected=(K.CLOSE_CARD,)),
+    ]
+    stubs = {"quiet": Stub([[K.CLOSE_CARD], [], []]), "loud": Stub([[K.CLOSE_CARD]])}
+    order = ["quiet"] * 3 + ["loud"] * 3
+    results = asyncio.run(run_eval(cases, lambda: stubs[order.pop(0)], trials=3, concurrency=1))
+    s = summarize(results, 3)
+    assert s.no_action_tasks == 1
+    assert s.false_write_rate == pytest.approx(1 / 3)
+    assert "false write rate on 1 no-action messages: 33.3%" in render(s, results)

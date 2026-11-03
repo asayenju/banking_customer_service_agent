@@ -16,6 +16,7 @@ def raw(id, kind, summary="s", slots=None, depends_on=(), span=None):
     return {
         "id": id,
         "evidence": "e",
+        "communication_type": "ACTION_REQUEST",
         "kind": kind,
         "summary": summary,
         "slots": [{"name": k, "value": v} for k, v in (slots or {}).items()],
@@ -246,3 +247,72 @@ def test_very_long_message_is_capped_before_sending() -> None:
 def test_bad_spans_are_dropped_not_fatal() -> None:
     fake = FakeLLMClient([reply(raw("i1", "GENERAL_QUESTION", span=(9, 2)))])
     assert interpret(fake, "hours?").decomposition.intents[0].source_span is None
+
+
+# --- evidence is checked against the message ---
+
+
+def with_evidence(intent, evidence):
+    return {**intent, "evidence": evidence}
+
+
+def test_an_intent_quoting_words_the_customer_never_wrote_is_dropped() -> None:
+    message = "Please freeze card c1."
+    fake = FakeLLMClient(
+        [
+            reply(
+                with_evidence(raw("i1", "FREEZE_CARD"), "freeze card c1"),
+                with_evidence(raw("i2", "CLOSE_CARD", depends_on=("i1",)), "close it for good"),
+            )
+        ]
+    )
+    result = interpret(fake, message)
+    assert kinds(result) == [K.FREEZE_CARD]
+
+
+def test_a_hand_off_quoting_only_urgency_is_dropped_when_another_intent_remains() -> None:
+    message = "I need help getting my card frozen, this is a nightmare."
+    fake = FakeLLMClient(
+        [
+            reply(
+                with_evidence(raw("i1", "FREEZE_CARD"), "my card frozen"),
+                with_evidence(raw("i2", "REQUEST_HUMAN"), "I need help"),
+            )
+        ]
+    )
+    assert kinds(interpret(fake, message)) == [K.FREEZE_CARD]
+
+
+# --- communication_type is enforced in code ---
+
+
+def with_type(intent, communication_type, evidence):
+    return {**intent, "communication_type": communication_type, "evidence": evidence}
+
+
+def test_a_write_the_model_calls_a_complaint_is_dropped_when_a_real_request_remains() -> None:
+    message = "Please freeze card c1. My interest looks low."
+    fake = FakeLLMClient(
+        [
+            reply(
+                with_type(raw("i1", "FREEZE_CARD"), "ACTION_REQUEST", "Please freeze card c1"),
+                with_type(raw("i2", "FEE_OR_INTEREST_ADJUSTMENT"), "COMPLAINT", "My interest looks low"),
+            )
+        ]
+    )
+    assert kinds(interpret(fake, message)) == [K.FREEZE_CARD]
+
+
+def test_a_lone_write_that_is_only_a_symptom_becomes_a_read_not_a_failure() -> None:
+    message = "My debit cards are locked at the ATM."
+    fake = FakeLLMClient(
+        [reply(with_type(raw("i1", "REPORT_FRAUD_OR_LOSS"), "PROBLEM_STATEMENT", "My debit cards are locked"))]
+    )
+    result = interpret(fake, message)
+    assert kinds(result) == [K.ACCOUNT_BALANCE_OR_HISTORY]
+    assert result.decomposition.flags == ()
+
+
+def test_the_schema_requires_a_communication_type() -> None:
+    props = OUTPUT_SCHEMA["$defs"]["_RawIntent"]
+    assert "communication_type" in props["required"]

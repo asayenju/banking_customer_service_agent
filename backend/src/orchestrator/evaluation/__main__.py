@@ -1,9 +1,10 @@
 """Opt-in commands (they call the live model and need OPENAI_KEY in the repo-root .env).
 
-    uv run python -m orchestrator.evaluation build [--count 50] [--set PATH] [--exclude PATH]
+    uv run python -m orchestrator.evaluation build [--count 50] [--set PATH] [--exclude PATH] [--no-action-tasks]
     uv run python -m orchestrator.evaluation label [--set PATH]
     uv run python -m orchestrator.evaluation run [--trials 3] [--temperature 0.0] [--set PATH]
     uv run python -m orchestrator.evaluation jev [--set PATH ...]   # needs JEV_KEY and the jev extra
+    uv run python -m orchestrator.evaluation e2e [--sets PATH ...]  # whole orchestrator, mock routes
 
 The main set is evals/banking_eval_set.json. A holdout built with ``--exclude`` the
 main set (the tasks it left out) checks that prompt changes were not tuned to it.
@@ -36,10 +37,17 @@ def main() -> None:
     build = sub.add_parser("build", help="write the frozen set of customer messages")
     build.add_argument("--count", type=int, default=DEFAULT_COUNT)
     build.add_argument("--exclude", type=Path, default=None, help="skip tasks already in this set")
+    build.add_argument(
+        "--no-action-tasks",
+        action="store_true",
+        help="also pick tasks with no write action (customers who should trigger nothing)",
+    )
     label = sub.add_parser("label", help="relabel the saved messages with the labeling model")
     run = sub.add_parser("run", help="score the decomposer on the frozen set")
     jev = sub.add_parser("jev", help="how well Jev's confidence separates right intents from wrong ones")
     jev.add_argument("--sets", type=Path, nargs="+", default=[DATASET_PATH])
+    e2e = sub.add_parser("e2e", help="run each message through the orchestrator and count what would run")
+    e2e.add_argument("--sets", type=Path, nargs="+", default=[DATASET_PATH])
     for p in (build, label, run):
         p.add_argument("--set", type=Path, default=DATASET_PATH, dest="dataset")
     run.add_argument("--trials", type=int, default=DEFAULT_TRIALS)
@@ -52,12 +60,26 @@ def main() -> None:
         labeler = LiteLLMClient(LABELING_MODEL)
         if args.command == "build":
             skip = {c.task_id for c in load_cases(args.exclude)} if args.exclude else set()
-            picked = select_tasks(load_tasks(), args.count, exclude=skip)
+            picked = select_tasks(
+                load_tasks(), args.count, exclude=skip, require_actions=not args.no_action_tasks
+            )
             cases = asyncio.run(build_cases(client, labeler, picked))
         else:
             cases = asyncio.run(label_cases(labeler, load_cases(args.dataset)))
         save_cases(cases, args.dataset)
         print(f"wrote {len(cases)} cases")
+        return
+
+    if args.command == "e2e":
+        from orchestrator.evaluation.end_to_end import render as render_e2e
+        from orchestrator.evaluation.end_to_end import run_end_to_end, summarize as summarize_e2e
+        from orchestrator.jev import make_jev_scorer
+
+        every = [c for path in args.sets for c in load_cases(path)]
+        found, not_found = asyncio.run(
+            run_end_to_end(every, lambda: LLMDecomposer(client), make_jev_scorer)
+        )
+        print(render_e2e(summarize_e2e(every, found, not_found)))
         return
 
     if args.command == "jev":

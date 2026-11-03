@@ -1,0 +1,274 @@
+[
+  {
+    "task_id": "mp_01",
+    "message": "My interest looks low.",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_02",
+    "message": "Why was my interest payment so low this month?",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_03",
+    "message": "Please correct the interest paid on my savings account.",
+    "stated": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ],
+    "expected": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ]
+  },
+  {
+    "task_id": "mp_04",
+    "message": "I think this $35 overdraft fee is too high.",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_05",
+    "message": "Could you waive this $35 overdraft fee?",
+    "stated": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ],
+    "expected": [
+      "FEE_OR_INTEREST_ADJUSTMENT"
+    ]
+  },
+  {
+    "task_id": "mp_06",
+    "message": "Explain this $35 fee and unfreeze my debit card.",
+    "stated": [
+      "UNFREEZE_CARD"
+    ],
+    "expected": [
+      "UNFREEZE_CARD"
+    ]
+  },
+  {
+    "task_id": "mp_07",
+    "message": "My debit card is frozen.",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_08",
+    "message": "Why is my debit card frozen?",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_09",
+    "message": "Please unfreeze my debit card.",
+    "stated": [
+      "UNFREEZE_CARD"
+    ],
+    "expected": [
+      "UNFREEZE_CARD"
+    ]
+  },
+  {
+    "task_id": "mp_10",
+    "message": "Do not unfreeze my debit card.",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_11",
+    "message": "If I asked you to unfreeze my debit card, what would happen?",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_12",
+    "message": "Please freeze my debit card.",
+    "stated": [
+      "FREEZE_CARD"
+    ],
+    "expected": [
+      "FREEZE_CARD"
+    ]
+  },
+  {
+    "task_id": "mp_13",
+    "message": "Don't freeze my card, I only want to know my balance.",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_14",
+    "message": "My PIN is locked and I can't use the ATM.",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_15",
+    "message": "Please reset my PIN.",
+    "stated": [
+      "CHANGE_OR_RESET_PIN"
+    ],
+    "expected": [
+      "CHANGE_OR_RESET_PIN"
+    ]
+  },
+  {
+    "task_id": "mp_16",
+    "message": "I'm looking for a credit card with no foreign transaction fees.",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_17",
+    "message": "Which of your savings accounts pays the highest interest?",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_18",
+    "message": "Please open a savings account for me.",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": [
+      "OPEN_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "mp_19",
+    "message": "I'd like to close my checking account.",
+    "stated": [
+      "CLOSE_ACCOUNT"
+    ],
+    "expected": [
+      "CLOSE_ACCOUNT"
+    ]
+  },
+  {
+    "task_id": "mp_20",
+    "message": "Should I close my checking account?",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_21",
+    "message": "I'm thinking about closing my checking account but haven't decided.",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_22",
+    "message": "I got a new email address recently.",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_23",
+    "message": "My email changed to sam.lee@example.com. Can you update it on my account?",
+    "stated": [
+      "UPDATE_PROFILE"
+    ],
+    "expected": [
+      "UPDATE_PROFILE"
+    ]
+  },
+  {
+    "task_id": "mp_24",
+    "message": "I want to speak to a human agent.",
+    "stated": [
+      "REQUEST_HUMAN"
+    ],
+    "expected": [
+      "REQUEST_HUMAN"
+    ]
+  },
+  {
+    "task_id": "mp_25",
+    "message": "I'm frustrated and this is taking forever.",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_26",
+    "message": "There is a $200 charge from Acme Corp on my statement.",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_27",
+    "message": "I'd like to dispute a $200 charge from Acme Corp on my debit card.",
+    "stated": [
+      "DISPUTE_TRANSACTION"
+    ],
+    "expected": [
+      "DISPUTE_TRANSACTION"
+    ]
+  },
+  {
+    "task_id": "mp_28",
+    "message": "What is my credit limit?",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_29",
+    "message": "Can you raise my credit limit to $10,000?",
+    "stated": [
+      "CREDIT_LIMIT_REQUEST"
+    ],
+    "expected": [
+      "CREDIT_LIMIT_REQUEST"
+    ]
+  },
+  {
+    "task_id": "mp_30",
+    "message": "I transferred $500 yesterday and it hasn't arrived.",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_31",
+    "message": "Please transfer $500 from my checking to my savings.",
+    "stated": [
+      "TRANSFER_FUNDS"
+    ],
+    "expected": [
+      "TRANSFER_FUNDS"
+    ]
+  },
+  {
+    "task_id": "mp_32",
+    "message": "My debit card is cracked.",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_33",
+    "message": "Please order me a replacement debit card.",
+    "stated": [
+      "ORDER_REPLACEMENT_CARD"
+    ],
+    "expected": [
+      "ORDER_REPLACEMENT_CARD"
+    ]
+  },
+  {
+    "task_id": "mp_34",
+    "message": "How do I turn on purchase alerts in the app?",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "mp_35",
+    "message": "Please freeze my debit card and order a replacement.",
+    "stated": [
+      "FREEZE_CARD",
+      "ORDER_REPLACEMENT_CARD"
+    ],
+    "expected": [
+      "FREEZE_CARD",
+      "ORDER_REPLACEMENT_CARD"
+    ]
+  }
+]
