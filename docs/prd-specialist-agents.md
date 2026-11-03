@@ -108,13 +108,13 @@ Task classification, measured on `tasks.json` (97 tasks):
 | Transfer-only (ACTION basis) | 004 008 012 014 032 033 034 035 | 8 |
 | Customer-side tools or reads only | the rest | 25 |
 
-Gradeable DB-state set: 62 tasks (57 wholly in one cluster plus 7 spanning, minus 083 and 005). Excluded: 005 (anomalous gold: supervisor bypass code); the 8 ACTION-only transfer tasks (assert a hand-off, the right transfer tool, and no domain write); 083 (ACTION basis: compare the four dispute calls); the 25 customer-side or reads-only tasks. Trap tasks (052 049 008 014 035 099 016) are negative assertions ("no unsafe write").
+Gradeable DB-state set: 62 tasks (57 wholly in one cluster plus 7 spanning, minus 083 and 005). Excluded: 005 (anomalous gold: supervisor bypass code); 083 (its gold dispute calls omit `customer_max_liability_amount`, which the bank's tool requires, so no typed call can reproduce them); the 8 ACTION-only transfer tasks (assert a hand-off, the right transfer tool, and no domain write); 083 (ACTION basis: compare the four dispute calls); the 25 customer-side or reads-only tasks. Trap tasks (052 049 008 014 035 099 016) are negative assertions ("no unsafe write").
 
 ### Cost controls
 - Default `pytest` and CI make zero model calls. The parity gate replays gold with no LLM. Tier-1 tests use `FakeToolLLM`.
 - Live runs: explicit `--tasks` (ids or a specialist name; there is no "all"), `--max-tasks` (default 5), `--trials` (default 1), `--max-cost-usd`, and a printed estimate that needs `--yes`.
 - Cassette record and replay (keyed by task, model, prompt hash, secrets scrubbed, git-ignored): a failing task is replayed for free.
-- The pilot go/no-go is one live run of the 13 wholly-debit tasks, one trial. Each later specialist gets 3 representative live tasks. No scheduled live job. Staged simulation is optional and capped at about 10 tasks.
+- The pilot go/no-go is one live run of the 12 usable wholly-debit tasks (13 less task 083), one trial. Each later specialist gets 3 representative live tasks. No scheduled live job. Staged simulation is optional and capped at about 10 tasks.
 
 ## Constraints and risks
 Edge cases, ranked; each is an acceptance criterion in an issue below.
@@ -232,9 +232,9 @@ Known limits: a rolling preview can still surprise the customer between rounds; 
 - Tier-1 tests for the 082, 084, 085, 086 segments pass. Depends on: 2.1.
 
 **Issue 2.4: Pilot gate and report.**
-- Tier-1 passes for 078 079 082 084 to 092; 083 is compared on the ACTION basis.
+- Tier-1 passes for the 12 usable pilot tasks (078 079 082 084 to 092); 083 is excluded because its own gold omits a required argument.
 - The report lists semantic and strict pass, steps, tokens and latency per task.
-- Live (opt-in, capped): one trial of the 13 tasks with the default model, estimate confirmed first, cassettes recorded. The gpt-4o-mini comparison runs only on failed tasks or on request.
+- Live (opt-in, capped): one trial of the 12 usable tasks with the default model, estimate confirmed first, cassettes recorded. The gpt-4o-mini comparison runs only on failed tasks or on request.
 - Go/no-go: all tier-1 green, live semantic pass@1 >= 80%, zero guard bypasses. Depends on: 2.1 to 2.3, 0.4, 0.5, 2.5.
 
 **Issue 2.5: Live-run cost controls.**
@@ -308,7 +308,7 @@ Decided by the project owner:
 10. DIRECT recipes, `GENERAL_QUESTION` and `REPORT_FRAUD_OR_LOSS` are in scope.
 11. Customer-side tools are out of scope now.
 12. `AGENT_MODEL`, default `openai/gpt-4o`.
-13. Pilot go/no-go: tier-1 green and live semantic pass@1 >= 80% on the 13 wholly-debit tasks, with zero guard bypasses (one trial).
+13. Pilot go/no-go: tier-1 green and live semantic pass@1 >= 80% on the 12 usable wholly-debit tasks, with zero guard bypasses (one trial).
 14. Live evaluation is expensive: never broad, always capped and opt-in.
 
 Adopted from the design review (open to veto):
@@ -319,7 +319,7 @@ Adopted from the design review (open to veto):
 - Per-route timeouts replace the single 30 s.
 - A human transfer is code-triggered: ask first, only when the KB offers no action.
 
-Corrections to earlier statements made while writing this PRD: the debit pilot is 13 tasks (plus 3 spanning debit and credit), not "about 30"; 35 tasks carry a real DB overlay (53 have an `initialization_data` block, 18 of them empty); and the "34 tasks with no agent-side write" were really 25 customer-side or reads-only tasks plus 8 transfer-only tasks (plus task 005, profile-only), found when the manifest (Issue 0.5) was generated from `tasks.json`.
+Corrections to earlier statements made while writing this PRD: the debit pilot is 13 tasks (12 usable: task 083's gold is invalid; plus 3 spanning debit and credit), not "about 30"; 35 tasks carry a real DB overlay (53 have an `initialization_data` block, 18 of them empty); and the "34 tasks with no agent-side write" were really 25 customer-side or reads-only tasks plus 8 transfer-only tasks (plus task 005, profile-only), found when the manifest (Issue 0.5) was generated from `tasks.json`.
 
 ## GitHub issues
 | Issue | GitHub | Title |

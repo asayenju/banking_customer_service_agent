@@ -23,6 +23,7 @@ the set of changes the session made against the gold's.
 
 import asyncio
 import json
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Optional
@@ -44,6 +45,7 @@ from banking_tools.types import ToolKind
 from knowledge.index import KnowledgeIndex
 from orchestrator.context import RouteContext, SessionRequest, scoped
 from orchestrator.executor import OutcomeStatus
+from orchestrator.plan_preview import unapproved_steps
 from orchestrator.types import Intent, IntentKind
 
 _CALL = "call_discoverable_agent_tool"
@@ -86,6 +88,9 @@ class Tier1Result:
     excluded: Optional[str] = None
     # How many model turns the scripted run needed (a proxy for work, since no tokens are spent).
     model_turns: int = 0
+    seconds: float = 0.0
+    # Writes that took effect although the approved plan did not contain them. Must be zero.
+    bypasses: int = 0
 
     @property
     def passed(self) -> bool:
@@ -263,6 +268,8 @@ def run_tier1(
     ids = Calls()
     segments: list[str] = []
     turns_used = 0
+    bypasses = 0
+    started = time.perf_counter()
 
     def direct(step: Step) -> None:
         if step.kind == "user":
@@ -277,18 +284,21 @@ def run_tier1(
             if isinstance(item, Direct):
                 direct(item.step)
                 continue
-            turns_used += _run_segment(
+            turns, extra = _run_segment(
                 task, config, session, vault, ids, index, user_id,
                 item.kind, item.reads, item.writes, len(segments),
             )
+            turns_used += turns
+            bypasses += extra
             segments.append(f"{item.kind.value}: {', '.join(w.name.rsplit('_', 1)[0] for w in item.writes)}")
     except SegmentError as exc:
-        return Tier1Result(task_id, False, False, (), tuple(segments), error=str(exc), model_turns=turns_used)
+        return Tier1Result(task_id, False, False, (), tuple(segments), error=str(exc), model_turns=turns_used, seconds=time.perf_counter() - started, bypasses=bypasses)
 
     if (task.get("evaluation_criteria") or {}).get("reward_basis") == ["ACTION"]:
         return Tier1Result(
             task_id, False, False, (), tuple(segments),
             actions_equal=_same_changes(steps, session), model_turns=turns_used,
+            seconds=time.perf_counter() - started, bypasses=bypasses,
         )
     result = compare(start, expected, session.database, read_log_names=())
     return Tier1Result(
@@ -298,6 +308,8 @@ def run_tier1(
         tuple(f"{m.table}/{m.pk}: {m.problem}" for m in result.mismatches),
         tuple(segments),
         model_turns=turns_used,
+        seconds=time.perf_counter() - started,
+        bypasses=bypasses,
     )
 
 
@@ -317,15 +329,15 @@ def _run_segment(
     reads: Sequence[Step],
     writes: Sequence[Step],
     number: int,
-) -> int:
+) -> tuple[int, int]:
     script = scripted_turns(reads, writes, vault, ids)
     llm = FakeToolLLM(script)
     specialist = Specialist(config, llm=llm, index=index, database=session.database, vault=vault)
     intent = Intent(
         id=f"segment-{number}", kind=kind, summary="what the gold trajectory does", slots=slots_of(writes[0])
     )
-    plan_and_execute(specialist, intent, session, user_id, label=f"segment {number} ({kind.value})")
-    return len(script)
+    bypasses = plan_and_execute(specialist, intent, session, user_id, label=f"segment {number} ({kind.value})")
+    return len(script), bypasses
 
 
 def scripted_turns(reads: Sequence[Step], writes: Sequence[Step], vault: SecretVault, ids: Calls) -> list[AssistantTurn]:
@@ -346,8 +358,12 @@ def scripted_turns(reads: Sequence[Step], writes: Sequence[Step], vault: SecretV
 
 def plan_and_execute(
     specialist: Specialist, intent: Intent, session: BankingSession, user_id: str, *, label: str
-) -> None:
-    """Plan, treat the plan as approved, run it. Raises SegmentError with the reason if either fails."""
+) -> int:
+    """Plan, treat the plan as approved, run it. Raises SegmentError with the reason if either fails.
+
+    Returns how many writes took effect that the approved plan did not contain (zero, always,
+    unless a guard has a hole).
+    """
 
     def context(mode: str, approved: Any = None) -> RouteContext:
         request = SessionRequest(intent.id, mode=mode, approved=approved)  # type: ignore[arg-type]
@@ -366,6 +382,7 @@ def plan_and_execute(
     done = asyncio.run(specialist.run(intent, context("execute", planned.proposal)))
     if done.status is not OutcomeStatus.DONE:
         raise SegmentError(f"{label} did not run: {done.status.value} {done.error or ''}".strip())
+    return len(unapproved_steps(session.completed_for(intent.id), planned.proposal))
 
 
 def _canonical(tool: str, args: Mapping[str, Any]) -> str:
