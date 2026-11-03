@@ -74,6 +74,7 @@ KIND_WRITE_TOOLS: Mapping[IntentKind, frozenset[str]] = {
     ),
     K.ORDER_REPLACEMENT_CARD: frozenset(
         {
+            "unfreeze_debit_card_3893",
             "close_debit_card_4721",
             "order_debit_card_5739",
             "activate_debit_card_8291",
@@ -85,6 +86,7 @@ KIND_WRITE_TOOLS: Mapping[IntentKind, frozenset[str]] = {
     K.DISPUTE_TRANSACTION: _DISPUTES | _CARD_PROTECTION | {"order_replacement_credit_card_7291"},
     K.CLOSE_CARD: frozenset(
         {
+            "unfreeze_debit_card_3893",  # a frozen card must be unfrozen before it can be closed
             "close_debit_card_4721",
             "log_credit_card_closure_reason_4521",
             "close_credit_card_account_7834",

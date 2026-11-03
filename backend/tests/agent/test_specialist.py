@@ -95,13 +95,59 @@ def test_a_proposed_plan_is_rebuilt_by_code_from_the_catalog_not_taken_from_the_
     assert shared.audit_log == (), "planning changed nothing"
 
 
+ORDER_ARGS = {"account_id": MY_ACCOUNT, "user_id": "someone_else", "delivery_option": "STANDARD", "delivery_fee": 0.0, "card_design": "CLASSIC", "design_fee": 0.0, "shipping_address": "1 Main St", "excess_replacement_fee": None}
+REPLACE = [("close_debit_card_4721", CLOSE_ARGS), ("order_debit_card_5739", ORDER_ARGS)]
+
+
+def replacing(**slots):
+    return Intent(id="x", kind=K.ORDER_REPLACEMENT_CARD, summary="new card", slots=slots or {"account_id": MY_ACCOUNT})
+
+
 def test_the_verified_customer_is_put_into_a_step_and_the_models_choice_of_customer_is_ignored():
-    steps = [("order_debit_card_5739", {"account_id": MY_ACCOUNT, "user_id": "someone_else", "delivery_option": "standard", "delivery_fee": 0.0, "card_design": "classic", "design_fee": 0.0, "shipping_address": "1 Main St", "excess_replacement_fee": None})]
-    spec, _, shared = make([turn(plan_call(*steps))])
-    intent = Intent(id="x", kind=K.ORDER_REPLACEMENT_CARD, summary="new card", slots={"account_id": MY_ACCOUNT})
+    spec, _, shared = make([turn(plan_call(*REPLACE))])
+    intent = replacing()
     outcome = run(spec, intent, context(shared, intent))
     assert outcome.status is OutcomeStatus.NEEDS_CONFIRMATION
-    assert outcome.proposal.steps[0].args["user_id"] == ME
+    assert [s.args["user_id"] for s in outcome.proposal.steps if "user_id" in s.args] == [ME]
+
+
+# ------------------------------------------------------------------ the dry run
+
+def test_a_plan_is_judged_step_by_step_against_the_state_the_earlier_steps_leave():
+    """Ordering a card is impossible while one is active, but fine after closing it."""
+    spec, _, shared = make([turn(plan_call(*REPLACE)), turn(plan_call(REPLACE[1]))])
+    intent = replacing()
+    assert run(spec, intent, context(shared, intent)).status is OutcomeStatus.NEEDS_CONFIRMATION
+    alone = run(spec, intent, context(shared, intent))
+    assert alone.status is OutcomeStatus.FAILED and "step 1 would not go through" in alone.error
+    assert "active debit card" in alone.error
+
+
+def test_the_order_of_the_steps_matters_to_the_dry_run():
+    spec, _, shared = make([turn(plan_call(REPLACE[1], REPLACE[0]))])
+    intent = replacing()
+    outcome = run(spec, intent, context(shared, intent))
+    assert outcome.status is OutcomeStatus.FAILED and "step 1" in outcome.error
+
+
+def test_a_dry_run_changes_nothing_real_not_the_database_the_audit_log_or_the_hash():
+    spec, _, shared = make([turn(plan_call(*REPLACE))])
+    start = shared.db_hash()
+    intent = replacing()
+    assert run(spec, intent, context(shared, intent)).status is OutcomeStatus.NEEDS_CONFIRMATION
+    assert shared.db_hash() == start and shared.audit_log == ()
+    assert shared.database.debit_cards.data[MY_CARD]["status"] == "ACTIVE"
+
+
+def test_a_pin_in_a_step_works_in_the_dry_run_and_never_appears_in_the_error_text():
+    vault = SecretVault()
+    vault.store("pin", "7351")
+    cfg = SpecialistConfig(name="debit", kinds=frozenset({K.CHANGE_OR_RESET_PIN}), instructions="pins", scope=DEBIT)
+    bad = {"card_id": MY_CARD, "last_4_digits": "0000", "new_pin": "{{secret:pin}}"}
+    spec, _, shared = make([turn(plan_call(("reset_debit_card_pin_6284", bad)))], cfg, vault)
+    intent = Intent(id="x", kind=K.CHANGE_OR_RESET_PIN, summary="reset my pin", slots={"card_id": MY_CARD})
+    outcome = run(spec, intent, context(shared, intent))
+    assert outcome.status is OutcomeStatus.FAILED and "7351" not in outcome.error
 
 
 @pytest.mark.parametrize(
@@ -272,14 +318,25 @@ def test_a_step_that_no_longer_passes_the_validator_stops_the_run_before_any_cha
     assert shared.audit_log == ()
 
 
-def test_the_run_stops_at_the_first_step_that_fails_and_later_steps_do_not_run():
-    spec, _, shared = make([])
-    steps = [("close_debit_card_4721", CLOSE_ARGS), ("close_debit_card_4721", {**CLOSE_ARGS, "reason": "stolen"})]
-    plan = approved_plan(spec, shared, *steps)
-    intent = closing()
+def test_if_the_world_changed_after_the_preview_the_run_stops_at_that_step_and_goes_no_further():
+    spec, _, shared = make([turn(plan_call(*REPLACE))])
+    intent = replacing()
+    plan = run(spec, intent, context(shared, intent)).proposal
+    # between the preview and the yes the card was closed some other way
+    shared.database.debit_cards.data[MY_CARD]["status"] = "CLOSED"
     outcome = run(spec, intent, context(shared, intent, mode="execute", approved=plan))
-    assert outcome.status is OutcomeStatus.FAILED and "step 2" in outcome.error
-    assert len(shared.audit_log) == 2 and shared.audit_log[1].ok is False
+    assert outcome.status is OutcomeStatus.FAILED and "step 1 did not go through" in outcome.error
+    assert [e.tool for e in shared.audit_log] == ["close_debit_card_4721"] and shared.audit_log[0].ok is False
+
+
+def test_a_multi_step_plan_runs_every_step_in_order_when_nothing_changed():
+    spec, _, shared = make([turn(plan_call(*REPLACE))])
+    intent = replacing()
+    plan = run(spec, intent, context(shared, intent)).proposal
+    outcome = run(spec, intent, context(shared, intent, mode="execute", approved=plan))
+    assert outcome.status is OutcomeStatus.DONE
+    assert [e.tool for e in shared.audit_log] == ["close_debit_card_4721", "order_debit_card_5739"]
+    assert all(e.ok for e in shared.audit_log)
 
 
 def test_a_reference_to_an_earlier_results_field_is_filled_in_from_its_output():

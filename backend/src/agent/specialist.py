@@ -70,6 +70,10 @@ class SpecialistConfig:
     scope: DocScope
     validators: Mapping[str, Validator] = field(default_factory=dict)
     budget: Budget = Budget()
+    # Runs before the model, in code. Returns the intent to work on (details resolved), or an
+    # outcome to end with (typically NEEDS_INFO with a question written by code). The plan
+    # is still bound to the intent as the orchestrator holds it, not to the resolved copy.
+    prepare: Optional[Callable[[Intent, str, Any], Intent | RouteOutcome]] = None
 
 
 BASE_RULES = """You are a bank's specialist for one kind of request. You act only for the customer who
@@ -159,11 +163,19 @@ class Specialist:
             if ctx.approved is None:
                 return _failed(intent, "no approved plan to carry out")
             return self._execute(intent, ctx, guarded)
-        return await self._plan(intent, ctx, guarded)
+        working = intent
+        if self.config.prepare is not None and ctx.verified_user_id is not None:
+            prepared = self.config.prepare(intent, ctx.verified_user_id, self._db)
+            if isinstance(prepared, RouteOutcome):
+                return prepared
+            working = prepared
+        return await self._plan(intent, working, ctx, guarded)
 
     # ------------------------------------------------------------------ plan mode
 
-    async def _plan(self, intent: Intent, ctx: RouteContext, guarded: GuardedSession) -> RouteOutcome:
+    async def _plan(
+        self, intent: Intent, working: Intent, ctx: RouteContext, guarded: GuardedSession
+    ) -> RouteOutcome:
         reads = sorted(shared_reads())
         box = ScopedToolBox(
             guarded,
@@ -176,7 +188,7 @@ class Specialist:
             self._llm,
             box,
             system=system_prompt(self.config, intent.kind),
-            request=self._request(intent),
+            request=self._request(working),
             terminals=("finish", "ask_customer", "escalate", "propose_plan"),
             budget=self.config.budget,
             deadline=ctx.deadline,
@@ -235,16 +247,43 @@ class Specialist:
         steps = self._steps_from(result.arguments.get("steps"), intent, ctx)
         if isinstance(steps, str):
             return _failed(intent, steps)
-        validation = ValidationContext(self._db, str(ctx.verified_user_id), self._today())
-        for step in steps:
-            problem = self._refusal(step, guarded.guard, validation)
-            if problem:
-                return _failed(intent, problem)
+        problem = self._dry_run(steps, intent, str(ctx.verified_user_id))
+        if problem:
+            return _failed(intent, problem)
         return RouteOutcome(
             intent_id=intent.id,
             status=OutcomeStatus.NEEDS_CONFIRMATION,
             proposal=PlanPreview.build(intent.id, fingerprint(intent), steps),
         )
+
+    def _dry_run(self, steps: Sequence[PlanStep], intent: Intent, user_id: str) -> Optional[str]:
+        """Play the plan on a copy of the database, in order, and say why it would not work.
+
+        A step is judged against the state the earlier steps leave behind, so "close the
+        card, then order a new one" is feasible although ordering is impossible today. The
+        bank's own tools do the judging (status, funds, eligibility), so none of that is
+        written twice; our guard and validators judge each step as well. Nothing here
+        touches the real database or the audit log.
+        """
+        from banking_tools.session import BankingSession, Fidelity
+
+        sim = BankingSession(self._db.model_copy(deep=True), fidelity=Fidelity.TAU2)
+        guard = Guard(kind=intent.kind, user_id=user_id, ownership=DbOwnership(sim.database))
+        results: dict[int, str] = {}
+        for step in steps:
+            arguments = self._resolve(step.args, results)
+            if arguments is None:
+                return f"step {step.index} refers to a result that is not there"
+            validation = ValidationContext(sim.database, user_id, self._today())
+            problem = self._refusal(step.model_copy(update={"args": arguments}), guard, validation)
+            if problem:
+                return f"step {step.index}: {problem}"
+            outcome = sim.call(step.tool, arguments)
+            if not outcome.ok:
+                why = self._vault.scrub(str(outcome.error))[:120]
+                return f"step {step.index} would not go through ({why})"
+            results[step.index] = str(outcome.text)
+        return None
 
     def _steps_from(self, raw: Any, intent: Intent, ctx: RouteContext) -> tuple[PlanStep, ...] | str:
         """The model's proposal as steps built by code, or a code-worded reason it is unusable."""

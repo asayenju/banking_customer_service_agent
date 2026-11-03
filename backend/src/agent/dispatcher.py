@@ -78,12 +78,21 @@ class RecordKinds:
         row = getattr(self._db, table).data.get(key)
         return isinstance(row, Mapping) and row.get("user_id") == user_id
 
+    def _by_last_four(self, value: str, user_id: str) -> bool:
+        """The customer may have said the card's last four digits, not its id."""
+        return value.isdigit() and len(value) == 4 and any(
+            c.get("user_id") == user_id and c.get("last_4_digits") == value
+            for c in self._db.debit_cards.data.values()
+        )
+
     def products(self, slots: Mapping[str, str], user_id: str) -> frozenset[Name]:
         found: set[Name] = set()
         for name, value in slots.items():
             if not value:
                 continue
-            if name == "card_id" and self._owned("debit_cards", value, user_id):
+            if name == "card_id" and (
+                self._owned("debit_cards", value, user_id) or self._by_last_four(value, user_id)
+            ):
                 found.add(Name.DEBIT)
             elif name == "credit_card_account_id" and self._owned("credit_card_accounts", value, user_id):
                 found.add(Name.CREDIT)
