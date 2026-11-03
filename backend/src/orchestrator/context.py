@@ -18,6 +18,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Optional, Protocol
 
+from banking_tools.types import CompletedStep
+
 
 class AgentSession(Protocol):
     """The slice of a banking session a runner and the executor rely on."""
@@ -28,6 +30,10 @@ class AgentSession(Protocol):
         """Plain-language lines for the writes this intent has already committed."""
         ...
 
+    def completed(self) -> Sequence[CompletedStep]:
+        """The writes this intent has already committed, in the order they were made."""
+        ...
+
 
 @dataclass(frozen=True)
 class RouteContext:
@@ -35,3 +41,6 @@ class RouteContext:
     verified_user_id: Optional[str] = None
     session: Optional[AgentSession] = None
     deadline: Optional[float] = None
+    # Writes committed by an earlier, partly finished run of this same intent. The
+    # session skips them if the runner repeats them in the same order.
+    progress: tuple[CompletedStep, ...] = ()

@@ -182,3 +182,91 @@ def test_outcome_is_frozen_and_strict():
         outcome.text = "changed"
     with pytest.raises(ValidationError, match="extra_forbidden"):
         RouteOutcome(intent_id="a", status=OutcomeStatus.DONE, surprise="x")
+
+
+# --- NEEDS_INFO and reconciliation with the session audit ---
+
+
+class FakeSession:
+    def __init__(self, steps=()):
+        self.steps = list(steps)
+
+    def call(self, name, arguments=None):
+        raise AssertionError("not used")
+
+    def committed_steps(self):
+        return self.steps
+
+    def completed(self):
+        return ()
+
+
+class Asks:
+    async def run(self, intent, ctx=None):
+        from orchestrator.types import Question
+
+        return RouteOutcome(
+            intent_id=intent.id,
+            status=OutcomeStatus.NEEDS_INFO,
+            questions=(Question(intent_id=intent.id, slot="card_id"),),
+        )
+
+
+def test_needs_info_is_traced_as_a_question_not_a_failure_and_dependents_wait():
+    intents = [I("a"), I("b", depends_on=("a",))]
+    result, _, _ = run(intents, runners={Route.DIRECT: Asks(), Route.SUB_AGENT: Asks()})
+    first, second = result.outcomes
+    assert first.status is OutcomeStatus.NEEDS_INFO
+    assert second.status is OutcomeStatus.SKIPPED and "waiting for an answer" in second.error
+    kinds = [e.kind for e in result.trace.events if e.intent_id == "a"]
+    assert T.ASKED in kinds and T.FAILED not in kinds
+
+
+def test_a_route_that_fails_after_committing_a_write_is_reported_as_partial():
+    class Fails:
+        async def run(self, intent, ctx=None):
+            return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.FAILED, error="gave up")
+
+    session = FakeSession(["Freeze a debit card"])
+    from orchestrator.context import RouteContext
+
+    intents = [I("a"), I("b", depends_on=("a",))]
+    the_plan = plan(intents)
+    result = asyncio.run(
+        execute_plan(
+            the_plan,
+            {i.id: i for i in intents},
+            {Route.DIRECT: Fails(), Route.SUB_AGENT: Fails()},
+            timeout=0.05,
+            context_for=lambda intent, seconds: RouteContext(intent_id=intent.id, session=session),
+        )
+    )
+    first, second = result.outcomes
+    assert first.status is OutcomeStatus.PARTIAL and "Freeze a debit card" in first.text
+    assert first.error == "gave up", "the original reason is kept for the trace"
+    assert second.status is OutcomeStatus.SKIPPED, "dependents of a partial result are still skipped"
+
+
+def test_an_audit_that_cannot_be_read_does_not_hide_the_original_failure():
+    class Broken(FakeSession):
+        def committed_steps(self):
+            raise RuntimeError("audit down")
+
+    from orchestrator.context import RouteContext
+
+    class Fails:
+        async def run(self, intent, ctx=None):
+            raise RuntimeError("route down")
+
+    intents = [I("a")]
+    result = asyncio.run(
+        execute_plan(
+            plan(intents),
+            {"a": intents[0]},
+            {Route.DIRECT: Fails(), Route.SUB_AGENT: Fails()},
+            timeout=0.05,
+            context_for=lambda intent, seconds: RouteContext(intent_id=intent.id, session=Broken()),
+        )
+    )
+    assert result.outcomes[0].status is OutcomeStatus.FAILED
+    assert result.outcomes[0].error == "route failed: RuntimeError"

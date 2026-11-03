@@ -31,6 +31,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
+from banking_tools.types import CompletedStep
 from orchestrator.auth import (
     AuthState,
     Directory,
@@ -133,7 +134,7 @@ class Orchestrator:
         runners: Mapping[Route, RouteRunner],
         route_timeout: Optional[float] = None,
         route_timeouts: Optional[Mapping[Route, float]] = None,
-        session_for: Optional[Callable[[str], AgentSession]] = None,
+        session_for: Optional[Callable[[str, Sequence[CompletedStep]], AgentSession]] = None,
         scorer_timeout: float = SCORER_TIMEOUT_SECONDS,
     ) -> None:
         self._decomposer = decomposer
@@ -148,6 +149,11 @@ class Orchestrator:
             route_timeout if route_timeout is not None else (route_timeouts or ROUTE_TIMEOUTS)
         )
         self._session_for = session_for
+        # Intents that stopped partway: what they had committed, and the intent itself,
+        # kept so "try again" finds it. They are not run again until the customer says so.
+        self._progress: dict[str, tuple[CompletedStep, ...]] = {}
+        self._resumable: dict[str, Intent] = {}
+        self._sessions_this_run: dict[str, AgentSession] = {}
         self._scorer_timeout = scorer_timeout
 
         self._active: dict[str, Intent] = {}
@@ -179,6 +185,10 @@ class Orchestrator:
         return dict(self._runner_asks)
 
     @property
+    def resumable_ids(self) -> tuple[str, ...]:
+        return tuple(self._resumable)
+
+    @property
     def done_ids(self) -> tuple[str, ...]:
         return tuple(self._done)
 
@@ -201,11 +211,16 @@ class Orchestrator:
 
     def _context_for(self, intent: Intent, timeout: float) -> RouteContext:
         """What a runner is given. The caller's identity comes from AuthState alone."""
+        progress = self._progress.get(intent.id, ())
+        session = self._session_for(intent.id, progress) if self._session_for else None
+        if session is not None:
+            self._sessions_this_run[intent.id] = session
         return RouteContext(
             intent_id=intent.id,
             verified_user_id=self._auth.verified_user_id,
-            session=self._session_for(intent.id) if self._session_for else None,
+            session=session,
             deadline=asyncio.get_running_loop().time() + timeout,
+            progress=progress,
         )
 
     def _forget(self, intent_id: str) -> None:
@@ -229,7 +244,7 @@ class Orchestrator:
                 return await self._unclear_turn(unclear.intents[0], events)
         try:
             interpretation = await self._decomposer.interpret(
-                message, tuple(self._active.values())
+                message, tuple(self._active.values()) + tuple(self._resumable.values())
             )
         except Exception as exc:
             return self._failed_turn(f"decomposer failed: {type(exc).__name__}", events)
@@ -260,6 +275,7 @@ class Orchestrator:
         )
 
     async def _execute(self, the_plan: Plan, intents: Mapping[str, Intent]) -> ExecutionResult:
+        self._sessions_this_run = {}
         return await execute_plan(
             the_plan,
             intents,
@@ -294,6 +310,13 @@ class Orchestrator:
             events.append(TraceEvent(kind=TraceKind.FLAGGED, detail=flag.value))
 
         for intent_id in interpretation.declined:
+            if self._resumable.pop(intent_id, None) is not None:
+                self._progress.pop(intent_id, None)
+                events.append(
+                    TraceEvent(
+                        kind=TraceKind.SKIPPED, intent_id=intent_id, reason="withdrawn by the customer"
+                    )
+                )
             if intent_id in self._active:
                 self._forget(intent_id)
                 events.append(
@@ -320,6 +343,7 @@ class Orchestrator:
                 )
             self._prints[intent.id] = current
             self._active[intent.id] = intent
+            self._resumable.pop(intent.id, None)  # asked to try again: it runs with its progress
             touched.add(intent.id)
 
         for intent_id in touched:
@@ -372,6 +396,9 @@ class Orchestrator:
         for outcome in executed.outcomes:
             if outcome.status is OutcomeStatus.DONE:
                 self._done.append(outcome.intent_id)
+                self._progress.pop(outcome.intent_id, None)
+            if outcome.status is OutcomeStatus.PARTIAL:
+                self._keep_for_retry(outcome.intent_id, view)
             if outcome.intent_id in still_asking or outcome.intent_id in waiting_on_answer:
                 continue  # stays open until the question it depends on is answered
             self._forget(outcome.intent_id)
@@ -396,6 +423,17 @@ class Orchestrator:
             decisions=ordered,
             outcomes=executed.outcomes,
         )
+
+    def _keep_for_retry(self, intent_id: str, view: Mapping[str, Intent]) -> None:
+        """A partly finished intent: remember what it committed so a retry does not repeat it."""
+        session = self._sessions_this_run.get(intent_id)
+        intent = view.get(intent_id)
+        if session is None or intent is None:
+            return
+        steps = tuple(session.completed())
+        if steps:
+            self._progress[intent_id] = steps
+            self._resumable[intent_id] = intent
 
     def _route_asked(
         self,
