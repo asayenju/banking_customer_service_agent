@@ -73,7 +73,18 @@ class SequenceScorer:
 class World:
     """One customer's conversation, wired to scripted parts."""
 
-    def __init__(self, script, scores=(), *, direct=None, sub=None, scorer=None, route_timeout=0.2):
+    def __init__(
+        self,
+        script,
+        scores=(),
+        *,
+        direct=None,
+        sub=None,
+        scorer=None,
+        route_timeout=0.2,
+        route_timeouts=None,
+        session_for=None,
+    ):
         self.decomposer = ScriptedDecomposer(script)
         self.scorer = scorer or SequenceScorer(*scores)
         self.direct = direct or ScriptedRoute()
@@ -83,7 +94,9 @@ class World:
             scorer=self.scorer,
             directory=ScriptedDirectory(RECORD),
             runners={Route.DIRECT: self.direct, Route.SUB_AGENT: self.sub},
-            route_timeout=route_timeout,
+            route_timeout=None if route_timeouts else route_timeout,
+            route_timeouts=route_timeouts,
+            session_for=session_for,
         )
         self._n = 0
 

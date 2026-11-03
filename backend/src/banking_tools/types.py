@@ -54,6 +54,8 @@ class AuditEntry(BaseModel):
     arguments: dict[str, Any]
     ok: bool
     timestamp: datetime
+    # The intent this write was made for; None when a caller did not say.
+    intent_id: Optional[str] = None
 
 
 class ToolResult(BaseModel):

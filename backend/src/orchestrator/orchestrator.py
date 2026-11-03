@@ -26,7 +26,7 @@ Rules this module is responsible for:
 """
 
 import asyncio
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
@@ -38,10 +38,11 @@ from orchestrator.auth import (
     reject_unknown,
     verify,
 )
+from orchestrator.context import AgentSession, RouteContext
 from orchestrator.decision import Action, IntentDecision, decide, fingerprint
 from orchestrator.decomposer import Decomposer, Interpretation
 from orchestrator.executor import (
-    ROUTE_TIMEOUT_SECONDS,
+    ROUTE_TIMEOUTS,
     ExecutionResult,
     OutcomeStatus,
     RouteOutcome,
@@ -74,7 +75,7 @@ class _HelpAwareRunner:
     def __init__(self, inner: Optional[RouteRunner]) -> None:
         self._inner = inner
 
-    async def run(self, intent: Intent) -> RouteOutcome:
+    async def run(self, intent: Intent, ctx: Optional[RouteContext] = None) -> RouteOutcome:
         if intent.kind is IntentKind.UNCLEAR_OR_GREETING:
             return RouteOutcome(
                 intent_id=intent.id, status=OutcomeStatus.DONE, text=offer_help()
@@ -83,7 +84,7 @@ class _HelpAwareRunner:
             return RouteOutcome(
                 intent_id=intent.id, status=OutcomeStatus.FAILED, error="no direct runner"
             )
-        return await self._inner.run(intent)
+        return await self._inner.run(intent, ctx or RouteContext(intent_id=intent.id))
 
 
 def _view(intents: Sequence[Intent]) -> Decomposition:
@@ -130,7 +131,9 @@ class Orchestrator:
         scorer: Scorer,
         directory: Directory,
         runners: Mapping[Route, RouteRunner],
-        route_timeout: float = ROUTE_TIMEOUT_SECONDS,
+        route_timeout: Optional[float] = None,
+        route_timeouts: Optional[Mapping[Route, float]] = None,
+        session_for: Optional[Callable[[str], AgentSession]] = None,
         scorer_timeout: float = SCORER_TIMEOUT_SECONDS,
     ) -> None:
         self._decomposer = decomposer
@@ -140,7 +143,11 @@ class Orchestrator:
             **runners,
             Route.DIRECT: _HelpAwareRunner(runners.get(Route.DIRECT)),
         }
-        self._route_timeout = route_timeout
+        # One number applies to every route (handy in tests); otherwise per route.
+        self._route_timeouts: float | Mapping[Route, float] = (
+            route_timeout if route_timeout is not None else (route_timeouts or ROUTE_TIMEOUTS)
+        )
+        self._session_for = session_for
         self._scorer_timeout = scorer_timeout
 
         self._active: dict[str, Intent] = {}
@@ -180,6 +187,15 @@ class Orchestrator:
             result = await self._turn(message)
             self._processed[message_id] = result
             return result
+
+    def _context_for(self, intent: Intent, timeout: float) -> RouteContext:
+        """What a runner is given. The caller's identity comes from AuthState alone."""
+        return RouteContext(
+            intent_id=intent.id,
+            verified_user_id=self._auth.verified_user_id,
+            session=self._session_for(intent.id) if self._session_for else None,
+            deadline=asyncio.get_running_loop().time() + timeout,
+        )
 
     def _forget(self, intent_id: str) -> None:
         for table in (
@@ -231,7 +247,13 @@ class Orchestrator:
         )
 
     async def _execute(self, the_plan: Plan, intents: Mapping[str, Intent]) -> ExecutionResult:
-        return await execute_plan(the_plan, intents, self._runners, timeout=self._route_timeout)
+        return await execute_plan(
+            the_plan,
+            intents,
+            self._runners,
+            timeout=self._route_timeouts,
+            context_for=self._context_for,
+        )
 
     async def _verify(self, claims: Mapping[str, str], events: list[TraceEvent]) -> None:
         try:

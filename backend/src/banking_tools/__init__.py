@@ -1,5 +1,5 @@
 from banking_tools.catalog import get_registry
-from banking_tools.session import BankingSession, Fidelity
+from banking_tools.session import BankingSession, Fidelity, ScopedSession
 from banking_tools.types import (
     AuditEntry,
     Reversibility,
@@ -13,6 +13,7 @@ __all__ = [
     "BankingSession",
     "Fidelity",
     "Reversibility",
+    "ScopedSession",
     "ToolKind",
     "ToolResult",
     "ToolSpec",
