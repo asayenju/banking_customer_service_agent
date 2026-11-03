@@ -152,7 +152,7 @@ def choose_kind(writes: Sequence[Step], kinds: Sequence[IntentKind]) -> tuple[Op
     return best, best_run
 
 
-def _slots(first: Step) -> dict[str, str]:
+def slots_of(first: Step) -> dict[str, str]:
     return {k: str(first.args[k]) for k in _ID_SLOTS if first.args.get(k)}
 
 
@@ -168,7 +168,68 @@ def _preference(config: SpecialistConfig) -> list[IntentKind]:
     return [k for k in order if k in config.kinds]
 
 
-class _Calls:
+@dataclass(frozen=True)
+class Direct:
+    """Something the gold does outside a specialist's job: done in code, as the orchestrator would."""
+
+    step: Step
+
+
+@dataclass(frozen=True)
+class Segment:
+    """One request a specialist is handed: the reads that lead up to it and the writes it makes."""
+
+    kind: IntentKind
+    reads: tuple[Step, ...]
+    writes: tuple[Step, ...]
+
+
+Item = Direct | Segment
+
+
+def plan_items(steps: Sequence[Step], config: SpecialistConfig) -> list[Item]:
+    """Cut the gold into direct steps and specialist segments, keeping every step in order."""
+    items: list[Item] = []
+    pending: list[Step] = []
+    i = 0
+
+    def flush() -> None:
+        items.extend(Direct(r) for r in pending)
+        pending.clear()
+
+    while i < len(steps):
+        step = steps[i]
+        if step.kind == "read":
+            pending.append(step)
+            i += 1
+            continue
+        if step.kind != "write" or step.name in DIRECT_WRITES:
+            flush()
+            items.append(Direct(step))
+            i += 1
+            continue
+        ahead = [s for s in steps[i:] if s.kind in ("write", "read")]
+        kind, run = choose_kind([s for s in ahead if s.kind == "write"], _preference(config))
+        taken: list[Step] = []
+        j, seen = i, 0
+        while kind is not None and j < len(steps) and seen < run and steps[j].kind in ("read", "write"):
+            taken.append(steps[j])
+            seen += steps[j].kind == "write"
+            j += 1
+        writes = tuple(s for s in taken if s.kind == "write")
+        if kind is None or len(writes) != run or run == 0:
+            flush()
+            items.append(Direct(step))
+            i += 1
+            continue
+        items.append(Segment(kind, tuple(pending) + tuple(s for s in taken if s.kind == "read"), writes))
+        pending.clear()
+        i = j
+    flush()
+    return items
+
+
+class Calls:
     """Fresh ids for the scripted model's tool calls."""
 
     def __init__(self) -> None:
@@ -199,11 +260,9 @@ def run_tier1(
         return Tier1Result(task_id, False, False, (), (), error="the gold never verifies a customer")
     customer_tools = KnowledgeUserTools(session.database)
     vault = SecretVault()
-    ids = _Calls()
+    ids = Calls()
     segments: list[str] = []
     turns_used = 0
-    i = 0
-    pending_reads: list[Step] = []
 
     def direct(step: Step) -> None:
         if step.kind == "user":
@@ -213,60 +272,16 @@ def run_tier1(
         else:
             session.call(step.name, step.args)
 
-    def flush_reads() -> None:
-        for read in pending_reads:
-            direct(read)
-        pending_reads.clear()
-
     try:
-        while i < len(steps):
-            step = steps[i]
-            if step.kind == "read":
-                pending_reads.append(step)
-                i += 1
+        for item in plan_items(steps, config):
+            if isinstance(item, Direct):
+                direct(item.step)
                 continue
-            if step.kind != "write":
-                flush_reads()
-                direct(step)
-                i += 1
-                continue
-            if step.name in DIRECT_WRITES:
-                flush_reads()
-                direct(step)
-                i += 1
-                continue
-            # Collect the upcoming writes (reads between them travel with them).
-            ahead = [s for s in steps[i:] if s.kind in ("write", "read")]
-            writes_ahead = [s for s in ahead if s.kind == "write"]
-            kind, run = choose_kind(writes_ahead, _preference(config))
-            if kind is None or run == 0:
-                flush_reads()
-                direct(step)
-                i += 1
-                continue
-            # Take steps up to and including the run-th write.
-            taken: list[Step] = []
-            seen = 0
-            j = i
-            while j < len(steps) and seen < run:
-                if steps[j].kind in ("read", "write"):
-                    taken.append(steps[j])
-                    seen += steps[j].kind == "write"
-                    j += 1
-                    continue
-                break
-            reads = pending_reads + [s for s in taken if s.kind == "read"]
-            writes = [s for s in taken if s.kind == "write"]
-            pending_reads.clear()
-            if len(writes) != run:
-                flush_reads()
-                direct(step)
-                i += 1
-                continue
-            turns_used += _run_segment(task, config, session, vault, ids, index, user_id, kind, reads, writes, len(segments))
-            segments.append(f"{kind.value}: {', '.join(w.name.rsplit('_', 1)[0] for w in writes)}")
-            i = j
-        flush_reads()
+            turns_used += _run_segment(
+                task, config, session, vault, ids, index, user_id,
+                item.kind, item.reads, item.writes, len(segments),
+            )
+            segments.append(f"{item.kind.value}: {', '.join(w.name.rsplit('_', 1)[0] for w in item.writes)}")
     except SegmentError as exc:
         return Tier1Result(task_id, False, False, (), tuple(segments), error=str(exc), model_turns=turns_used)
 
@@ -295,7 +310,7 @@ def _run_segment(
     config: SpecialistConfig,
     session: BankingSession,
     vault: SecretVault,
-    ids: _Calls,
+    ids: Calls,
     index: KnowledgeIndex,
     user_id: str,
     kind: IntentKind,
@@ -303,25 +318,41 @@ def _run_segment(
     writes: Sequence[Step],
     number: int,
 ) -> int:
+    script = scripted_turns(reads, writes, vault, ids)
+    llm = FakeToolLLM(script)
+    specialist = Specialist(config, llm=llm, index=index, database=session.database, vault=vault)
+    intent = Intent(
+        id=f"segment-{number}", kind=kind, summary="what the gold trajectory does", slots=slots_of(writes[0])
+    )
+    plan_and_execute(specialist, intent, session, user_id, label=f"segment {number} ({kind.value})")
+    return len(script)
+
+
+def scripted_turns(reads: Sequence[Step], writes: Sequence[Step], vault: SecretVault, ids: Calls) -> list[AssistantTurn]:
+    """What a perfect model would say for a segment: do the reads, then propose the writes.
+
+    PINs are handed to the vault and replaced by references, exactly as a customer's would be.
+    """
     plan_steps = []
     for write in writes:
         args = dict(write.args)
         for key in REDACTED_ARGUMENTS & set(args):
             args[key] = vault.store(key, str(args[key]))
         plan_steps.append({"tool": write.name, "arguments_json": json.dumps(args), "description": "gold"})
-    script: list[AssistantTurn] = [
-        AssistantTurn(tool_calls=(ids.make(r.name, r.args),), usage=Usage(input_tokens=1)) for r in reads
-    ]
-    script.append(AssistantTurn(tool_calls=(ids.make("propose_plan", {"steps": plan_steps}),), usage=Usage(input_tokens=1)))
-    llm = FakeToolLLM(script)
-    specialist = Specialist(config, llm=llm, index=index, database=session.database, vault=vault)
-    intent_id = f"segment-{number}"
-    intent = Intent(id=intent_id, kind=kind, summary="what the gold trajectory does", slots=_slots(writes[0]))
+    turns = [AssistantTurn(tool_calls=(ids.make(r.name, r.args),), usage=Usage(input_tokens=1)) for r in reads]
+    turns.append(AssistantTurn(tool_calls=(ids.make("propose_plan", {"steps": plan_steps}),), usage=Usage(input_tokens=1)))
+    return turns
+
+
+def plan_and_execute(
+    specialist: Specialist, intent: Intent, session: BankingSession, user_id: str, *, label: str
+) -> None:
+    """Plan, treat the plan as approved, run it. Raises SegmentError with the reason if either fails."""
 
     def context(mode: str, approved: Any = None) -> RouteContext:
-        request = SessionRequest(intent_id, mode=mode, approved=approved)  # type: ignore[arg-type]
+        request = SessionRequest(intent.id, mode=mode, approved=approved)  # type: ignore[arg-type]
         return RouteContext(
-            intent_id=intent_id,
+            intent_id=intent.id,
             verified_user_id=user_id,
             session=scoped(session)(request),
             mode=mode,  # type: ignore[arg-type]
@@ -330,11 +361,11 @@ def _run_segment(
 
     planned = asyncio.run(specialist.run(intent, context("plan")))
     if planned.status is not OutcomeStatus.NEEDS_CONFIRMATION or planned.proposal is None:
-        raise SegmentError(f"segment {number} ({kind.value}) was not planned: {planned.status.value} {planned.error or ''}".strip())
+        detail = planned.error or " / ".join(q.slot for q in planned.questions)
+        raise SegmentError(f"{label} was not planned: {planned.status.value} {detail}".strip())
     done = asyncio.run(specialist.run(intent, context("execute", planned.proposal)))
     if done.status is not OutcomeStatus.DONE:
-        raise SegmentError(f"segment {number} ({kind.value}) did not run: {done.status.value} {done.error or ''}".strip())
-    return len(script)
+        raise SegmentError(f"{label} did not run: {done.status.value} {done.error or ''}".strip())
 
 
 def _canonical(tool: str, args: Mapping[str, Any]) -> str:
