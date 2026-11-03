@@ -1,0 +1,162 @@
+[
+  {
+    "task_id": "task_001",
+    "message": "Hi there! I'm looking for a personal credit card that offers the highest cash back for my everyday purchases. I travel a lot for work, but my company covers those expenses with a corporate travel card, so I just need something for regular spending. I prefer a card with no annual fees unless there's no other option. If there aren't any cards that meet my needs, I might consider looking elsewhere. Can you help me find the best option?",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_002",
+    "message": "Hi there! I'm Sera Chen, and I work at the EPA, where I get to make a real difference in environmental conservation. I'm looking for a credit card that offers the highest cash back for my everyday purchases. I'm willing to pay up to $100 a year in fees for the best option available. I plan to use this card quite a bit, so I want to make sure I get the most out of it. If there aren't any cards that meet my needs, I might just take my business elsewhere. Can you help me find the best option?",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_003",
+    "message": "Hi there! My name is Catherine Wells, and I'm looking for a credit card for my everyday purchases. I have a Rho-Bank+ subscription and my main source of expenditure is travel. I need a card that has NO foreign transaction fees, includes purchase protection, and ideally offers a credit limit of at least $100,000. If there are no options that meet these requirements, I\u2019m ready to take my business elsewhere. If there are multiple cards available, I\u2019d prefer the one with the smallest annual fee, and if there are ties, the one with the highest cash back. Thanks for your help!",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_006",
+    "message": "Hi there! I'm Bob Nakamoto, a full-time cryptocurrency trader, and I'm looking for a credit card for my everyday purchases. I have a few specific requirements: I need a card with a foreign transaction fee of 1.5% or lower, a minimum payment percentage of 1.5% or lower of my statement balance, and I really want the virtual card management feature. My credit score is 540, and I don't have a Rho-Bank+ subscription. If you can't find a card that meets my needs, I\u2019m ready to take my business elsewhere. Thanks!",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_007",
+    "message": "Hi there! I'm looking for a credit card that has the best promotional offer, specifically one that gives points or cash back as a sign-up bonus. That's really my main interest. If there are multiple options, I'd prefer the one with the lowest annual fee. I just want to make sure I get the best deal possible. Thanks!",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_010",
+    "message": "Hi there, I signed up four of my friends for Rho-Bank credit cards, but I only received bonuses for two of them. I'm really frustrated and would like to know why I didn't get the bonuses for all four. Can you help me figure this out?",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_015",
+    "message": "Hi! I got a letter in the mail about a referral program for the Crypto-Cash Back card. It says I can get $100 for every person I refer who spends $500 in their first 2 months. How can I get a referral link for this offer so that I can share it with friends?",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_016",
+    "message": "Hi there! I referred a friend to sign up for one of your credit cards, and they've been approved and using it for a while now. However, I still haven't received my referral bonus. Can you help me figure out what's going on? Thanks!",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_017",
+    "message": "Hi, I've been looking at my credit card statements and I think some of my cash back rewards might be wrong. I've noticed a few transactions where the points don't seem to add up, but I'm not sure which ones are off or by how much. Can you help me check this out and see if there are any errors? I\u2019d appreciate any guidance on what I might need to do to fix this. Thanks!",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_018",
+    "message": "Hi, I've been looking at my credit card statements and I think some of my cash back rewards might be wrong. I\u2019m not sure which ones are off or by how much, but I definitely feel like the total isn\u2019t what I expected. I\u2019m not great with technology, so I\u2019d really appreciate it if you could manage everything for me and help me check this out. Thanks!",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_019",
+    "message": "Hi there, I've been going through my rewards statements and something doesn't seem right with my cash back. I have both a Gold Rewards Card and an EcoCard, and I suspect that some of my rewards calculations might be off. I can't pull up any statements right now since I don't have my phone, but I would really appreciate your help in figuring out what's going on. The rewards system is a bit confusing for me, so I\u2019d prefer if you could handle the technical details. Thank you!",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_020",
+    "message": "Hi there, I've been going through my rewards statements and something doesn't seem right with my cash back. I have both a Business Silver Rewards Card and a Silver Rewards Card, and I suspect that some of my rewards calculations might be off. I can't pull up any statements right now since I don't have my phone, but I\u2019d really appreciate your help in figuring out what's going on. I find the rewards system a bit confusing, so I\u2019d prefer if you could handle the technical details. Thanks!",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_021",
+    "message": "Hello, I've been going over my rewards and something seems off with some of my recent transactions. I have both a Business Bronze Rewards Card and an EcoCard, and it looks like some purchases aren't earning the cash back rewards I expected. I know there might be different rates or exceptions for certain transactions, but I\u2019d really appreciate your help in figuring out if there are any errors with my cash back calculations. I don\u2019t have access to my detailed statements right now, so I\u2019d like you to investigate the specifics for me. Thanks!",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_022",
+    "message": "Hi, I'm conducting an internal audit on my own account and I've noticed some oddities with my cash back rewards. Some transactions seem to have received too many points, while others appear to have received too few. I really need your help to go through all my transactions across my Diamond Elite Card, Business Platinum Rewards Card, Business Silver Rewards Card, and EcoCard to identify any errors. I want to make sure we find every single discrepancy, whether it\u2019s in my favor or against me. I\u2019m not great with technology, so I\u2019d appreciate it if you could manage everything for me. Thank you!",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_023",
+    "message": "Hi! I have a Platinum Rewards Card and I think there's some kind of annual fee rebate if you spend a certain amount each month. I've had the card for about a year now, and I'm wondering if I qualify for the rebate based on my spending history. Can you check my account and let me know? Thanks!",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_024",
+    "message": "Hi, I'm looking to buy a work truck for my landscaping business - it's going to cost about $40,000. I want to open a new business credit card that will give me the best return on this purchase. I've heard Rho-Bank has good options for business credit cards, but I'm not sure which one would be the best for maximizing cash back. Can you help me with that?",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": []
+  },
+  {
+    "task_id": "task_025",
+    "message": "Hi, I'm looking to purchase a company-wide Apple Music subscription for my business - it's going to cost $100,000 as a single payment. I want to open a new business credit card that will give me the best return on this purchase. What are my options? I'm not really a credit card expert, so I\u2019d appreciate your help in figuring out which card would maximize my cash back on this large expense.",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": []
+  },
+  {
+    "task_id": "task_027",
+    "message": "Hi there, I've been going through my rewards statements and something doesn't seem right with my cash back. I have both a Business Silver Rewards Card and a Silver Rewards Card, and I suspect some of my rewards calculations might be off. I can't pull up any statements right now since I don't have my phone, but I\u2019d really appreciate your help in figuring out what's going on. Can you look into this for me?",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_029",
+    "message": "Hi, I've been looking at my credit card statements and I think some of my cash back rewards might be wrong. I\u2019m not sure which ones are off or by how much, but I really need help checking this out. I'm not great with technology, so I\u2019d appreciate it if you could manage everything for me. Can you help me investigate this?",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_046",
+    "message": "Hi, I'd like to close my Business Silver Rewards Card. I found a better card at another bank and I don't really use this one much anymore. Just so you know, I don't have any pending disputes or replacement cards on the way, so I should be good to close it. I've been looking at the Pursuit Ink Business Preferred card because it offers 3x points on travel and advertising purchases, plus no foreign transaction fees, which is perfect for my consulting work. Can you help me with this?",
+    "stated": [
+      "CLOSE_CARD"
+    ],
+    "expected": []
+  },
+  {
+    "task_id": "task_098",
+    "message": "Hey! My roommate just got her first real job and she's going to deposit her first paycheck - around $600 I think. I want to refer her to open one of the accounts you guys offer. Which one should I use to get us the best combined referral bonus - like, the total of what I get plus what she gets?",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": []
+  },
+  {
+    "task_id": "task_099",
+    "message": "Hi there! My business partner just formed his new consulting LLC and he's looking to open a business checking account. He'll be depositing around $30,000 to start - he got some seed funding. I want to refer him - which of your business accounts should I use if I want to maximize MY referral bonus? Like, the amount that I get specifically.",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_100",
+    "message": "Hi! My former business partner just incorporated her new tech consulting LLC and she needs to open a business checking account. She's going to deposit around $31,000 from her startup funding. I want to refer her to get the referral bonus, and I'm hoping to get the biggest bonus possible for myself. Can you help me with this?",
+    "stated": [
+      "OPEN_ACCOUNT"
+    ],
+    "expected": []
+  },
+  {
+    "task_id": "task_101",
+    "message": "Hi! I've got kind of a complicated situation. I want to refer four different people before the year ends, and I want to make sure I'm getting the best possible combined bonus for each one. Can you help me figure out the optimal accounts to use for each referral? \n\nThe people I want to refer are my niece Maya, who's 19 and just started her sophomore year at CU Boulder; my retired father Vikram, who's 71; and two startups I'm advising: Ember Analytics, which is about 5 years old, and TechFlow Labs, which is about 2 years old. \n\nThanks for your help!",
+    "stated": [],
+    "expected": []
+  },
+  {
+    "task_id": "task_102",
+    "message": "Hi! I have a complicated referral situation - I want to refer four people before year-end. Just to give you context, my last referral was about 3 weeks ago in October. I've got my niece Maya who's a college student, my dad Vikram who's 71 and just retired - I think I've only done about 4 Gold Years referrals this year so there should be room for him there. And two startups: Ember Analytics which has been around about 3 years now, and TechFlow Labs which is about 2 years old. For the startups, I've only done maybe 2 or 3 Sky Blue referrals this year, so that should have plenty of room.",
+    "stated": [],
+    "expected": []
+  }
+]

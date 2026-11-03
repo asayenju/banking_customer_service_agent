@@ -10,6 +10,10 @@ from enum import StrEnum
 
 PROCEED_AT = 0.85
 ASK_AT = 0.65
+# A write whose kind the scorer is not nearly sure of is confirmed with the customer
+# first. On 96 labelled action intents Jev's kind answer at 0.95 caught 60% of the
+# wrong ones while 2% of the right ones were asked; at 0.85 it caught 40%.
+WRITE_KIND_ASK_AT = 0.95
 
 
 class Band(StrEnum):

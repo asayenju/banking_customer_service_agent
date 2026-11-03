@@ -13,7 +13,7 @@ import re
 from orchestrator.types import Decomposition, IntentKind
 
 # Deliberately broad. A false match only keeps a hand-off; a miss would drop one.
-_PERSON = re.compile(
+PERSON_WORDS = re.compile(
     r"\b(human|person|people|someone|somebody|anybody|anyone|agent|representative|rep|"
     r"manager|supervisor|specialist|advisor|adviser|operator|employee|staff|"
     r"(talk|speak|chat|connect|transfer|put)\s+(me\s+)?(to|with|through)|call\s+me|phone\s+me)\b",
@@ -22,7 +22,7 @@ _PERSON = re.compile(
 
 
 def drop_unasked_handoff(message: str, decomposition: Decomposition) -> Decomposition:
-    if _PERSON.search(message):
+    if PERSON_WORDS.search(message):
         return decomposition
     drop = {i.id for i in decomposition.intents if i.kind is IntentKind.REQUEST_HUMAN}
     if not drop or len(drop) == len(decomposition.intents):

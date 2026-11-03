@@ -90,10 +90,39 @@ def test_a_yes_never_rescues_low_confidence():
     assert run(i, 0.5, yes).action is Action.ESCALATE
 
 
-@pytest.mark.parametrize("kind", NO_YES_KINDS)
-def test_reads_and_reversible_writes_run_at_85_percent_with_no_yes(kind):
+READ_KINDS = [k for k in NO_YES_KINDS if k not in (IntentKind.FREEZE_CARD, IntentKind.UNFREEZE_CARD, IntentKind.UPDATE_PROFILE)]
+REVERSIBLE_WRITE_KINDS = [k for k in NO_YES_KINDS if k not in READ_KINDS]
+
+
+@pytest.mark.parametrize("kind", READ_KINDS)
+def test_reads_run_at_85_percent_with_no_yes(kind):
     d = run(intent(kind), confidence=0.85)
     assert d.action is Action.RUN and d.questions == ()
+
+
+@pytest.mark.parametrize("kind", REVERSIBLE_WRITE_KINDS)
+def test_reversible_writes_run_with_no_yes_once_the_kind_is_95_percent_sure(kind):
+    d = run(intent(kind), confidence=0.95)
+    assert d.action is Action.RUN and d.questions == ()
+
+
+@pytest.mark.parametrize("kind", REVERSIBLE_WRITE_KINDS + IRREVERSIBLE_KINDS)
+def test_a_write_whose_kind_is_under_95_percent_asks_instead_of_running(kind):
+    d = run(intent(kind), confidence=0.9499)
+    assert d.action is Action.ASK
+    assert [q.slot for q in d.questions] == [CLARIFY_SLOT]
+
+
+def test_only_the_kind_answer_gates_a_write_not_the_other_two():
+    i = intent(IntentKind.FREEZE_CARD)
+    sure_of_kind = IntentScore(
+        intent_id=i.id, kind_confidence=0.97, slots_confidence=0.9, scope_confidence=0.9
+    )
+    unsure_of_kind = IntentScore(
+        intent_id=i.id, kind_confidence=0.9, slots_confidence=1.0, scope_confidence=1.0
+    )
+    assert decide(i, sure_of_kind, {}).action is Action.RUN
+    assert decide(i, unsure_of_kind, {}).action is Action.ASK
 
 
 @pytest.mark.parametrize(
@@ -190,3 +219,22 @@ def test_decision_is_frozen():
     d = run(intent(IntentKind.LOOKUP_INFO))
     with pytest.raises(ValidationError):
         d.action = Action.ESCALATE
+
+
+@pytest.mark.parametrize("kind", [IntentKind.FREEZE_CARD, IntentKind.CLOSE_CARD])
+def test_a_request_the_scorer_understands_asks_for_missing_details_instead_of_escalating(kind):
+    i = intent(kind, slots={}, missing=("card_id",))
+    # What Jev returns for "freeze my card" with no card named: sure of the request,
+    # slots incomplete (scored 0 by code).
+    score = IntentScore(intent_id=i.id, kind_confidence=0.99, slots_confidence=0.0, scope_confidence=0.99)
+    d = decide(i, score, {})
+    assert d.action is Action.ASK
+    assert [q.slot for q in d.questions] == ["card_id"]
+
+
+def test_missing_details_do_not_rescue_a_request_the_scorer_does_not_understand():
+    i = intent(IntentKind.FREEZE_CARD, slots={}, missing=("card_id",))
+    unsure_kind = IntentScore(intent_id=i.id, kind_confidence=0.5, slots_confidence=0.0, scope_confidence=0.99)
+    unsure_scope = IntentScore(intent_id=i.id, kind_confidence=0.99, slots_confidence=0.0, scope_confidence=0.4)
+    assert decide(i, unsure_kind, {}).action is Action.ESCALATE
+    assert decide(i, unsure_scope, {}).action is Action.ESCALATE

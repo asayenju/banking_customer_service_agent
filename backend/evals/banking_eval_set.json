@@ -237,9 +237,7 @@
   {
     "task_id": "task_092",
     "message": "Hi, I'm having a nightmare week. I've got four debit cards that are all PIN locked and I can't access any of my money. I really need help getting these sorted out.",
-    "stated": [
-      "CHANGE_OR_RESET_PIN"
-    ],
+    "stated": [],
     "expected": [
       "CHANGE_OR_RESET_PIN",
       "CLOSE_CARD",

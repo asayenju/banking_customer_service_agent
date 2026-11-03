@@ -72,10 +72,20 @@ def select_tasks(
     tasks: Sequence[Mapping[str, Any]],
     count: int = DEFAULT_COUNT,
     exclude: Collection[str] = (),
+    *,
+    require_actions: bool = True,
 ) -> list[Mapping[str, Any]]:
-    """A fixed, varied subset: greedily prefer tasks whose kinds are least picked so far."""
+    """A fixed, varied subset: greedily prefer tasks whose kinds are least picked so far.
+
+    Tasks with no write action are skipped unless ``require_actions`` is False; those
+    are customers who should trigger no action at all.
+    """
     pool = sorted(
-        ((t, expected_kinds(t)) for t in tasks if t["id"] not in exclude and expected_kinds(t)),
+        (
+            (t, expected_kinds(t))
+            for t in tasks
+            if t["id"] not in exclude and (expected_kinds(t) or not require_actions)
+        ),
         key=lambda pair: str(pair[0]["id"]),
     )
     picked: list[Mapping[str, Any]] = []
@@ -83,7 +93,7 @@ def select_tasks(
     while pool and len(picked) < count:
         best = max(
             range(len(pool)),
-            key=lambda i: (sum(1 / (1 + seen.get(k, 0)) for k in pool[i][1]) / len(pool[i][1]), -i),
+            key=lambda i: (sum(1 / (1 + seen.get(k, 0)) for k in pool[i][1]) / max(len(pool[i][1]), 1), -i),
         )
         task, kinds = pool.pop(best)
         picked.append(task)
