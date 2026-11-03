@@ -7,6 +7,8 @@ dependencies = [
     "tau2",
     "litellm>=1.80.15,<1.82.7",
     "python-dotenv>=1.0",
+    # Policy search over the knowledge-base documents. Same floor as tau2's own pin.
+    "rank-bm25>=0.2.2",
 ]
 
 [project.optional-dependencies]
@@ -26,7 +28,7 @@ venvPath = "."
 venv = ".venv"
 
 [[tool.mypy.overrides]]
-module = ["tau2.*"]
+module = ["tau2.*", "rank_bm25"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
