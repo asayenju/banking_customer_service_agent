@@ -26,7 +26,7 @@ Specialist agents behind the orchestrator, running against tau2's own database t
 - A new database, or re-implementing tau2's tools or DB. tau2 is used as is and is never edited.
 - Dense (embedding) retrieval, voice, other languages.
 - Acting for unverified customers, or any override flow ("supervisor code", task 005).
-- Customer-side tools (apply for a card, referral, cash-back dispute, check deposit). The 34 tasks that depend on them are measured only in the optional staged simulation.
+- Customer-side tools (apply for a card, referral, cash-back dispute, check deposit). The 25 tasks that depend on them (or on reads only) are measured only in the optional staged simulation.
 - Running the tau2 banking tasks broadly against a live model. Live runs are small, capped and opt-in (see Cost controls).
 - Undoing completed writes after a later failure.
 
@@ -105,9 +105,10 @@ Task classification, measured on `tasks.json` (97 tasks):
 | Profile only | 005 | 1 |
 | Spanning accounts + credit | 043 045 048 051 | 4 |
 | Spanning credit + debit | 077 080 081 | 3 |
-| No agent-side write (customer-side tools, ACTION-only transfers, reads) | the rest | 34 |
+| Transfer-only (ACTION basis) | 004 008 012 014 032 033 034 035 | 8 |
+| Customer-side tools or reads only | the rest | 25 |
 
-Gradeable DB-state set: 62 tasks (57 wholly in one cluster plus 7 spanning, minus 083 and 005). Excluded: 005 (anomalous gold: supervisor bypass code); the ACTION-only transfer tasks 004 008 012 014 034 032 033 035 (assert a hand-off, the right transfer tool, and no domain write); 083 (ACTION basis: compare the four dispute calls); the 34 no-agent-write tasks. Trap tasks (052 049 008 014 035 099 016) are negative assertions ("no unsafe write").
+Gradeable DB-state set: 62 tasks (57 wholly in one cluster plus 7 spanning, minus 083 and 005). Excluded: 005 (anomalous gold: supervisor bypass code); the 8 ACTION-only transfer tasks (assert a hand-off, the right transfer tool, and no domain write); 083 (ACTION basis: compare the four dispute calls); the 25 customer-side or reads-only tasks. Trap tasks (052 049 008 014 035 099 016) are negative assertions ("no unsafe write").
 
 ### Cost controls
 - Default `pytest` and CI make zero model calls. The parity gate replays gold with no LLM. Tier-1 tests use `FakeToolLLM`.
@@ -130,7 +131,7 @@ Edge cases, ranked; each is an acceptance criterion in an issue below.
 11. **Fairness of the DB comparison.** tau2's gold is one reference trajectory; read-log rows, repeated freeze/unfreeze, per-tool money formats and user-side rows are handled by the normaliser and flags above.
 12. **Cost, latency, determinism.** Per-run agent budgets, fixed clock, temperature 0, recorded model id, capped live runs.
 
-Known limits: a rolling preview can still surprise the customer between rounds; some writes cannot be verified by state; tier-1 passing says nothing about model quality; the post-run audit check detects an extra write but cannot undo it; the 34 customer-side tasks are not covered until the staged simulation exists.
+Known limits: a rolling preview can still surprise the customer between rounds; some writes cannot be verified by state; tier-1 passing says nothing about model quality; the post-run audit check detects an extra write but cannot undo it; the 25 customer-side tasks are not covered until the staged simulation exists.
 
 ## Issues and acceptance criteria
 "Live" criteria need API keys, are opt-in and capped. Everything else runs offline. Issue ids are `Issue N.M`; GitHub numbers are in the table at the end.
@@ -157,7 +158,7 @@ Known limits: a rolling preview can still surprise the customer between rounds; 
 - A per-task report names the table of each mismatch. Depends on: 0.2, 0.3.
 
 **Issue 0.5: Task manifest.** `evals/manifest.json`.
-- Counts equal the Measurement table (13/14/19/10/1, 7 spanning, 34 none).
+- Counts equal the Measurement table (13/14/19/10/1, 7 spanning, 8 transfer-only, 25 customer-side or reads-only).
 - Every exclusion carries a reason.
 - A test fails if `tasks.json` changes the counts. Depends on: none.
 
@@ -282,7 +283,7 @@ Known limits: a rolling preview can still surprise the customer between rounds; 
 - Double-submit and concurrent waves give a deterministic DB hash. Depends on: 2.4, 3.1, 3.2, 4.1 to 4.4.
 
 **Issue 5.2 (optional, deferred): Staged simulation harness.**
-- Runs a chosen sample of at most 10 tasks (never all 34), scored on the final DB, behind the same cost controls.
+- Runs a chosen sample of at most 10 tasks (never all 25), scored on the final DB, behind the same cost controls.
 - Produces a stage report. Depends on: 5.1, 0.4, 2.5.
 
 **Issue 5.3: Cost and latency report, regression CI.**
@@ -318,7 +319,7 @@ Adopted from the design review (open to veto):
 - Per-route timeouts replace the single 30 s.
 - A human transfer is code-triggered: ask first, only when the KB offers no action.
 
-Corrections to earlier statements made while writing this PRD: the debit pilot is 13 tasks (plus 3 spanning debit and credit), not "about 30"; 35 tasks (not 53) carry a DB overlay.
+Corrections to earlier statements made while writing this PRD: the debit pilot is 13 tasks (plus 3 spanning debit and credit), not "about 30"; 35 tasks carry a real DB overlay (53 have an `initialization_data` block, 18 of them empty); and the "34 tasks with no agent-side write" were really 25 customer-side or reads-only tasks plus 8 transfer-only tasks (plus task 005, profile-only), found when the manifest (Issue 0.5) was generated from `tasks.json`.
 
 ## GitHub issues
 | Issue | GitHub | Title |

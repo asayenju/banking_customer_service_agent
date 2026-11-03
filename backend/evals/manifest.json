@@ -1,0 +1,1204 @@
+[
+ {
+  "task_id": "task_001",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_002",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_003",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_004",
+  "basis": "ACTION",
+  "category": "human_transfer_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": true,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "ACTION basis: assert the hand-off, the transfer tool and no domain write"
+ },
+ {
+  "task_id": "task_005",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "profile"
+  ],
+  "has_overlay": false,
+  "human_transfer": true,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "anomalous gold: the supervisor bypass code cannot be reproduced honestly"
+ },
+ {
+  "task_id": "task_006",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_007",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_008",
+  "basis": "ACTION",
+  "category": "human_transfer_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": true,
+  "trap": true,
+  "pilot": false,
+  "excluded_reason": "ACTION basis: assert the hand-off, the transfer tool and no domain write"
+ },
+ {
+  "task_id": "task_010",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_012",
+  "basis": "ACTION",
+  "category": "human_transfer_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": true,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "ACTION basis: assert the hand-off, the transfer tool and no domain write"
+ },
+ {
+  "task_id": "task_014",
+  "basis": "ACTION",
+  "category": "human_transfer_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": true,
+  "trap": true,
+  "pilot": false,
+  "excluded_reason": "ACTION basis: assert the hand-off, the transfer tool and no domain write"
+ },
+ {
+  "task_id": "task_015",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_016",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": true,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_017",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_018",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_019",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_020",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_021",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_022",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_023",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_024",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_025",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_026",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "fees"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_027",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_028",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "fees"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_029",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_031",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_032",
+  "basis": "ACTION",
+  "category": "human_transfer_only",
+  "clusters": [],
+  "has_overlay": true,
+  "human_transfer": true,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "ACTION basis: assert the hand-off, the transfer tool and no domain write"
+ },
+ {
+  "task_id": "task_033",
+  "basis": "ACTION",
+  "category": "human_transfer_only",
+  "clusters": [],
+  "has_overlay": true,
+  "human_transfer": true,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "ACTION basis: assert the hand-off, the transfer tool and no domain write"
+ },
+ {
+  "task_id": "task_034",
+  "basis": "ACTION",
+  "category": "human_transfer_only",
+  "clusters": [],
+  "has_overlay": true,
+  "human_transfer": true,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "ACTION basis: assert the hand-off, the transfer tool and no domain write"
+ },
+ {
+  "task_id": "task_035",
+  "basis": "ACTION",
+  "category": "human_transfer_only",
+  "clusters": [],
+  "has_overlay": true,
+  "human_transfer": true,
+  "trap": true,
+  "pilot": false,
+  "excluded_reason": "ACTION basis: assert the hand-off, the transfer tool and no domain write"
+ },
+ {
+  "task_id": "task_036",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_037",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_038",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_039",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_040",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_041",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_043",
+  "basis": "DB",
+  "category": "spans_clusters",
+  "clusters": [
+   "accounts",
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_044",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_045",
+  "basis": "DB",
+  "category": "spans_clusters",
+  "clusters": [
+   "accounts",
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_046",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_047",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_048",
+  "basis": "DB",
+  "category": "spans_clusters",
+  "clusters": [
+   "accounts",
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_049",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": true,
+  "trap": true,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_050",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_051",
+  "basis": "DB",
+  "category": "spans_clusters",
+  "clusters": [
+   "accounts",
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_052",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": true,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_053",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "credit"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_054",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "credit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_055",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_056",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_057",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_058",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_059",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_060",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_061",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_062",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_063",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_064",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_065",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_066",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_067",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_068",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_069",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_070",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_071",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_072",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "fees"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_073",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "fees"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_074",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "fees"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_075",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_076",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "accounts"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_077",
+  "basis": "DB",
+  "category": "spans_clusters",
+  "clusters": [
+   "credit",
+   "debit"
+  ],
+  "has_overlay": false,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_078",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "debit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": true,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_079",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "debit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": true,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_080",
+  "basis": "DB",
+  "category": "spans_clusters",
+  "clusters": [
+   "credit",
+   "debit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_081",
+  "basis": "DB",
+  "category": "spans_clusters",
+  "clusters": [
+   "credit",
+   "debit"
+  ],
+  "has_overlay": true,
+  "human_transfer": true,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_082",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "debit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": true,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_083",
+  "basis": "ACTION",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "debit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": true,
+  "excluded_reason": "ACTION basis: compare the four dispute calls, not the database"
+ },
+ {
+  "task_id": "task_084",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "debit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": true,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_085",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "debit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": true,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_086",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "debit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": true,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_087",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "debit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": true,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_088",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "debit"
+  ],
+  "has_overlay": true,
+  "human_transfer": true,
+  "trap": false,
+  "pilot": true,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_089",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "debit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": true,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_090",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "debit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": true,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_091",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "debit"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": true,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_092",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "debit"
+  ],
+  "has_overlay": true,
+  "human_transfer": true,
+  "trap": false,
+  "pilot": true,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_093",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "fees"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_094",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "fees"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_095",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "fees"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_096",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "fees"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_097",
+  "basis": "DB",
+  "category": "wholly_one_cluster",
+  "clusters": [
+   "fees"
+  ],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": null
+ },
+ {
+  "task_id": "task_098",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_099",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": true,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_100",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_101",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ },
+ {
+  "task_id": "task_102",
+  "basis": "DB",
+  "category": "customer_side_or_reads_only",
+  "clusters": [],
+  "has_overlay": true,
+  "human_transfer": false,
+  "trap": false,
+  "pilot": false,
+  "excluded_reason": "no agent-side write: customer-side tools or reads only (staged simulation)"
+ }
+]
