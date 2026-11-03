@@ -21,11 +21,13 @@ Rules this module enforces:
 import hashlib
 import json
 import re
-from typing import Annotated, Any, Self
+from collections.abc import Sequence
+from typing import Annotated, Any, Optional, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from banking_tools.session import REDACTED_ARGUMENTS
+from banking_tools.types import CompletedStep
 
 _SECRET_REF = re.compile(r"^\{\{secret:[a-z_]+\}\}$")
 _REF = re.compile(r"^\{\{(secret:[a-z_]+|step_\d+\.[a-z_]+)\}\}$")
@@ -128,3 +130,13 @@ class PlanPreview(_Model):
                     return True
         return False
 
+
+def unapproved_steps(completed: Sequence[CompletedStep], approved: Optional[PlanPreview]) -> list[CompletedStep]:
+    """Writes a run committed that the approved plan does not contain.
+
+    With no approved plan there is nothing to compare against, so nothing is flagged;
+    a route that writes without a plan is the dispatcher's concern, not this check's.
+    """
+    if approved is None:
+        return []
+    return [step for step in completed if not approved.allows(step.tool, dict(step.arguments))]
