@@ -13,6 +13,10 @@ OPENAI_KEY_VAR = "OPENAI_KEY"
 JEV_KEY_VAR = "JEV_KEY"
 MODEL_VAR = "DECOMPOSER_MODEL"
 DEFAULT_MODEL = "openai/gpt-4o-mini"
+# The specialists reason over policy across several steps, so they get a stronger
+# default than the decomposer's single JSON reply. Compare the two in the pilot report.
+AGENT_MODEL_VAR = "AGENT_MODEL"
+DEFAULT_AGENT_MODEL = "openai/gpt-4o"
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -33,3 +37,8 @@ def require(name: str) -> str:
 def decomposer_model() -> str:
     load_env()
     return os.environ.get(MODEL_VAR) or DEFAULT_MODEL
+
+
+def agent_model() -> str:
+    load_env()
+    return os.environ.get(AGENT_MODEL_VAR) or DEFAULT_AGENT_MODEL
