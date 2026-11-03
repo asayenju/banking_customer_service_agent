@@ -20,7 +20,7 @@
 
 import json
 import re
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 from typing import Any, Optional
@@ -89,6 +89,14 @@ class SecretVault:
             if len(value) >= 3:
                 text = text.replace(value, KEPT_PRIVATE)
         return replace_secrets(text, lambda kind, value: KEPT_PRIVATE)
+
+
+@dataclass(frozen=True)
+class ExtraTool:
+    """A tool that is not in the banking catalog (policy search). It only reads, by contract."""
+
+    schema: ToolSchema
+    run: Callable[[Mapping[str, Any]], str]
 
 
 @dataclass(frozen=True)
@@ -177,8 +185,13 @@ class ScopedToolBox:
         allowed_tools: Collection[str],
         vault: Optional[SecretVault] = None,
         max_result_chars: int = DEFAULT_RESULT_CHARS,
+        extra_tools: Sequence[ExtraTool] = (),
     ) -> None:
         registry = get_registry()
+        clash = sorted({t.schema.name for t in extra_tools} & set(registry))
+        if clash:
+            raise ValueError(f"an extra tool shares a name with a catalog tool: {', '.join(clash)}")
+        self._extras = {t.schema.name: t for t in extra_tools}
         unknown = sorted(set(allowed_tools) - set(registry))
         if unknown:
             raise ValueError(f"not in the tool catalog: {', '.join(unknown)}")
@@ -190,16 +203,36 @@ class ScopedToolBox:
 
     def is_write(self, name: str) -> bool:
         """Does this tool change anything? Unknown names count as writes: fail closed."""
+        if name in self._extras:
+            return False
         spec = get_registry().get(name)
         return spec is None or spec.kind is not ToolKind.READ
 
     def schemas(self) -> list[ToolSchema]:
         registry = get_registry()
-        return [tool_schema(registry[name]) for name in self._allowed]
+        return [tool_schema(registry[name]) for name in self._allowed] + [
+            t.schema for t in self._extras.values()
+        ]
+
+    def _run_extra(self, tool: ExtraTool, call: ToolCall) -> ToolExecution:
+        name = tool.schema.name
+        try:
+            raw = json.loads(call.arguments_json or "{}")
+        except json.JSONDecodeError:
+            return _error(name, "Error: the arguments were not valid JSON.", self.vault, self._limit)
+        if not isinstance(raw, dict) or set(raw) != set(tool.schema.parameters["properties"]):
+            return _error(name, "Error: the arguments did not match the tool's schema.", self.vault, self._limit)
+        try:
+            text = tool.run(raw)
+        except Exception as exc:  # a tool bug must not end the run, and must not leak its message
+            return _error(name, f"Error: {type(exc).__name__}", self.vault, self._limit)
+        return ToolExecution(tool=name, ok=True, text=self.vault.scrub(text)[: self._limit])
 
     def execute(self, call: ToolCall) -> ToolExecution:
         """Run one model-requested tool call. Never raises; everything returned is safe to show."""
         name = call.name
+        if name in self._extras:
+            return self._run_extra(self._extras[name], call)
         if name not in self._allowed:
             return _error(name, f"Error: the tool '{name}' is not available.", self.vault, self._limit)
         spec = get_registry()[name]
