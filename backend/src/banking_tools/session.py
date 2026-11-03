@@ -151,6 +151,20 @@ class BankingSession:
         validation, the audit log and the lock, so agent code must use call()."""
         return self._toolkit
 
+    def audit_for(self, intent_id: str) -> tuple[AuditEntry, ...]:
+        """The writes made for one intent, successful or not, in order."""
+        with self._lock:
+            return tuple(e for e in self._audit if e.intent_id == intent_id)
+
+    def committed_steps_for(self, intent_id: str) -> tuple[str, ...]:
+        """Plain-language lines for the writes that actually took effect for an intent."""
+        registry = get_registry()
+        return tuple(
+            registry[e.tool].description.rstrip(".") if e.tool in registry else e.tool
+            for e in self.audit_for(intent_id)
+            if e.ok
+        )
+
     @property
     def audit_log(self) -> tuple[AuditEntry, ...]:
         with self._lock:
@@ -160,7 +174,13 @@ class BankingSession:
         with self._lock:
             return str(self._db.get_hash())
 
-    def call(self, name: str, arguments: Optional[Mapping[str, Any]] = None) -> ToolResult:
+    def call(
+        self,
+        name: str,
+        arguments: Optional[Mapping[str, Any]] = None,
+        *,
+        intent_id: Optional[str] = None,
+    ) -> ToolResult:
         spec = get_registry().get(name)
         if spec is None or spec.args_model is None:
             return _failure(name, f"Unknown tool '{name}'")
@@ -182,6 +202,7 @@ class BankingSession:
                         arguments=_redact(args.model_dump()),
                         ok=ok,
                         timestamp=self._clock(),
+                        intent_id=intent_id,
                     )
                 )
         return ToolResult(tool=name, ok=ok, text=text, error=error, audit_id=audit_id)
@@ -220,3 +241,18 @@ class BankingSession:
 
 def _failure(name: str, error: str) -> ToolResult:
     return ToolResult(tool=name, ok=False, text=f"{ERROR_PREFIX} {error}", error=error)
+
+
+class ScopedSession:
+    """One intent's view of a session: every write it makes is tagged with the intent,
+    so the executor can reconcile what happened if the route fails partway."""
+
+    def __init__(self, session: BankingSession, intent_id: str) -> None:
+        self._session = session
+        self._intent_id = intent_id
+
+    def call(self, name: str, arguments: Optional[Mapping[str, Any]] = None) -> ToolResult:
+        return self._session.call(name, arguments, intent_id=self._intent_id)
+
+    def committed_steps(self) -> tuple[str, ...]:
+        return self._session.committed_steps_for(self._intent_id)

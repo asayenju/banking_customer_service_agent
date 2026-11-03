@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from enum import StrEnum
 from typing import Any, Optional
 
+from orchestrator.context import RouteContext
 from orchestrator.executor import OutcomeStatus, RouteOutcome
 from orchestrator.types import Intent
 
@@ -39,7 +40,7 @@ class ScriptedRoute:
         self.peak_concurrency = 0
         self._active = 0
 
-    async def run(self, intent: Intent) -> RouteOutcome:
+    async def run(self, intent: Intent, ctx: Optional[RouteContext] = None) -> RouteOutcome:
         self.calls.append(intent.id)
         self._active += 1
         self.peak_concurrency = max(self.peak_concurrency, self._active)
