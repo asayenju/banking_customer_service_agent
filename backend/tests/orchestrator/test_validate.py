@@ -141,3 +141,14 @@ def test_amount_filed_as_an_id_is_dropped_and_reported_missing() -> None:
 def test_real_ids_survive() -> None:
     out = run("x", I("a", K.FREEZE_CARD, slots={"card_id": "dbc_lj82d4f1a9_bluest"}))
     assert out.intents[0].slots == {"card_id": "dbc_lj82d4f1a9_bluest"}
+
+
+def test_card_requests_do_not_demand_a_card_id_because_code_picks_the_card() -> None:
+    for kind in (K.FREEZE_CARD, K.UNFREEZE_CARD, K.ACTIVATE_CARD, K.CLOSE_CARD, K.CARD_CONTROLS, K.CHANGE_OR_RESET_PIN, K.ORDER_REPLACEMENT_CARD):
+        assert run("do it", I("a", kind)).intents[0].missing_slots == (), kind
+
+
+def test_requests_no_code_resolves_yet_still_ask_for_their_ids() -> None:
+    assert run("dispute", I("a", K.DISPUTE_TRANSACTION)).intents[0].missing_slots == ("transaction_id",)
+    assert run("close", I("a", K.CLOSE_ACCOUNT)).intents[0].missing_slots == ("account_id",)
+    assert run("pay", I("a", K.PAY_CREDIT_CARD)).intents[0].missing_slots == ("account_id", "amount")
