@@ -6,3 +6,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Recorded model conversations from live runs (they hold customer-like data)
+backend/evals/cassettes/

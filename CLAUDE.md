@@ -46,6 +46,9 @@ Run from `backend/` with `PYTHONPATH=src:../tau2-bench/src` if `orchestrator` is
 - Labels were written by a labeler model and are noisy at the edges. Known: 092 was relabelled `[]` by hand; 028 (`REQUEST_HUMAN` from "need someone to investigate") is borderline; 099 and 100 are near-identical messages with opposite labels; "I'm looking for a credit card" is labelled `[]` while the prompt treats "I want to open X, which one?" as `OPEN_ACCOUNT`. Decide that rule before trusting holdout2's score.
 - Reports include false write rate on no-action messages and write precision/recall. Latest (3 trials): minimal pairs 1.00, main 0.92, holdout 0.97, holdout2 0.83. Older 5-trial results (temperature 0 still varies a little between runs, so a 1 to 2 point change is noise): main pass@1 0.90, holdout 0.96, holdout2 0.82 (pass^5 0.76). The recurring failure is an extra action from a symptom or a question (`FEE_OR_INTEREST_ADJUSTMENT`, `OPEN_ACCOUNT`, `CARD_CONTROLS`), not a dropped request.
 
+## Specialist agents (`backend/src/agent/`, `knowledge/`)
+PRD: `docs/prd-specialist-agents.md`. Offline tier-1 evidence is `agent/tier1.py` (gold replayed through the real specialist, compared with tau2's database). Live runs are expensive and go only through `uv run python -m agent.live --tasks <ids or specialist>`: no "all", at most 5 tasks by default, a printed estimate that needs `--yes`, a dollar cap enforced on real usage, and cassettes in `backend/evals/cassettes/` (git-ignored) so a task is paid for once. The default `pytest` blocks `litellm.acompletion` (`tests/conftest.py`); live tests need `RUN_LIVE=1`.
+
 ## Current work
 Next PRD: `docs/prd-specialist-agents.md` (issues #19 to #48, label `specialist-agents`): faithful tau2 session, runner contract changes, then a debit-card pilot before the other specialists. Live evals there are expensive: never run broad, always capped and opt-in.
 
