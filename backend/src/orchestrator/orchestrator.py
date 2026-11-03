@@ -49,7 +49,7 @@ from orchestrator.executor import (
     RouteRunner,
     execute_plan,
 )
-from orchestrator.plan import Plan, PlanRejected, plan
+from orchestrator.plan import Plan, PlanRejected, Waiting, plan
 from orchestrator.reply import Reply, compose_reply
 from orchestrator.routes import Route, route_for
 from orchestrator.scoring import SCORER_TIMEOUT_SECONDS, IntentScore, Scorer, score_intents
@@ -153,6 +153,13 @@ class Orchestrator:
         self._active: dict[str, Intent] = {}
         self._done: list[str] = []
         self._asks: dict[str, int] = {}
+        # Questions a route asked mid-run. Counted apart from _asks: a changed detail
+        # (the answer to the question) restarts _asks, and must not restart this, or a
+        # route that keeps asking would never be stopped.
+        self._runner_asks: dict[str, int] = {}
+        # What a route asked and the customer has not answered yet. Slot names and
+        # code-built wording only. Re-asked, not re-run, until the customer touches the intent.
+        self._pending_route_questions: dict[str, tuple[Question, ...]] = {}
         self._prints: dict[str, str] = {}
         self._scores: dict[str, IntentScore] = {}
         self._pending_confirm: dict[str, str] = {}
@@ -166,6 +173,10 @@ class Orchestrator:
     @property
     def active_ids(self) -> tuple[str, ...]:
         return tuple(self._active)
+
+    @property
+    def runner_ask_counts(self) -> dict[str, int]:
+        return dict(self._runner_asks)
 
     @property
     def done_ids(self) -> tuple[str, ...]:
@@ -201,6 +212,8 @@ class Orchestrator:
         for table in (
             self._active,
             self._asks,
+            self._runner_asks,
+            self._pending_route_questions,
             self._prints,
             self._scores,
             self._pending_confirm,
@@ -309,6 +322,11 @@ class Orchestrator:
             self._active[intent.id] = intent
             touched.add(intent.id)
 
+        for intent_id in touched:
+            # The customer said something about it: whatever the route asked is answered
+            # or superseded, so it is run again (and scored again) with the new details.
+            self._pending_route_questions.pop(intent_id, None)
+
         for intent_id in interpretation.confirmed:
             shown = self._pending_confirm.pop(intent_id, None)
             if shown is not None and intent_id in self._active:
@@ -342,8 +360,20 @@ class Orchestrator:
         events.extend(executed.trace.events)
 
         for outcome in executed.outcomes:
+            if outcome.status is OutcomeStatus.NEEDS_INFO:
+                self._route_asked(outcome, decisions, events)
+        # Only intents still open (not escalated for asking too often) hold up others.
+        still_asking = {
+            o.intent_id
+            for o in executed.outcomes
+            if o.status is OutcomeStatus.NEEDS_INFO and o.intent_id in self._active
+        }
+        waiting_on_answer = self._waiting_on_answer(executed.outcomes, still_asking, view)
+        for outcome in executed.outcomes:
             if outcome.status is OutcomeStatus.DONE:
                 self._done.append(outcome.intent_id)
+            if outcome.intent_id in still_asking or outcome.intent_id in waiting_on_answer:
+                continue  # stays open until the question it depends on is answered
             self._forget(outcome.intent_id)
         for decision in decisions.values():
             if decision.action is Action.ESCALATE:
@@ -351,15 +381,74 @@ class Orchestrator:
 
         ordered = tuple(decisions.values())
         self._awaiting = any(d.action is Action.ASK for d in ordered)
-        reply = compose_reply(
-            view, outcomes=executed.outcomes, decisions=ordered, waiting=the_plan.waiting
+        reported = tuple(
+            o
+            for o in executed.outcomes
+            if o.status is not OutcomeStatus.NEEDS_INFO and o.intent_id not in waiting_on_answer
         )
+        waiting = the_plan.waiting + tuple(
+            Waiting(intent_id=i, blocked_by=blockers) for i, blockers in waiting_on_answer.items()
+        )
+        reply = compose_reply(view, outcomes=reported, decisions=ordered, waiting=waiting)
         return TurnResult(
             reply=reply,
             trace=Trace(events=tuple(events)),
             decisions=ordered,
             outcomes=executed.outcomes,
         )
+
+    def _route_asked(
+        self,
+        outcome: RouteOutcome,
+        decisions: dict[str, IntentDecision],
+        events: list[TraceEvent],
+    ) -> None:
+        """A route needs an answer. Keep the intent open and ask, up to MAX_ASKS times."""
+        intent_id = outcome.intent_id
+        asked = self._runner_asks.get(intent_id, 0) + 1
+        if asked > MAX_ASKS:
+            decision = IntentDecision(
+                intent_id=intent_id,
+                action=Action.ESCALATE,
+                reason=f"still not enough information after {MAX_ASKS} questions from the route",
+            )
+            events.extend(_decision_events(decision)[1:])  # the ESCALATED event
+            self._forget(intent_id)
+        else:
+            self._runner_asks[intent_id] = asked
+            self._pending_route_questions[intent_id] = outcome.questions
+            decision = IntentDecision(
+                intent_id=intent_id,
+                action=Action.ASK,
+                reason="the route needs more information",
+                questions=outcome.questions,
+            )
+        decisions[intent_id] = decision
+
+    @staticmethod
+    def _waiting_on_answer(
+        outcomes: Sequence[RouteOutcome], asking: set[str], view: Mapping[str, Intent]
+    ) -> dict[str, tuple[str, ...]]:
+        """Skipped intents that depend, directly or not, on an intent that is asking."""
+        blocked: dict[str, tuple[str, ...]] = {}
+        stuck = set(asking)
+        changed = True
+        while changed:
+            changed = False
+            for outcome in outcomes:
+                intent = view.get(outcome.intent_id)
+                if (
+                    intent is None
+                    or outcome.status is not OutcomeStatus.SKIPPED
+                    or outcome.intent_id in blocked
+                ):
+                    continue
+                direct = tuple(d for d in intent.depends_on if d in stuck)
+                if direct:
+                    blocked[outcome.intent_id] = direct
+                    stuck.add(outcome.intent_id)
+                    changed = True
+        return blocked
 
     async def _decide_all(
         self, message: str, touched: set[str], events: list[TraceEvent]
@@ -410,6 +499,13 @@ class Orchestrator:
                 decision, self._help = handle_unclear(intent, self._help)
             elif route_for(intent.kind) is Route.HAND_OFF:
                 decision = decide(intent, IntentScore.unscored(intent.id, "not scored"), {})
+            elif intent.id in self._pending_route_questions and intent.id not in touched:
+                decision = IntentDecision(
+                    intent_id=intent.id,
+                    action=Action.ASK,
+                    reason="still waiting for an answer",
+                    questions=self._pending_route_questions[intent.id],
+                )
             else:
                 decision = decide(intent, self._scores[intent.id], self._confirmed)
             decided[intent.id] = decision

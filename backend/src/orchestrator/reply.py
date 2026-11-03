@@ -108,7 +108,11 @@ def compose_reply(
         if line:
             lines.append(line)
 
-    failed_ids = tuple(o.intent_id for o in outcomes if o.status is not OutcomeStatus.DONE)
+    failed_ids = tuple(
+        o.intent_id
+        for o in outcomes
+        if o.status not in (OutcomeStatus.DONE, OutcomeStatus.NEEDS_INFO)
+    )
     if failed_ids:
         problems = "; ".join(_summary(intents, i) for i in failed_ids)
         lines.append(
