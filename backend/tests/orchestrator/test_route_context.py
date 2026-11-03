@@ -105,7 +105,7 @@ def world_with_session(runner, shared):
         [interp(freeze_intent(), claims=GOOD_CLAIMS)],
         [[S("frz", 0.97)]],
         direct=runner,
-        session_for=lambda intent_id: ScopedSession(shared, intent_id),
+        session_for=lambda intent_id, progress: ScopedSession(shared, intent_id, progress),
         route_timeout=0.1,
     )
 

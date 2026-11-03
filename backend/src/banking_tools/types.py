@@ -1,5 +1,7 @@
 """Core types shared by every banking tool."""
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal, Optional, Self
@@ -56,6 +58,15 @@ class AuditEntry(BaseModel):
     timestamp: datetime
     # The intent this write was made for; None when a caller did not say.
     intent_id: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class CompletedStep:
+    """A write that took effect. Arguments are as audited (secrets already redacted)."""
+
+    tool: str
+    arguments: Mapping[str, Any]
+    audit_id: str
 
 
 class ToolResult(BaseModel):

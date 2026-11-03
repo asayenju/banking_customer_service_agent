@@ -22,7 +22,7 @@ wall time, so audit entries are reproducible and comparable with tau2's runs.
 
 import json
 import threading
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from functools import cache
@@ -37,7 +37,7 @@ from tau2.domains.banking_knowledge.utils import get_now
 from banking_tools.args import call_kwargs
 from banking_tools.catalog import get_registry
 from banking_tools.task_state import apply_initial_state
-from banking_tools.types import AuditEntry, ToolKind, ToolResult
+from banking_tools.types import AuditEntry, CompletedStep, ToolKind, ToolResult
 
 ERROR_PREFIX = "Error:"
 
@@ -156,6 +156,14 @@ class BankingSession:
         with self._lock:
             return tuple(e for e in self._audit if e.intent_id == intent_id)
 
+    def completed_for(self, intent_id: str) -> tuple[CompletedStep, ...]:
+        """The writes that took effect for an intent, in order, as audited."""
+        return tuple(
+            CompletedStep(tool=e.tool, arguments=dict(e.arguments), audit_id=e.audit_id)
+            for e in self.audit_for(intent_id)
+            if e.ok
+        )
+
     def committed_steps_for(self, intent_id: str) -> tuple[str, ...]:
         """Plain-language lines for the writes that actually took effect for an intent."""
         registry = get_registry()
@@ -244,15 +252,56 @@ def _failure(name: str, error: str) -> ToolResult:
 
 
 class ScopedSession:
-    """One intent's view of a session: every write it makes is tagged with the intent,
-    so the executor can reconcile what happened if the route fails partway."""
+    """One intent's view of a session.
 
-    def __init__(self, session: BankingSession, intent_id: str) -> None:
+    Every write it makes is tagged with the intent, so the executor can reconcile what
+    happened if the route fails partway. If the intent was partly done before, pass the
+    writes it had committed as ``resume``: when the runner repeats those writes in the
+    same order they are not made again, and the original result is reported. Matching is
+    by position, so a legitimate repeat (freeze, unfreeze, freeze) is not mistaken for a
+    retry. The first write that differs ends the skipping, and everything after it runs.
+    """
+
+    def __init__(
+        self,
+        session: BankingSession,
+        intent_id: str,
+        resume: Sequence[CompletedStep] = (),
+    ) -> None:
         self._session = session
         self._intent_id = intent_id
+        self._resume = tuple(resume)
+        self._next = 0
 
     def call(self, name: str, arguments: Optional[Mapping[str, Any]] = None) -> ToolResult:
+        if self._next < len(self._resume):
+            earlier = self._resume[self._next]
+            audited = _audited_arguments(name, arguments)
+            if audited is not None:
+                if earlier.tool == name and earlier.arguments == audited:
+                    self._next += 1
+                    return ToolResult(
+                        tool=name,
+                        ok=True,
+                        text="Already done earlier; not repeated.",
+                        audit_id=earlier.audit_id,
+                    )
+                self._next = len(self._resume)  # the runner went another way
         return self._session.call(name, arguments, intent_id=self._intent_id)
 
     def committed_steps(self) -> tuple[str, ...]:
         return self._session.committed_steps_for(self._intent_id)
+
+    def completed(self) -> tuple[CompletedStep, ...]:
+        return self._session.completed_for(self._intent_id)
+
+
+def _audited_arguments(name: str, arguments: Optional[Mapping[str, Any]]) -> Optional[dict[str, Any]]:
+    """The arguments of a write as the audit log would store them; None for anything else."""
+    spec = get_registry().get(name)
+    if spec is None or spec.args_model is None or spec.kind is not ToolKind.WRITE:
+        return None
+    try:
+        return _redact(spec.args_model.model_validate(dict(arguments or {})).model_dump())
+    except ValidationError:
+        return None
