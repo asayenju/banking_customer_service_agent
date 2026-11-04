@@ -49,6 +49,9 @@ Run from `backend/` with `PYTHONPATH=src:../tau2-bench/src` if `orchestrator` is
 ## Specialist agents (`backend/src/agent/`, `knowledge/`)
 PRD: `docs/prd-specialist-agents.md`. Offline tier-1 evidence is `agent/tier1.py` (gold replayed through the real specialist, compared with tau2's database). Live runs are expensive and go only through `uv run python -m agent.live --tasks <ids or specialist>`: no "all", at most 5 tasks by default, a printed estimate that needs `--yes`, a dollar cap enforced on real usage, and cassettes in `backend/evals/cassettes/` (git-ignored) so a task is paid for once. The default `pytest` blocks `litellm.acompletion` (`tests/conftest.py`); live tests need `RUN_LIVE=1`.
 
+### Credit-card specialist (`agent/specialists/credit.py`, `credit_rules.py`, `agent/workflows/credit_*.py`)
+PRD: `docs/prd-credit-card-specialist.md`; every policy decision with its evidence: `docs/credit-policy-decisions.md`. Tier is by card type (`workflows/credit_tiers.py`); the bank's credit tools check almost nothing, so `credit_rules.py` holds a validator per write tool plus read-backs; four workflows (closure with retention asked as pending questions, limit increase, dispute, replacement) where the model reports what the customer said and code decides. `agent/handoff.py` writes the note for a person from the audit. A credit limit request is planned before a dispute or replacement (`orchestrator/plan.py`). Offline evidence: `uv run python -m agent.credit_report` (18 tasks: 17 pass, task 048 departs for a documented reason in `evals/policy_departures.json`).
+
 ## Current work
 Next PRD: `docs/prd-specialist-agents.md` (issues #19 to #48, label `specialist-agents`): faithful tau2 session, runner contract changes, then a debit-card pilot before the other specialists. Live evals there are expensive: never run broad, always capped and opt-in.
 
