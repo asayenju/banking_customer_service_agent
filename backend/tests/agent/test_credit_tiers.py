@@ -26,11 +26,19 @@ def test_the_table_is_the_one_in_the_replacement_documents():
     text = (DOCS / "doc_credit_cards_credit_card_replacements_002.json").read_text()
     content = json.loads(text)["content"]
     for card_type, tier in TIER_OF_CARD_TYPE.items():
+        if card_type == "Crypto-Cash Back":
+            continue  # not in this table; see the next test
         line = next(l for l in content.splitlines() if card_type in l)
         assert {ENTRY: "Entry-tier", MID: "Mid-tier", PREMIUM: "Premium-tier"}[tier] in line, card_type
 
 
+def test_crypto_cash_back_is_entry_tier_because_the_provisional_credit_document_says_so():
+    content = json.loads((DOCS / "doc_credit_cards_credit_cards_(general)_015.json").read_text())["content"]
+    line = next(l for l in content.splitlines() if "Crypto-Cash Back" in l)
+    assert line.startswith("- Entry Tier")
+    assert tier_of_card_type("Crypto-Cash Back") == ENTRY
+
+
 def test_an_unlisted_card_type_gets_no_tier():
-    assert tier_of_card_type("Crypto-Cash Back") is None
     assert tier_of_card_type("Made Up Card") is None
     assert tier_of_card_type("Gold Rewards Card") == PREMIUM

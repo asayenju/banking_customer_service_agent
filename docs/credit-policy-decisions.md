@@ -17,10 +17,12 @@ Checked against the reference answers:
 - Retention credit: Silver Zoom/Platinum (047) $50 is the premium amount for Platinum; Business Silver (045) $20 is mid. Both fit the card-type tier.
 - Limit caps: Gold 5,000 to 7,500 (050, 054: 50 percent) is premium; Silver 15,000 to 22,500 (053: 50 percent) is mid; Bronze (051, 052: 25 percent, 70 percent utilization, 120-day cooldown) is entry.
 
-## 2. Crypto-Cash Back has no tier (deliberately)
-It is the one card type in the data that the table does not list. The gold disagrees with itself: task 048 gives its owner the mid-tier $20 credit, task 049 the entry-tier $5 credit, for the same card type opened a month apart. The task notes call it "mid-tier" in one and "entry-tier" in the other.
-- **Decision:** a card with no tier gets no automatic retention credit and no automatic limit rule; the workflow hands over (`HandOff`) and says why. Tier-dependent amounts for this card are not guessed.
-- **Exclusions to record in `evals/parity_exclusions.json` (Slice 7):** the Crypto-Cash Back statement credit in 048 ($20) and 049 ($5). The remaining writes in both tasks are still compared. Task 049's behavior with the Green, Eco and Gold cards is unaffected.
+## 2. Crypto-Cash Back is entry tier (one document, one gold departure)
+The replacement table does not list it. The provisional-credit document (`doc_credit_cards_credit_cards_(general)_015`) lists it with the entry tier ("Entry Tier (Bronze Rewards Card, EcoCard, Business Bronze Rewards Card, Crypto-Cash Back Card)"), and nothing else places it. So it is entry tier. (The first version of this note missed that document and called the card unmapped; the test now checks the document.)
+- Task 049 offers its owner the entry-tier $5 retention credit: consistent with policy.
+- Task 048 offers the same card type the mid-tier $20 credit: **a departure from policy.** Its own notes call the card "mid-tier"; no document does.
+- **Exclusion to record in `evals/parity_exclusions.json` (Slice 7):** the Crypto-Cash Back statement credit in 048 ($20, policy says $5). The remaining writes in 048 are still compared.
+- The provisional-credit document uses finer tiers for its caps (Entry $2,500; Mid $5,000; Premium, Gold cards only, $10,000; Elite, Platinum cards, $15,000; Invitation, Diamond Elite, $25,000). Slice 3 keeps that table by card type; the three-tier mapping above is for retention, limit rules and replacements.
 
 ## 3. Cooldown
 Documents 005 and 007 disagree. 005 (customer-facing): the cooldown applies only if the most recent request was **approved**, counted from the submit date; denied requests do not start one. 007 (staff): deny if any request exists inside the period.
@@ -40,12 +42,11 @@ The code follows the documents; each point is a validator or a read-back in Slic
 - The dispute document lists `reversal_of_charge` as a resolution; the tool rejects it. Only `full_refund` and `partial_refund` are used.
 
 ## 6. Where the gold departs from policy or cannot be reproduced
-- Crypto-Cash Back credits in 048 and 049 (section 2).
+- The Crypto-Cash Back $20 credit in 048 (section 2).
 - Bare checking ids `"05"` and `"07"` in 043, 045, 048: the code resolves the checking account from the customer's records; the id is not taken from the customer's words.
 - 049's hand-off summary is free text; the code writes its own and the comparison is on the database only.
 - 053 has no overlay and relies on the base data (Silver Rewards, 15,000 limit).
 - Tasks 077, 080 and 081 are not part of this PRD.
 
 ## 7. Open after this spike
-- Tier of Crypto-Cash Back: needs a document or a bank decision. Until then it is policy-ambiguous.
 - Whether retention applies to a card whose reason is `negative_experience` beyond a "modest goodwill credit" (no amount is given); the specialist hands over for that reason.

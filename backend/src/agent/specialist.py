@@ -79,6 +79,9 @@ class SpecialistConfig:
     instructions: str
     scope: DocScope
     validators: Mapping[str, Validator] = field(default_factory=dict)
+    # Run after a write went through, on the database as it is then: None means the change is
+    # really there. Some bank tools report success without changing anything.
+    readbacks: Mapping[str, Validator] = field(default_factory=dict)
     budget: Budget = Budget()
     # Runs before the model, in code. Returns the intent to work on (details resolved), or an
     # outcome to end with (typically NEEDS_INFO with a question written by code). The plan
@@ -500,6 +503,9 @@ class Specialist:
             if not outcome.ok:
                 return _failed(intent, f"step {step.index} did not go through")
             results[step.index] = str(outcome.text)
+            readback = self.config.readbacks.get(step.tool)
+            if readback is not None and (missing := readback(validation, arguments)) is not None:
+                return _failed(intent, f"step {step.index} was reported done but {missing}")
         done = "; ".join(s.description for s in ctx.approved.steps)
         return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text=f"Done: {done}.")
 
