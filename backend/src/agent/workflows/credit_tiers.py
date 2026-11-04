@@ -60,3 +60,10 @@ PROVISIONAL_CREDIT_CAP: dict[str, float] = {
     "Platinum Rewards Card": 15000.0, "Business Platinum Rewards Card": 15000.0,
     "Diamond Elite Card": 25000.0,
 }
+
+# "CLI Eligibility Requirements by Card Tier" and "CLI Payment History and Approval Criteria".
+CLI_MIN_ACCOUNT_AGE_DAYS: dict[str, int] = {ENTRY: 120, MID: 90, PREMIUM: 60}
+CLI_COOLDOWN_DAYS: dict[str, int] = {ENTRY: 120, MID: 90, PREMIUM: 60}
+# Utilization must be below this share of the limit.
+CLI_MAX_UTILIZATION: dict[str, float] = {ENTRY: 0.70, MID: 0.80, PREMIUM: 0.90}
+CLI_ON_TIME_PAYMENTS: dict[str, int] = {ENTRY: 6, MID: 3, PREMIUM: 3}

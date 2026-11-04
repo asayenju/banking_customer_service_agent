@@ -51,7 +51,8 @@ from orchestrator.types import Intent, IntentKind
 _CALL = "call_discoverable_agent_tool"
 _ID_SLOTS = ("card_id", "account_id", "transaction_id", "credit_card_account_id")
 # Writes the orchestrator or a deterministic recipe makes; never a specialist.
-DIRECT_WRITES = frozenset({"freeze_debit_card_3892", "change_user_email"})
+# Paying a card from checking belongs to the accounts specialist (not built yet), so it is replayed directly.
+DIRECT_WRITES = frozenset({"freeze_debit_card_3892", "change_user_email", "pay_credit_card_from_checking_9182"})
 DISPUTE_TOOLS = frozenset({"file_debit_card_transaction_dispute_6281", "file_credit_card_transaction_dispute_4829"})
 _HANDOFFS = frozenset(
     {
@@ -164,6 +165,7 @@ def slots_of(first: Step) -> dict[str, str]:
 
 def _preference(config: SpecialistConfig) -> list[IntentKind]:
     order = [
+        IntentKind.CREDIT_LIMIT_REQUEST,
         IntentKind.CHANGE_OR_RESET_PIN,
         IntentKind.ACTIVATE_CARD,
         IntentKind.CARD_CONTROLS,
@@ -216,7 +218,7 @@ def plan_items(steps: Sequence[Step], config: SpecialistConfig) -> list[Item]:
             continue
         ahead: list[Step] = []
         for later in steps[i:]:  # as far as reads and writes run unbroken: a user or hand-off step ends a request
-            if later.kind not in ("write", "read"):
+            if later.kind not in ("write", "read") or later.name in DIRECT_WRITES:
                 break
             ahead.append(later)
         kind, run = choose_kind([s for s in ahead if s.kind == "write"], _preference(config))

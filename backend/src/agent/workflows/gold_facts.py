@@ -85,4 +85,13 @@ def facts_from_gold(workflow: str, writes: Sequence[Any], database: Any) -> Opti
                 for o in orders
             ]
         }
+    if workflow == "credit_limit":
+        submits = [w for w in writes if w.name == "submit_credit_limit_increase_request_7392"]
+        if not submits:
+            return None
+        first = submits[0].args
+        return {
+            "credit_card_account_id": first["credit_card_account_id"],
+            "requested_increase_amount": int(first["requested_increase_amount"]),
+        }
     return None
