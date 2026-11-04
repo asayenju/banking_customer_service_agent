@@ -15,6 +15,7 @@ from typing import Any
 
 from agent.cards import describe_credit, owned_credit_accounts, resolve_credit
 from agent.specialist import SpecialistConfig, Validator
+from agent.specialists import credit_rules as rules
 from knowledge.scopes import CREDIT_CARDS
 from orchestrator.executor import OutcomeStatus, RouteOutcome
 from orchestrator.types import Intent, IntentKind as K, Question
@@ -77,8 +78,23 @@ def prepare(intent: Intent, user_id: str, db: Any) -> Intent | RouteOutcome:
     return intent.model_copy(update={"slots": {**intent.slots, "credit_card_account_id": str(chosen["account_id"])}})
 
 
-# Filled in by the validator slice.
-VALIDATORS: dict[str, Validator] = {}
+VALIDATORS: dict[str, Validator] = {
+    "file_credit_card_transaction_dispute_4829": rules.dispute,
+    "order_replacement_credit_card_7291": rules.replacement,
+    "log_credit_card_closure_reason_4521": rules.log_reason,
+    "close_credit_card_account_7834": rules.close,
+    "apply_statement_credit_8472": rules.statement_credit,
+    "apply_credit_card_account_flag_6147": rules.flag,
+    "pay_credit_card_from_checking_9182": rules.pay,
+    "submit_credit_limit_increase_request_7392": rules.submit,
+    "approve_credit_limit_increase_5847": rules.approve,
+    "deny_credit_limit_increase_5848": rules.deny,
+}
+# Checks after a write that the change is really there.
+READBACKS: dict[str, Validator] = {
+    "close_credit_card_account_7834": rules.close_readback,
+    "approve_credit_limit_increase_5847": rules.approve_readback,
+}
 
 CREDIT_SPECIALIST = SpecialistConfig(
     name="credit",
@@ -86,5 +102,6 @@ CREDIT_SPECIALIST = SpecialistConfig(
     instructions=INSTRUCTIONS,
     scope=CREDIT_CARDS,
     validators=VALIDATORS,
+    readbacks=READBACKS,
     prepare=prepare,
 )
