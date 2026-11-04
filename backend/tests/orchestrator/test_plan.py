@@ -221,3 +221,35 @@ def test_plan_models_are_frozen_and_strict():
         Plan(waves=(), waiting=()).waves = (("a",),)
     with pytest.raises(ValidationError, match="extra_forbidden"):
         PlanRejected(reason="r", intent_ids=(), surprise="x")
+
+
+# ---- a credit limit request goes before work that would block its approval
+
+def _cli(id="limit", **kw):
+    return I(id, K.CREDIT_LIMIT_REQUEST, {"credit_card_account_id": "cc1"}, **kw)
+
+
+def test_a_limit_request_runs_before_a_dispute_and_a_replacement_in_the_same_turn():
+    dispute = I("d", K.DISPUTE_TRANSACTION, {"transaction_id": "t1"})
+    replace = I("r", K.ORDER_REPLACEMENT_CARD, {"credit_card_account_id": "cc1"})
+    # Listed last, and naming different records, so nothing but the rule orders them.
+    assert waves(plan([dispute, replace, _cli()])) == (("limit",), ("d", "r"))
+
+
+def test_the_order_is_added_only_for_those_kinds_and_only_when_there_is_a_limit_request():
+    other = I("c", K.CLOSE_CARD, {"card_id": "c1"})
+    assert waves(plan([other, _cli()])) == (("c", "limit"),), "a close of another record is not held back"
+    only = I("d", K.DISPUTE_TRANSACTION, {"transaction_id": "t1"})
+    assert waves(plan([only])) == (("d",),)
+
+
+def test_the_customer_saying_the_opposite_is_respected_and_never_makes_a_cycle():
+    dispute = I("d", K.DISPUTE_TRANSACTION, {"transaction_id": "t1"})
+    result = plan([dispute, _cli(depends_on=("d",))])
+    assert waves(result) == (("d",), ("limit",)), "the stated dependency stands; the rule adds nothing that would cycle"
+
+
+def test_two_limit_requests_do_not_wait_for_each_other_but_a_dispute_waits_for_both():
+    a, b = _cli("l1"), I("l2", K.CREDIT_LIMIT_REQUEST, {"credit_card_account_id": "cc2"})
+    dispute = I("d", K.DISPUTE_TRANSACTION, {"transaction_id": "t1"})
+    assert waves(plan([dispute, a, b])) == (("l1", "l2"), ("d",))

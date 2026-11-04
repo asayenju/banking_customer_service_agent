@@ -5,6 +5,10 @@ waves. Everything in a wave may run at the same time; a wave starts only when
 the one before it has finished.
 
   - An intent comes after the intents it depends on.
+  - A credit limit request goes before a dispute or a replacement in the same turn: the bank
+    refuses to approve an increase while a dispute is open or a replacement is on its way, so
+    filing those first would make the increase impossible. The order is added unless the customer
+    already said the opposite (a cycle is never created).
   - Urgent intents (a fraud or loss report, a card freeze) go first. If any is
     ready, the wave holds only urgent intents, so protection is never queued
     behind a balance lookup.
@@ -93,11 +97,41 @@ def _conflict(a: Intent, b: Intent, flagged: set[frozenset[str]]) -> bool:
     return bool(mine & theirs)
 
 
+# Work that blocks a credit limit approval for as long as it is open.
+BLOCKS_A_LIMIT_INCREASE = frozenset({IntentKind.DISPUTE_TRANSACTION, IntentKind.ORDER_REPLACEMENT_CARD})
+
+
+def dependencies(intents: Sequence[Intent]) -> dict[str, tuple[str, ...]]:
+    """What each intent waits for: what the decomposer said, plus the limit-first rule."""
+    deps: dict[str, tuple[str, ...]] = {i.id: tuple(i.depends_on) for i in intents}
+    ids = set(deps)
+
+    def waits_for(start: str) -> set[str]:
+        seen: set[str] = set()
+        stack = [d for d in deps[start] if d in ids]
+        while stack:
+            current = stack.pop()
+            if current not in seen:
+                seen.add(current)
+                stack.extend(d for d in deps[current] if d in ids)
+        return seen
+
+    limits = [i for i in intents if i.kind is IntentKind.CREDIT_LIMIT_REQUEST]
+    for other in intents:
+        if other.kind not in BLOCKS_A_LIMIT_INCREASE:
+            continue
+        for limit in limits:
+            if limit.id != other.id and limit.id not in deps[other.id] and other.id not in waits_for(limit.id):
+                deps[other.id] = (*deps[other.id], limit.id)
+    return deps
+
+
 def _on_a_cycle(intents: Sequence[Intent]) -> tuple[str, ...]:
     """Ids left over once everything that can be ordered has been, minus anything
     that merely sits downstream of a cycle. Empty when there is no cycle."""
     ids = {i.id for i in intents}
-    deps = {i.id: {d for d in i.depends_on if d in ids} for i in intents}
+    effective = dependencies(intents)
+    deps = {i.id: {d for d in effective[i.id] if d in ids} for i in intents}
     resolved: set[str] = set()
     progress = True
     while progress:
@@ -129,6 +163,7 @@ def plan(
         return PlanRejected(reason="dependency cycle", intent_ids=cycle)
 
     ids = {i.id for i in intents}
+    needs = dependencies(intents)
     blocked: dict[str, tuple[str, ...]] = {}
     changed = True
     while changed:
@@ -137,7 +172,7 @@ def plan(
             if intent.id in blocked:
                 continue
             unmet = tuple(
-                d for d in intent.depends_on if d not in done and (d not in ids or d in blocked)
+                d for d in needs[intent.id] if d not in done and (d not in ids or d in blocked)
             )
             if unmet:
                 blocked[intent.id] = unmet
@@ -149,7 +184,7 @@ def plan(
     finished = set(done)
     waves: list[tuple[str, ...]] = []
     while remaining:
-        ready = [i for i in remaining if all(d in finished for d in i.depends_on)]
+        ready = [i for i in remaining if all(d in finished for d in needs[i.id])]
         if not ready:
             # Unreachable once cycles are rejected; here so a bug can never hang a turn.
             return PlanRejected(
