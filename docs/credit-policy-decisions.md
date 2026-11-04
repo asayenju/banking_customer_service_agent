@@ -50,3 +50,9 @@ The code follows the documents; each point is a validator or a read-back in Slic
 
 ## 7. Open after this spike
 - Whether retention applies to a card whose reason is `negative_experience` beyond a "modest goodwill credit" (no amount is given); the specialist hands over for that reason.
+
+## 8. Provisional credit reproduces the gold (checked in Issue #52)
+The rule in `doc_credit_cards_credit_cards_(general)_015` (account at least 60 days; unauthorized, duplicate, or goods not received on a purchase more than 30 days old; at least $25 and within the card's cap; no more than 2 disputes in the last 12 months, counting the ones earlier in the same request; the merchant tried first unless it is fraud) was computed for all 46 credit disputes in the reference answers (tasks 031, 037 to 041, 053, 054, 080, 081; the 38 in tasks 031 and 037 to 041 are replayed by the tests, the other 8 were checked by hand and are replayed when their slices land). It matches every `eligible_for_provisional_credit` value, including why only the first three disputes of tasks 039 to 041 carry it (one existing dispute plus the ones in the plan). So there is no departure from policy to record for disputes.
+- Disputes are counted in the order the customer gives them. That decides which ones get the credit; the customer is not asked which to prefer (a possible improvement).
+- The card action (`keep_active` or `cancel_and_reissue`) is the customer's choice and is only recorded; ordering the replacement is its own request.
+- Expedited delivery of a replacement has a fee by tier ($15 entry, $10 mid, free for Gold and above). No bank tool charges it, so the workflow only requires the customer to agree to it first (the document's "expedited fee acknowledgement").

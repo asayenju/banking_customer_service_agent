@@ -49,4 +49,40 @@ def facts_from_gold(workflow: str, writes: Sequence[Any], database: Any) -> Opti
                 for o in orders
             ],
         }
+    if workflow == "credit_dispute":
+        disputes = [w for w in writes if w.name == "file_credit_card_transaction_dispute_4829"]
+        if not disputes:
+            return None
+        return {
+            "disputes": [
+                {
+                    "transaction_id": d.args["transaction_id"],
+                    "reason": d.args["dispute_reason"],
+                    "noticed_date": d.args["issue_noticed_date"],
+                    "contacted_merchant": d.args["contacted_merchant"],
+                    "card_last_4_digits": d.args["card_last_4_digits"],
+                    "partial_refund_amount": d.args.get("partial_refund_amount"),
+                    "cancel_and_reissue": d.args["card_action"] == "cancel_and_reissue",
+                }
+                for d in disputes
+            ]
+        }
+    if workflow == "credit_replacement":
+        orders = [w for w in writes if w.name == "order_replacement_credit_card_7291"]
+        if not orders:
+            return None
+        return {
+            "replacements": [
+                {
+                    "credit_card_account_id": o.args["credit_card_account_id"],
+                    "reason": o.args["reason"],
+                    "expedited": bool(o.args.get("expedited_shipping")),
+                    "accepts_expedite_fee": bool(o.args.get("expedited_shipping")),
+                    "shipping_address": None
+                    if o.args["shipping_address"] == database.users.data[o.args["user_id"]].get("address")
+                    else o.args["shipping_address"],
+                }
+                for o in orders
+            ]
+        }
     return None
