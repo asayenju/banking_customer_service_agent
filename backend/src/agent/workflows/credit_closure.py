@@ -134,6 +134,15 @@ class CreditClosure:
                         ),
                     )
                 )
+            checking = db.accounts.data.get(facts.pay_from_checking_account_id)
+            if checking is None or checking.get("user_id") != ctx.user_id or checking.get("class") != "checking" or checking.get("status") != "OPEN":
+                return Refuse(f"{facts.pay_from_checking_account_id} is not one of this customer's open checking accounts")
+            funds = money(checking.get("current_holdings")) or 0.0
+            if funds < balance:
+                return Reply(
+                    f"The balance on this card is ${balance:,.2f} and that checking account has ${funds:,.2f}, which is not enough "
+                    "to pay it. The card can be closed once the balance is paid in full."
+                )
             return Plan(
                 (
                     Step(
