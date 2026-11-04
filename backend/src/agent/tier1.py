@@ -248,6 +248,9 @@ def _split_requests(items: list[Item], config: SpecialistConfig) -> list[Item]:
     ordering cards is a replacement."""
     out: list[Item] = []
     for item in items:
+        if isinstance(item, Segment) and item.kind is IntentKind.CLOSE_CARD and any(w.name in CREDIT_CLOSURE_TOOLS for w in item.writes):
+            out.extend(_per_account(item))
+            continue
         disputes = [w for w in item.writes if w.name in DISPUTE_TOOLS] if isinstance(item, Segment) else []
         if not isinstance(item, Segment) or not disputes or not any(item.kind in w.kinds for w in config.workflows):
             out.append(item)
@@ -275,6 +278,28 @@ def _split_requests(items: list[Item], config: SpecialistConfig) -> list[Item]:
         if rest:
             out.append(Segment(IntentKind.ORDER_REPLACEMENT_CARD, (), tuple(rest)))
     return out
+
+
+CREDIT_CLOSURE_TOOLS = frozenset(
+    {
+        "log_credit_card_closure_reason_4521",
+        "close_credit_card_account_7834",
+        "apply_statement_credit_8472",
+        "apply_credit_card_account_flag_6147",
+    }
+)
+
+
+def _per_account(segment: Segment) -> list[Item]:
+    """A closing request is about one card: split a run of writes on several cards into one request each,
+    keeping the order. The reads that led up to it stay with the first."""
+    groups: dict[str, list[Step]] = {}
+    for write in segment.writes:
+        groups.setdefault(str(write.args.get("credit_card_account_id")), []).append(write)
+    return [
+        Segment(segment.kind, segment.reads if n == 0 else (), tuple(writes))
+        for n, writes in enumerate(groups.values())
+    ]
 
 
 class Calls:

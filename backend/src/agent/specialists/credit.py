@@ -16,6 +16,7 @@ from typing import Any
 from agent.cards import describe_credit, owned_credit_accounts, resolve_credit
 from agent.specialist import SpecialistConfig, Validator
 from agent.specialists import credit_rules as rules
+from agent.workflows.credit_closure import CreditClosure
 from agent.workflows.credit_dispute import CreditDispute
 from agent.workflows.credit_limit import CreditLimit
 from agent.workflows.credit_replacement import CreditReplacement
@@ -44,8 +45,10 @@ How to work:
    An open dispute or a pending replacement blocks an approval: do the limit request first when
    the customer wants several things.
 7. A card type with no tier in the notes gets no automatic offer or limit rule. Hand over.
-8. Disputes, replacements and limit increases have a workflow: end with start_credit_dispute,
-   start_credit_replacement or start_credit_limit. For a limit increase report only the card and the
+8. Closing a card, disputes, replacements and limit increases have a workflow: end with
+   start_credit_closure, start_credit_dispute, start_credit_replacement or start_credit_limit. For a
+   closure report the card, the reason once the customer gives it, and their answers to the offers;
+   which offers are made, and the order, are worked out for you. For a limit increase report only the card and the
    dollar increase the customer asks for; the rules, the denial reason and the new limit are worked out.
    Report only what the customer said (which charge and why, whether they tried the merchant, when
    they noticed, the card's last four digits, which card, why, delivery speed and address); the
@@ -114,5 +117,5 @@ CREDIT_SPECIALIST = SpecialistConfig(
     validators=VALIDATORS,
     readbacks=READBACKS,
     prepare=prepare,
-    workflows=(CreditDispute(), CreditReplacement(), CreditLimit()),
+    workflows=(CreditClosure(), CreditDispute(), CreditReplacement(), CreditLimit()),
 )
