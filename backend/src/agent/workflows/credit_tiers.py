@@ -48,3 +48,15 @@ RETENTION_CREDIT: dict[str, float] = {ENTRY: 5.0, MID: 20.0, PREMIUM: 50.0}
 REPLACEMENT_LIMIT_60_DAYS: dict[str, int] = {ENTRY: 2, MID: 3, PREMIUM: 4}
 # Largest increase per request, as a share of the current limit.
 CLI_MAX_INCREASE_SHARE: dict[str, float] = {ENTRY: 0.25, MID: 0.50, PREMIUM: 0.50}
+# Expedited delivery of a replacement card: the fee the customer must agree to. No bank tool charges it.
+EXPEDITED_FEE: dict[str, float] = {ENTRY: 15.0, MID: 10.0, PREMIUM: 0.0}
+
+# Largest amount that can be credited provisionally while a dispute is investigated, by card type
+# ("Credit card disputes: provisional credit", which splits the premium tier and above more finely).
+PROVISIONAL_CREDIT_CAP: dict[str, float] = {
+    "Bronze Rewards Card": 2500.0, "EcoCard": 2500.0, "Business Bronze Rewards Card": 2500.0, "Crypto-Cash Back": 2500.0,
+    "Silver Rewards Card": 5000.0, "Business Silver Rewards Card": 5000.0, "Green Rewards Card": 5000.0, "Silver Zoom Card": 5000.0,
+    "Gold Rewards Card": 10000.0, "Business Gold Rewards Card": 10000.0,
+    "Platinum Rewards Card": 15000.0, "Business Platinum Rewards Card": 15000.0,
+    "Diamond Elite Card": 25000.0,
+}

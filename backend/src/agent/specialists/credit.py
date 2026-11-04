@@ -16,6 +16,8 @@ from typing import Any
 from agent.cards import describe_credit, owned_credit_accounts, resolve_credit
 from agent.specialist import SpecialistConfig, Validator
 from agent.specialists import credit_rules as rules
+from agent.workflows.credit_dispute import CreditDispute
+from agent.workflows.credit_replacement import CreditReplacement
 from knowledge.scopes import CREDIT_CARDS
 from orchestrator.executor import OutcomeStatus, RouteOutcome
 from orchestrator.types import Intent, IntentKind as K, Question
@@ -40,7 +42,12 @@ How to work:
 6. For a limit increase, check the requested amount against the tier's cap before you submit.
    An open dispute or a pending replacement blocks an approval: do the limit request first when
    the customer wants several things.
-7. A card type with no tier in the notes gets no automatic offer or limit rule. Hand over."""
+7. A card type with no tier in the notes gets no automatic offer or limit rule. Hand over.
+8. Disputes and replacements have a workflow: end with start_credit_dispute or start_credit_replacement.
+   Report only what the customer said (which charge and why, whether they tried the merchant, when
+   they noticed, the card's last four digits, which card, why, delivery speed and address); the
+   provisional credit, the contact details and the limits are worked out for you. If the workflow
+   refuses, it says why: fix the form or ask the customer."""
 
 # Kinds where "which credit account?" must be answered before anything else.
 # A dispute is not here: its workflow finds the account from the transaction.
@@ -104,4 +111,5 @@ CREDIT_SPECIALIST = SpecialistConfig(
     validators=VALIDATORS,
     readbacks=READBACKS,
     prepare=prepare,
+    workflows=(CreditDispute(), CreditReplacement()),
 )

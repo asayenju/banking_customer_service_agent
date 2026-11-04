@@ -52,6 +52,7 @@ _CALL = "call_discoverable_agent_tool"
 _ID_SLOTS = ("card_id", "account_id", "transaction_id", "credit_card_account_id")
 # Writes the orchestrator or a deterministic recipe makes; never a specialist.
 DIRECT_WRITES = frozenset({"freeze_debit_card_3892", "change_user_email"})
+DISPUTE_TOOLS = frozenset({"file_debit_card_transaction_dispute_6281", "file_credit_card_transaction_dispute_4829"})
 _HANDOFFS = frozenset(
     {
         "transfer_to_human_agents",
@@ -213,7 +214,11 @@ def plan_items(steps: Sequence[Step], config: SpecialistConfig) -> list[Item]:
             items.append(Direct(step))
             i += 1
             continue
-        ahead = [s for s in steps[i:] if s.kind in ("write", "read")]
+        ahead: list[Step] = []
+        for later in steps[i:]:  # as far as reads and writes run unbroken: a user or hand-off step ends a request
+            if later.kind not in ("write", "read"):
+                break
+            ahead.append(later)
         kind, run = choose_kind([s for s in ahead if s.kind == "write"], _preference(config))
         taken: list[Step] = []
         j, seen = i, 0
@@ -241,7 +246,7 @@ def _split_requests(items: list[Item], config: SpecialistConfig) -> list[Item]:
     ordering cards is a replacement."""
     out: list[Item] = []
     for item in items:
-        disputes = [w for w in item.writes if w.name == "file_debit_card_transaction_dispute_6281"] if isinstance(item, Segment) else []
+        disputes = [w for w in item.writes if w.name in DISPUTE_TOOLS] if isinstance(item, Segment) else []
         if not isinstance(item, Segment) or not disputes or not any(item.kind in w.kinds for w in config.workflows):
             out.append(item)
             continue
