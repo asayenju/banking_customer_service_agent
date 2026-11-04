@@ -25,6 +25,8 @@ from datetime import date, datetime
 from typing import Any, Optional
 
 from agent.cards import owned_cards, which_card
+from agent.workflows.debit_dispute import DebitDispute
+from agent.workflows.debit_replacement import DebitReplacement
 from agent.specialist import SpecialistConfig, Validator, ValidationContext
 from tau2.domains.banking_knowledge.tools import _validate_pin
 
@@ -61,7 +63,15 @@ How to work:
    upgrade or bank_reissue: activate_debit_card_8293.
 6. Disputes: fill every field from the transaction and from what the customer said. Never guess
    a date, an amount or a category. The disputed amount must match the transaction.
-7. PIN changes: use the secret references that appear in the customer's message."""
+7. PIN changes: use the secret references that appear in the customer's message.
+8. Disputes and replacement cards have a workflow: end with start_debit_dispute or
+   start_debit_replacement. Report only what the customer said (which transaction, what
+   happened, which card, what delivery and design they want); the fees, liability, card
+   action and the order of the steps are worked out for you. If the workflow refuses, it says why:
+   fix the form or ask the customer.
+9. Fraud alerts: clear one only when the customer confirms the flagged transactions are theirs.
+   If the customer says a flagged charge is not theirs, or is unsure, leave the alert in place,
+   even if they ask for it to be removed."""
 
 CLOSE_REASONS = frozenset({"lost", "stolen", "fraud_suspected", "damaged", "no_longer_needed", "account_closing"})
 # Which issue reasons each activation tool is for.
@@ -168,8 +178,9 @@ def order(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
 
 
 # Kinds where "which card?" must be answered before anything else.
+# A dispute is not here: its workflow finds the card from the transaction.
 CARD_KINDS = frozenset(
-    {K.ACTIVATE_CARD, K.CHANGE_OR_RESET_PIN, K.CARD_CONTROLS, K.CLOSE_CARD, K.DISPUTE_TRANSACTION}
+    {K.ACTIVATE_CARD, K.CHANGE_OR_RESET_PIN, K.CARD_CONTROLS, K.CLOSE_CARD}
 )
 # Any of these names a card or account well enough for the model to find the card.
 _NAMES_A_RECORD = ("account_id", "transaction_id", "credit_card_account_id")
@@ -330,4 +341,5 @@ DEBIT_SPECIALIST = SpecialistConfig(
     scope=DEBIT,
     validators=VALIDATORS,
     prepare=prepare,
+    workflows=(DebitDispute(), DebitReplacement()),
 )

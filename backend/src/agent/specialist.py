@@ -35,6 +35,16 @@ from agent.guard import DbOwnership, Guard, GuardedSession, allowed_writes, shar
 from agent.llm_tools import ToolCallingLLMClient, ToolSchema
 from agent.loop import AgentResult, Budget, StopReason, run_agent
 from agent.toolbox import ExtraTool, ScopedToolBox, SecretVault, tool_schema
+from agent.workflows.base import (
+    NeedInfo,
+    Plan,
+    Refuse,
+    Reply,
+    Workflow,
+    WorkflowContext,
+    strict_schema,
+    terminal_name,
+)
 from banking_tools.catalog import get_registry
 from banking_tools.types import Reversibility
 from knowledge.index import KnowledgeIndex, render
@@ -83,6 +93,9 @@ class SpecialistConfig:
     rules: Optional[str] = None
     # An answer must cite the documents it rests on, and only ones it actually retrieved.
     cite_documents: bool = False
+    # Structured workflows: each one is offered as a ``start_<name>`` way of ending the run, for
+    # the kinds it covers. For those kinds a free-form ``propose_plan`` is refused.
+    workflows: tuple[Workflow, ...] = ()
 
 
 BASE_RULES = """You are a bank's specialist for one kind of request. You act only for the customer who
@@ -204,9 +217,14 @@ class Specialist:
             extra_tools=[self._search_tool(seen)],
         )
         refusals: list[str] = []
+        workflows = self._workflows_for(intent.kind)
+        decided: dict[str, Any] = {}
 
         def review(name: str, arguments: Mapping[str, Any]) -> Optional[str]:
-            reason = self._review(name, arguments, intent, ctx, seen)
+            if name in workflows:
+                reason = self._review_workflow(workflows[name], arguments, intent, ctx, decided)
+            else:
+                reason = self._review(name, arguments, intent, ctx, seen)
             if reason:
                 refusals.append(reason)
             return reason
@@ -216,10 +234,19 @@ class Specialist:
             box,
             system=system_prompt(self.config, intent.kind),
             request=self._request(working),
-            terminals=self.config.terminals,
+            terminals=(*self.config.terminals, *workflows),
             budget=self.config.budget,
             deadline=ctx.deadline,
             review=review,
+            extra_terminals={
+                name: ToolSchema(
+                    name=name,
+                    description=f"End the run with this workflow: {w.summary} Fill in what the customer said; "
+                    "the bank's rules, amounts and steps are worked out for you.",
+                    parameters=strict_schema(w.facts),
+                )
+                for name, w in workflows.items()
+            },
         )
         if not result.finished:
             # The last thing the model was told is the most useful thing to report.
@@ -234,6 +261,8 @@ class Specialist:
             return self._ask(intent, result)
         if result.terminal == "escalate":
             return _failed(intent, "the specialist asked for a human agent")
+        if result.terminal in workflows:
+            return self._from_workflow(intent, ctx, decided[result.terminal])
         return self._propose(intent, ctx, guarded, result)
 
     def _review(
@@ -241,6 +270,9 @@ class Specialist:
     ) -> Optional[str]:
         """Why a way of ending is not acceptable yet, in words written here; None if it is."""
         if name == "propose_plan":
+            covered = self._workflows_for(intent.kind)
+            if covered:
+                return f"this request has a workflow; end with {' or '.join(covered)} instead"
             steps = self._steps_from(arguments.get("steps"), intent, ctx)
             if isinstance(steps, str):
                 return steps
@@ -252,6 +284,66 @@ class Specialist:
         if name == "ask_customer" and not _clean_details(arguments.get("details")):
             return "name the details you need in a few words, like card_id"
         return None
+
+    def _workflows_for(self, kind: IntentKind) -> dict[str, Workflow]:
+        return {terminal_name(w): w for w in self.config.workflows if kind in w.kinds}
+
+    def _context(self, ctx: RouteContext) -> WorkflowContext:
+        return WorkflowContext(self._db, str(ctx.verified_user_id), self._today())
+
+    def _review_workflow(
+        self,
+        workflow: Workflow,
+        arguments: Mapping[str, Any],
+        intent: Intent,
+        ctx: RouteContext,
+        decided: dict[str, Any],
+    ) -> Optional[str]:
+        """Run the workflow's rules on the facts the model gave; a refusal goes back to the model."""
+        try:
+            facts = workflow.facts.model_validate(dict(arguments))
+        except ValidationError:
+            return "the form did not fit; fill in every field with an allowed value"
+        decision = workflow.decide(self._context(ctx), facts)
+        if isinstance(decision, Refuse):
+            return decision.reason
+        if isinstance(decision, Plan):
+            steps = self._steps_from(
+                [{"tool": s.tool, "arguments_json": json.dumps(dict(s.args))} for s in decision.steps],
+                intent,
+                ctx,
+            )
+            if isinstance(steps, str):
+                return steps
+            problem = self._dry_run(steps, intent, str(ctx.verified_user_id))
+            if problem:
+                return problem
+        decided[terminal_name(workflow)] = decision
+        return None
+
+    def _from_workflow(self, intent: Intent, ctx: RouteContext, decision: Any) -> RouteOutcome:
+        if isinstance(decision, Plan):
+            steps = self._steps_from(
+                [{"tool": s.tool, "arguments_json": json.dumps(dict(s.args))} for s in decision.steps],
+                intent,
+                ctx,
+            )
+            if isinstance(steps, str):
+                return _failed(intent, steps)
+            return RouteOutcome(
+                intent_id=intent.id,
+                status=OutcomeStatus.NEEDS_CONFIRMATION,
+                proposal=PlanPreview.build(intent.id, fingerprint(intent), steps),
+            )
+        if isinstance(decision, NeedInfo):
+            return RouteOutcome(
+                intent_id=intent.id,
+                status=OutcomeStatus.NEEDS_INFO,
+                questions=tuple(Question(intent_id=intent.id, slot=a.slot, text=a.text) for a in decision.questions),
+            )
+        if isinstance(decision, Reply):
+            return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text=decision.text)
+        return _failed(intent, "the workflow asked for a human agent")
 
     def _request(self, intent: Intent) -> str:
         details = {k: v for k, v in sorted(intent.slots.items())}

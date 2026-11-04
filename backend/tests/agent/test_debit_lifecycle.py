@@ -7,7 +7,12 @@ from agent.dispatcher import Name, RecordKinds, SubAgentDispatcher
 from agent.llm_tools import AssistantTurn, FakeToolLLM, ToolCall, Usage
 from agent.specialist import Specialist, ValidationContext
 from agent.specialists import debit
-from agent.specialists.debit import DEBIT_SPECIALIST, prepare
+from dataclasses import replace
+
+from agent.specialists.debit import DEBIT_SPECIALIST as WITH_WORKFLOWS, prepare
+
+# These tests are about the validators and the guard, which the free-form plan path still uses.
+DEBIT_SPECIALIST = replace(WITH_WORKFLOWS, workflows=())
 from agent.toolbox import SecretVault
 from banking_tools import BankingSession, Fidelity
 from datetime import date

@@ -6,7 +6,12 @@ import pytest
 from agent.llm_tools import AssistantTurn, FakeToolLLM, ToolCall, Usage
 from agent.loop import Budget, StopReason, run_agent
 from agent.specialist import Specialist, SpecialistConfig, _clean_details
-from agent.specialists.debit import DEBIT_SPECIALIST
+from dataclasses import replace
+
+from agent.specialists.debit import DEBIT_SPECIALIST as WITH_WORKFLOWS
+
+# These tests are about feedback on a free-form plan, which kinds without a workflow still use.
+DEBIT_SPECIALIST = replace(WITH_WORKFLOWS, workflows=())
 from agent.specialists.general import GENERAL_ANSWERER
 from agent.toolbox import ScopedToolBox, SecretVault
 from banking_tools import BankingSession, Fidelity
