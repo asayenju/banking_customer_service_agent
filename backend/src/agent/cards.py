@@ -56,3 +56,43 @@ def resolve(named: str, cards: Sequence[Card]) -> Optional[Card]:
         if len(by_last_four) == 1:
             return by_last_four[0]
     return None
+
+
+# Credit card accounts. Same rules as above: settled in code, listed without ids, never another customer's.
+def owned_credit_accounts(db: Any, user_id: str) -> list[Card]:
+    """The customer's credit card accounts that are not closed, oldest id first."""
+    accounts = (
+        a
+        for a in db.credit_card_accounts.data.values()
+        if a.get("user_id") == user_id and str(a.get("status") or "").upper() != "CLOSED"
+    )
+    return sorted(accounts, key=lambda a: str(a.get("account_id")))
+
+
+def describe_credit(account: Card) -> str:
+    last_four = f" ending {account['card_last_4_digits']}" if account.get("card_last_4_digits") else ""
+    return f"your {account.get('card_type')}{last_four} (credit card)"
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in "".join(c.lower() if c.isalnum() else " " for c in text).split() if w not in {"card", "cards", "my", "the"}}
+
+
+def resolve_credit(named: str, accounts: Sequence[Card]) -> Optional[Card]:
+    """The one credit account a name means: its id, its last four digits, or the card's name
+    ("Gold", "the Gold Rewards Card") when that picks out exactly one."""
+    named = named.strip()
+    if not named:
+        return None
+    for key in ("account_id",):
+        by_id = [a for a in accounts if a.get(key) == named]
+        if by_id:
+            return by_id[0]
+    if named.isdigit() and len(named) == 4:
+        found = [a for a in accounts if a.get("card_last_4_digits") == named]
+        return found[0] if len(found) == 1 else None
+    wanted = _words(named)
+    if not wanted:
+        return None
+    found = [a for a in accounts if wanted <= _words(str(a.get("card_type")))]
+    return found[0] if len(found) == 1 else None

@@ -26,6 +26,7 @@ from orchestrator.executor import OutcomeStatus, RouteOutcome
 from orchestrator.routes import ROUTES, Route
 from orchestrator.types import Intent, IntentKind, Question
 
+from agent.cards import describe, describe_credit, owned_cards, owned_credit_accounts, resolve, resolve_credit
 from agent.specialist import Specialist
 
 K = IntentKind
@@ -53,6 +54,10 @@ FIXED: Mapping[IntentKind, Name] = {
     K.REPORT_FRAUD_OR_LOSS: Name.FRAUD,
     K.GENERAL_QUESTION: Name.GENERAL,
 }
+# The slot a customer's answer to "which card do you mean?" arrives in.
+CHOSEN = "card_or_account_id"
+# Slots that name a record; if none has a value the customer has not said which one.
+_NAMING_SLOTS = ("card_id", "credit_card_account_id", "account_id", "transaction_id", CHOSEN)
 # Kinds that belong to debit or credit depending on the record the customer means.
 BY_RECORD: frozenset[IntentKind] = frozenset(
     {K.DISPUTE_TRANSACTION, K.CLOSE_CARD, K.ORDER_REPLACEMENT_CARD, K.CREDIT_LIMIT_REQUEST}
@@ -96,6 +101,15 @@ class RecordKinds:
                 found.add(Name.DEBIT)
             elif name == "credit_card_account_id" and self._owned("credit_card_accounts", value, user_id):
                 found.add(Name.CREDIT)
+            elif name == CHOSEN:
+                # The answer to "which card do you mean?": a debit card by id or last four digits,
+                # or a credit card by id, last four digits or name, when it picks out exactly one.
+                debit = resolve(value, owned_cards(self._db, user_id))
+                credit = resolve_credit(value, owned_credit_accounts(self._db, user_id))
+                if debit is not None and credit is None:
+                    found.add(Name.DEBIT)
+                elif credit is not None and debit is None:
+                    found.add(Name.CREDIT)
             elif name == "account_id":
                 if self._owned("accounts", value, user_id):
                     found.add(Name.DEBIT)
@@ -109,6 +123,23 @@ class RecordKinds:
                     if isinstance(row, Mapping) and self._owned("accounts", str(row.get("account_id")), user_id):
                         found.add(Name.DEBIT)
         return frozenset(found)
+
+    def owns(self, user_id: str) -> frozenset[Name]:
+        """Which products the customer has at all."""
+        have: set[Name] = set()
+        if owned_cards(self._db, user_id) or any(
+            a.get("user_id") == user_id for a in self._db.accounts.data.values()
+        ):
+            have.add(Name.DEBIT)
+        if owned_credit_accounts(self._db, user_id):
+            have.add(Name.CREDIT)
+        return frozenset(have)
+
+    def choices(self, user_id: str) -> str:
+        """The question for a customer whose request does not say which card: written here."""
+        lines = [f"- {describe(self._db, c)}" for c in owned_cards(self._db, user_id)]
+        lines += [f"- {describe_credit(a)}" for a in owned_credit_accounts(self._db, user_id)]
+        return "Which card do you mean?\n" + "\n".join(lines) if lines else "Which card or account do you mean?"
 
 
 class SubAgentDispatcher:
@@ -129,7 +160,11 @@ class SubAgentDispatcher:
             return next(iter(found))
         if intent.kind is K.CREDIT_LIMIT_REQUEST and not found:
             return Name.CREDIT  # a card limit request with no record named is a credit one
-        return ["card_or_account_id"]
+        if user_id and not any((intent.slots.get(k) or "").strip() for k in _NAMING_SLOTS):
+            have = self._records.owns(user_id)
+            if len(have) == 1:  # nothing to choose between: the customer has one product
+                return next(iter(have))
+        return [CHOSEN]
 
     async def run(self, intent: Intent, ctx: RouteContext) -> RouteOutcome:
         try:
@@ -139,10 +174,11 @@ class SubAgentDispatcher:
                 intent_id=intent.id, status=OutcomeStatus.FAILED, error="no specialist for this kind"
             )
         if isinstance(chosen, list):
+            text = self._records.choices(ctx.verified_user_id) if ctx.verified_user_id and chosen == [CHOSEN] else None
             return RouteOutcome(
                 intent_id=intent.id,
                 status=OutcomeStatus.NEEDS_INFO,
-                questions=tuple(Question(intent_id=intent.id, slot=s) for s in chosen),
+                questions=tuple(Question(intent_id=intent.id, slot=s, text=text) for s in chosen),
             )
         specialist = self._specialists.get(chosen)
         if specialist is None:
