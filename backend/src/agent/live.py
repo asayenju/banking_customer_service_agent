@@ -421,14 +421,25 @@ def customer_facts(task: Mapping[str, Any]) -> str:
     return f"{opening_message(task)}\n\nWhat the customer knows and will tell you if you ask:\n{notes}"
 
 
+# A task that also pays a card from checking is still the credit specialist's: that payment is replayed
+# directly, as in the offline replay (the accounts specialist is not built yet).
+ALSO_REPLAYED_DIRECTLY: Mapping[str, frozenset[str]] = {"credit": frozenset({"accounts"})}
+
+
 def gradeable_clusters(configs: Mapping[str, Any]) -> dict[str, str]:
     """task id -> specialist, for the tasks a built specialist can be graded on offline."""
     from banking_tools.manifest import build_manifest, load_tasks
 
     found: dict[str, str] = {}
     for entry in build_manifest(load_tasks()):
-        if entry.excluded_reason is None and entry.category == "wholly_one_cluster" and entry.clusters[0] in configs:
+        if entry.excluded_reason is not None:
+            continue
+        if entry.category == "wholly_one_cluster" and entry.clusters[0] in configs:
             found[entry.task_id] = entry.clusters[0]
+        elif entry.category == "spans_clusters":
+            for name in configs:
+                if name in entry.clusters and set(entry.clusters) - {name} <= ALSO_REPLAYED_DIRECTLY.get(name, frozenset()):
+                    found[entry.task_id] = name
     return found
 
 
@@ -545,12 +556,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover - the
     import sys
 
     from agent.llm_tools import LiteLLMToolClient
+    from agent.specialists.credit import CREDIT_SPECIALIST
     from agent.specialists.debit import DEBIT_SPECIALIST
     from banking_tools.manifest import load_tasks
     from knowledge.index import get_index
     from orchestrator.config import agent_model
 
-    configs = {"debit": DEBIT_SPECIALIST}
+    configs = {"debit": DEBIT_SPECIALIST, "credit": CREDIT_SPECIALIST}
     tasks = {str(t["id"]): t for t in load_tasks()}
     gradeable = gradeable_clusters(configs)
     shapes = {t: task_shape(tasks[t], configs[c]) for t, c in gradeable.items()}

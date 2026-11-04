@@ -157,3 +157,10 @@ Adopted from the design review (open to veto):
 | 8 | #57 | Live probe (blocked on #38) |
 
 All issues carry the `enhancement` and `specialist-agents` labels. Issue titles are `[4.1.N]` for Slice N.
+
+## What changed from this PRD while building it
+- **Crypto-Cash Back is entry tier**, not unmapped: the provisional-credit document places it (Slice 0 first missed that document; corrected in Slice 2). Only task 048's $20 credit departs from policy; the departure is recorded in `evals/policy_departures.json`.
+- **Retention is carried by pending questions, not by an early one-yes plan** (Slice 5): the specialist is stateless and sees only the intent and its slots, so each offer is a question whose answer returns as a slot, and the plan (reason logged with the waiver, credit, keep or close) is shown once the outcome is known.
+- **A repeated limit request is not resubmitted**, and **the cooldown cannot see approvals the bank's own tool makes** (it leaves them PENDING): see `docs/credit-policy-decisions.md`, section 9.
+- A **limit-first ordering rule** was added to the orchestrator planner (Slice 4), and a **follow-up text hook** to the specialist (Slice 5). Both are small, tested changes outside `agent/`.
+- The live probe (Slice 8) was prepared but **not run**: see Issue #57.
