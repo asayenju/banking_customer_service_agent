@@ -94,4 +94,22 @@ def facts_from_gold(workflow: str, writes: Sequence[Any], database: Any) -> Opti
             "credit_card_account_id": first["credit_card_account_id"],
             "requested_increase_amount": int(first["requested_increase_amount"]),
         }
+    if workflow == "credit_closure":
+        mine = [w for w in writes if w.args.get("credit_card_account_id")]
+        if not mine:
+            return None
+        account = mine[0].args["credit_card_account_id"]
+        names = {w.name for w in mine}
+        logged = next((w.args["closure_reason"] for w in mine if w.name == "log_credit_card_closure_reason_4521"), None)
+        waiver = "apply_credit_card_account_flag_6147" in names
+        credit = "apply_statement_credit_8472" in names
+        closing = "close_credit_card_account_7834" in names
+        return {
+            "credit_card_account_id": account,
+            "reason": logged,
+            "pay_from_checking_account_id": None,
+            "waiver_answer": "yes" if waiver else None,
+            "credit_answer": "yes" if credit else ("no" if closing and logged else None),
+            "keeps_card": bool(logged) and not (waiver or credit or closing),
+        }
     return None

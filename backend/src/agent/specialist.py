@@ -40,6 +40,7 @@ from agent.workflows.base import (
     Plan,
     Refuse,
     Reply,
+    Step,
     Workflow,
     WorkflowContext,
     strict_schema,
@@ -507,7 +508,18 @@ class Specialist:
             if readback is not None and (missing := readback(validation, arguments)) is not None:
                 return _failed(intent, f"step {step.index} was reported done but {missing}")
         done = "; ".join(s.description for s in ctx.approved.steps)
-        return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text=f"Done: {done}.")
+        text = f"Done: {done}."
+        note = self._follow_up(intent, validation, ctx.approved.steps)
+        return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text=f"{text} {note}" if note else text)
+
+    def _follow_up(self, intent: Intent, validation: ValidationContext, steps: Sequence[PlanStep]) -> str:
+        """What the workflow for this kind says to the customer after its plan ran, if it has anything."""
+        workflow = next((w for w in self.config.workflows if intent.kind in w.kinds and hasattr(w, "after")), None)
+        if workflow is None:
+            return ""
+        context = WorkflowContext(self._db, validation.user_id, validation.today)
+        shown = [Step(s.tool, {k: v for k, v in s.args.items() if not is_reference(v)}) for s in steps]
+        return str(workflow.after(context, shown))
 
     def _resolve(self, args: Mapping[str, Any], results: Mapping[int, str]) -> Optional[dict[str, Any]]:
         """Fill in references: earlier results from their output, secrets from the vault."""

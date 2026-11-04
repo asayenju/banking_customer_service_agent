@@ -387,7 +387,7 @@ def test_a_write_that_reports_success_but_changes_nothing_ends_the_run_as_failed
     catches the same shape of problem for any tool that is given one."""
     shared = BankingSession(fidelity=Fidelity.TAU2)
     never_there = lambda ctx, args: "the change is not in the records"
-    config = replace(CREDIT_SPECIALIST, validators={}, readbacks={"log_credit_card_closure_reason_4521": never_there}, prepare=None)
+    config = replace(CREDIT_SPECIALIST, validators={}, readbacks={"log_credit_card_closure_reason_4521": never_there}, prepare=None, workflows=())
     step = {"tool": "log_credit_card_closure_reason_4521", "description": "x", "arguments_json": json.dumps(
         {"credit_card_account_id": ACCT, "user_id": ME, "closure_reason": "annual_fee"})}
     plan = ToolCall(id="p", name="propose_plan", arguments_json=json.dumps({"steps": [step]}))
