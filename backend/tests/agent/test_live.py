@@ -505,3 +505,17 @@ def test_a_segment_with_its_own_request_gets_only_that_not_the_whole_persona_scr
     # Each request names its own card and none asks for another segment's work.
     assert "Blue" in written["0"] and "Evergreen" not in written["0"] and "fraud alert" not in written["0"]
     assert "Evergreen" in written["1"] and "Evergreen" in written["2"]
+
+
+def test_the_credit_tasks_can_be_chosen_for_a_live_run_including_the_ones_that_also_pay_from_checking():
+    from agent.specialists.credit import CREDIT_SPECIALIST
+
+    both = gradeable_clusters({"debit": DEBIT_SPECIALIST, "credit": CREDIT_SPECIALIST})
+    credit = sorted(t for t, c in both.items() if c == "credit")
+    assert credit == [f"task_{n:03d}" for n in (31, 36, 37, 38, 39, 40, 41, 43, 44, 45, 47, 48, 49, 50, 51, 52, 53, 54)]
+    debit = sorted(t for t, c in both.items() if c == "debit")
+    assert debit == sorted(GRADEABLE), "adding the credit specialist changes nothing for debit (no credit+debit task is picked up)"
+    # The probe's three tasks resolve, and "credit" alone would be 18 tasks, over the default cap of five.
+    assert choose_tasks(["task_043", "task_054", "task_038"], max_tasks=5, gradeable=both) == ("task_043", "task_054", "task_038")
+    with pytest.raises(LiveRunRefused):
+        choose_tasks(["credit"], max_tasks=5, gradeable=both)
