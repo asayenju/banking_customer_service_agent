@@ -172,16 +172,18 @@ async def run_agent(
     deadline: Optional[float] = None,
     clock: Callable[[], float] = _loop_time,
     review: Optional[Review] = None,
+    extra_terminals: Optional[Mapping[str, ToolSchema]] = None,
 ) -> AgentResult:
     """Run until the model ends the run or a budget does.
 
     ``request`` must already have had its secrets swapped for references
     (``SecretVault.capture``); the loop does not look inside it.
     """
+    table: Mapping[str, ToolSchema] = {**TERMINALS, **(extra_terminals or {})}
     for name in terminals:
-        if name not in TERMINALS:
+        if name not in table:
             raise ValueError(f"unknown terminal tool '{name}'")
-    offered = toolbox.schemas() + [TERMINALS[n] for n in terminals]
+    offered = toolbox.schemas() + [table[n] for n in terminals]
     clash = {t.name for t in toolbox.schemas()} & set(terminals)
     if clash:
         raise ValueError(f"a catalog tool shares a name with a terminal tool: {sorted(clash)}")
@@ -242,7 +244,7 @@ async def run_agent(
 
         for call in turn.tool_calls:
             if call.name in terminals:
-                parsed = _terminal_arguments(call, TERMINALS[call.name])
+                parsed = _terminal_arguments(call, table[call.name])
                 if parsed is not None:
                     reason = _reviewed(review, call.name, parsed)
                     if reason is None:

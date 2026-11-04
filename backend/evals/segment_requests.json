@@ -1,0 +1,8 @@
+{
+  "_about": "What the customer says when a later part of a task's conversation is run as its own request. A request given for a segment is the whole request for it, without the rest of the persona's script. Each line is the persona's own words from the task's script, used where the script only reveals the request after the agent probes. Never copied from the gold actions.",
+  "task_087": {
+    "0": "My Blue Account debit card was declined at a restaurant. It is unfrozen now, and the decline says there is a velocity block on it. That must be from yesterday: I was running around buying supplies for a home office and hit about 5 different stores in an hour. Yes, please clear the velocity block on my Blue card.",
+    "1": "On November 6th I got a text about a suspicious charge for about $500 at an electronics store in California. I was in Seattle that day. That charge on my Evergreen card definitely wasn't me, I've never been to that store. Yes, I'd like to file a dispute for that charge. I have my card with me, my PIN was never compromised, and you can use this conversation as my written statement. I'm not sure exactly how it was paid, but the text message said it was a PIN purchase.",
+    "2": "The fraudulent charge was on my Evergreen card, so I need a new Evergreen debit card to replace it. Can I just get the best option that is free? Yes, my address on file is correct."
+  }
+}

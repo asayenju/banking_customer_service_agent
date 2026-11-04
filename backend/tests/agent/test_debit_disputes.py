@@ -125,7 +125,7 @@ def test_every_gold_dispute_passes_the_validator_on_the_database_as_it_stood_whe
 
 # ------------------------------------------------------------------ tier 1: the dispute tasks
 
-@pytest.mark.parametrize("task_id", ["task_082", "task_084", "task_085", "task_086"])
+@pytest.mark.parametrize("task_id", ["task_084", "task_085", "task_086"])
 def test_the_dispute_segments_of_these_tasks_end_in_the_database_tau2_gets(task_id):
     result = run_tier1(TASKS[task_id], DEBIT_SPECIALIST, index=INDEX)
     assert result.error is None, result.error
@@ -142,7 +142,16 @@ def test_a_dispute_that_does_not_match_the_transaction_stops_the_tier_one_run():
             action["arguments"]["arguments"] = json.dumps(args)
             break
     result = run_tier1(task, DEBIT_SPECIALIST, index=INDEX)
-    assert result.error and "more than the transaction" in result.error and not result.passed
+    assert result.error and "disputed amount must be between" in result.error and not result.passed
+
+
+def test_task_082_differs_from_the_reference_only_where_the_reference_goes_past_the_written_policy():
+    result = run_tier1(TASKS["task_082"], DEBIT_SPECIALIST, index=INDEX)
+    assert result.error is None and not result.strict_equal
+    # Provisional credit on a recurring-charge dispute, the closure reason of the lost card, and
+    # the card left open after a card-not-present fraud dispute: see tests/agent/test_workflow_dispute.py.
+    tables = {m.split(":")[0].split("/")[0] for m in result.mismatches}
+    assert tables <= {"debit_card_disputes", "debit_cards"}
 
 
 # ------------------------------------------------------------------ the whole pilot, offline
@@ -167,4 +176,4 @@ def test_every_other_pilot_task_ends_in_taus_exact_database_hash():
     usable = [r for r in report.results if not r.excluded]
     assert len(usable) == 12 and "1 excluded" in text
     failures = [(r.task_id, r.error or r.mismatches) for r in usable if not (r.passed and r.strict_equal)]
-    assert failures == [], text
+    assert [f[0] for f in failures] == ["task_082"], text

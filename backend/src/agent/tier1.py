@@ -231,7 +231,43 @@ def plan_items(steps: Sequence[Step], config: SpecialistConfig) -> list[Item]:
         pending.clear()
         i = j
     flush()
-    return items
+    return _split_requests(items, config)
+
+
+def _split_requests(items: list[Item], config: SpecialistConfig) -> list[Item]:
+    """A gold segment can hold several customer requests. When a workflow covers the dispute in
+    one, cut the rest out as its own requests, so a model is handed one request at a time:
+    unfreezing is a direct request, clearing an alert is card controls, and closing and
+    ordering cards is a replacement."""
+    out: list[Item] = []
+    for item in items:
+        disputes = [w for w in item.writes if w.name == "file_debit_card_transaction_dispute_6281"] if isinstance(item, Segment) else []
+        if not isinstance(item, Segment) or not disputes or not any(item.kind in w.kinds for w in config.workflows):
+            out.append(item)
+            continue
+        closed_later = {w.args["card_id"] for w in item.writes if w.name == "close_debit_card_4721"}
+        controls = [
+            w
+            for w in item.writes
+            if w.name in ("unfreeze_debit_card_3893", "clear_debit_card_fraud_alert_4892")
+            and w.args["card_id"] not in closed_later
+        ]
+        # The card action a fraud dispute implies (close) is the dispute workflow's own step.
+        fraud_cards = {d.args["card_id"] for d in disputes if d.args["card_action"] == "close_and_reissue"}
+        implied = [
+            w
+            for w in item.writes
+            if w.name == "close_debit_card_4721" and w.args["card_id"] in fraud_cards and w.args["reason"] == "fraud_suspected"
+        ]
+        rest = [w for w in item.writes if w not in disputes and w not in controls and w not in implied]
+        out.extend(Direct(w) for w in controls if w.name == "unfreeze_debit_card_3893")
+        alerts = tuple(w for w in controls if w.name != "unfreeze_debit_card_3893")
+        if alerts:
+            out.append(Segment(IntentKind.CARD_CONTROLS, (), alerts))
+        out.append(Segment(item.kind, item.reads, tuple(disputes)))
+        if rest:
+            out.append(Segment(IntentKind.ORDER_REPLACEMENT_CARD, (), tuple(rest)))
+    return out
 
 
 class Calls:
@@ -330,12 +366,24 @@ def _run_segment(
     writes: Sequence[Step],
     number: int,
 ) -> tuple[int, int]:
-    script = scripted_turns(reads, writes, vault, ids)
+    if kind is IntentKind.ORDER_REPLACEMENT_CARD:
+        # An earlier request may already have done some of this (a fraud dispute closes the card).
+        writes = [
+            w
+            for w in writes
+            if not (
+                w.name == "close_debit_card_4721"
+                and session.database.debit_cards.data[w.args["card_id"]]["status"] == "CLOSED"
+            )
+        ]
+        if not writes:
+            return 0, 0
+    script = workflow_turns(config, kind, reads, writes, session.database, user_id, ids) or scripted_turns(
+        reads, writes, vault, ids
+    )
     llm = FakeToolLLM(script)
     specialist = Specialist(config, llm=llm, index=index, database=session.database, vault=vault)
-    intent = Intent(
-        id=f"segment-{number}", kind=kind, summary="what the gold trajectory does", slots=slots_of(writes[0])
-    )
+    intent = Intent(id=f"segment-{number}", kind=kind, summary="what the gold trajectory does", slots=slots_of(writes[0]))
     bypasses = plan_and_execute(specialist, intent, session, user_id, label=f"segment {number} ({kind.value})")
     return len(script), bypasses
 
@@ -354,6 +402,36 @@ def scripted_turns(reads: Sequence[Step], writes: Sequence[Step], vault: SecretV
     turns = [AssistantTurn(tool_calls=(ids.make(r.name, r.args),), usage=Usage(input_tokens=1)) for r in reads]
     turns.append(AssistantTurn(tool_calls=(ids.make("propose_plan", {"steps": plan_steps}),), usage=Usage(input_tokens=1)))
     return turns
+
+
+
+def workflow_turns(
+    config: SpecialistConfig,
+    kind: IntentKind,
+    reads: Sequence[Step],
+    writes: Sequence[Step],
+    database: Any,
+    user_id: str,
+    ids: Calls,
+) -> Optional[list[AssistantTurn]]:
+    """For a kind that has a workflow: what a perfect model would say, which is the same reads
+    and then the workflow's form filled in from what the gold trajectory says the customer wanted.
+    None when the kind has no workflow (the segment is then scripted as a free-form plan)."""
+    from agent.workflows.base import terminal_name
+    from agent.workflows.gold_facts import facts_from_gold
+
+    for workflow in config.workflows:
+        if kind not in workflow.kinds:
+            continue
+        facts = facts_from_gold(workflow.name, writes, database)
+        if facts is None:
+            return None
+        turns = [AssistantTurn(tool_calls=(ids.make(r.name, r.args),), usage=Usage(input_tokens=1)) for r in reads]
+        turns.append(
+            AssistantTurn(tool_calls=(ids.make(terminal_name(workflow), facts),), usage=Usage(input_tokens=1))
+        )
+        return turns
+    return None
 
 
 _LOOP: Optional[asyncio.AbstractEventLoop] = None
@@ -394,7 +472,7 @@ def plan_and_execute(
 
     planned = run_async(specialist.run(intent, context("plan")))
     if planned.status is not OutcomeStatus.NEEDS_CONFIRMATION or planned.proposal is None:
-        detail = planned.error or " / ".join(q.slot for q in planned.questions)
+        detail = planned.error or " / ".join(q.slot for q in planned.questions) or planned.text[:160]
         raise SegmentError(f"{label} was not planned: {planned.status.value} {detail}".strip())
     done = run_async(specialist.run(intent, context("execute", planned.proposal)))
     if done.status is not OutcomeStatus.DONE:

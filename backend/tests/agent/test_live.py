@@ -29,7 +29,9 @@ from agent.live import (
 )
 from agent.llm_tools import AssistantTurn, FakeToolLLM, ToolCall, ToolSchema, Usage
 from agent.specialists.debit import DEBIT_SPECIALIST
-from agent.tier1 import Segment, gold_steps, plan_items, scripted_turns, Calls
+from banking_tools.session import _base_db
+from banking_tools.task_state import apply_initial_state
+from agent.tier1 import Segment, gold_steps, plan_items, scripted_turns, workflow_turns, Calls
 from agent.toolbox import SecretVault
 from banking_tools.manifest import load_tasks
 from knowledge.index import Document, KnowledgeIndex
@@ -316,7 +318,12 @@ class GoldModel:
     def __init__(self, task, usage=Usage(input_tokens=800, output_tokens=60)):
         items = [i for i in plan_items(gold_steps(task), DEBIT_SPECIALIST) if isinstance(i, Segment)]
         ids, vault = Calls(), SecretVault()
-        self.conversations = [scripted_turns(i.reads, i.writes, vault, ids) for i in items]
+        database = apply_initial_state(_base_db().model_copy(deep=True), task)
+        self.conversations = [
+            workflow_turns(DEBIT_SPECIALIST, i.kind, i.reads, i.writes, database, "", ids)
+            or scripted_turns(i.reads, i.writes, vault, ids)
+            for i in items
+        ]
         self.usage, self.index, self.position, self.calls = usage, -1, 0, 0
 
     async def chat(self, messages, *, tools, tool_choice="auto", temperature=0.0):
@@ -381,7 +388,7 @@ def test_a_task_whose_gold_is_invalid_is_not_run_at_all(tmp_path):
 
 def test_the_task_shape_used_for_the_estimate_counts_segments_and_reads():
     segments, reads = task_shape(TASKS["task_091"], DEBIT_SPECIALIST)
-    assert segments == 4 and reads >= 6
+    assert segments == 5 and reads >= 6
     assert task_shape(TASKS["task_089"], DEBIT_SPECIALIST)[0] == 1
 
 
@@ -487,3 +494,14 @@ def test_the_tool_reference_tells_the_model_the_allowed_values_of_each_argument(
 
     prompt = system_prompt(DEBIT_SPECIALIST, IntentKind.ORDER_REPLACEMENT_CARD)
     assert "Reason for closing: lost, stolen, fraud_suspected, damaged, no_longer_needed, or account_closing" in prompt
+
+
+def test_a_segment_with_its_own_request_gets_only_that_not_the_whole_persona_script():
+    path = Path(live.__file__).resolve().parents[2] / "evals" / "segment_requests.json"
+    written = json.loads(path.read_text())["task_087"]
+    assert set(written) == {"0", "1", "2"}
+    assert live.segment_request("task_087", 0) == written["0"]
+    assert live.segment_request("task_087", 7) is None  # no entry: the notes path is used
+    # Each request names its own card and none asks for another segment's work.
+    assert "Blue" in written["0"] and "Evergreen" not in written["0"] and "fraud alert" not in written["0"]
+    assert "Evergreen" in written["1"] and "Evergreen" in written["2"]

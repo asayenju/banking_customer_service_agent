@@ -392,6 +392,21 @@ def gold_secrets(task: Mapping[str, Any]) -> dict[str, str]:
     return found
 
 
+def segment_request(task_id: str, number: int) -> Optional[str]:
+    """What the customer says for one segment whose request the script only reveals after the
+    agent probes (evals/segment_requests.json, hand-written from the persona's own lines).
+
+    When there is one it is the whole request. The persona's full script mentions every part of
+    the conversation, so handing it over with a single segment tempts the model to do the other
+    parts early or on the wrong card."""
+    path = Path(__file__).resolve().parents[2] / "evals" / "segment_requests.json"
+    try:
+        found = json.loads(path.read_text()).get(task_id, {}).get(str(number))
+    except (OSError, ValueError):
+        return None
+    return str(found) if found else None
+
+
 def customer_facts(task: Mapping[str, Any]) -> str:
     """What the simulated customer would say if asked, so the single-shot run is not stuck on a question.
 
@@ -493,11 +508,18 @@ def run_live_task(
             intent = Intent(
                 id=f"{task_id}-{number}",
                 kind=item.kind,
-                summary=vault.capture(vault.hide(customer_facts(task), gold_secrets(task))),
+                summary=vault.capture(
+                    vault.hide(
+                        segment_request(task_id, number) or customer_facts(task),
+                        gold_secrets(task),
+                    )
+                ),
                 slots=slots_of(item.writes[0]),
             )
-            plan_and_execute(specialist, intent, session, user_id, label=f"segment {number} ({item.kind.value})")
-            client.save()
+            try:
+                plan_and_execute(specialist, intent, session, user_id, label=f"segment {number} ({item.kind.value})")
+            finally:
+                client.save()  # a failed segment is the one worth reading, and was paid for
             number += 1
     except (SegmentError, BudgetExceeded, CassetteMismatch) as exc:
         note = f"{type(exc).__name__}: {exc}"
@@ -510,7 +532,7 @@ def run_live_task(
             meter.calls if meter else 0, meter.input_tokens if meter else 0, meter.output_tokens if meter else 0,
             meter.dollars if meter else 0.0, meter.seconds if meter else 0.0, replayed, note[:300],
         )
-    outcome = compare(start, expected, session.database, read_log_names=())
+    outcome = compare(start, expected, session.database, read_log_names=read_log_allowlist(task))
     return LiveTaskResult(
         task_id, outcome.semantic_equal, outcome.strict_equal,
         meter.calls if meter else 0, meter.input_tokens if meter else 0, meter.output_tokens if meter else 0,

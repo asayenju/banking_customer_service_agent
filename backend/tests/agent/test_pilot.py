@@ -100,13 +100,16 @@ def test_the_pilot_tasks_are_the_thirteen_wholly_debit_ones():
 def test_the_real_pilot_is_green_offline_with_no_bypass_and_the_verdict_waits_for_the_live_run():
     result = run_pilot_tier1(INDEX)
     usable = [r for r in result.results if not r.excluded]
-    assert len(usable) == 12 and all(r.passed and r.strict_equal for r in usable)
+    assert len(usable) == 12
+    # Task 082 differs from the reference where the reference goes past the written policy.
+    assert [r.task_id for r in usable if not (r.passed and r.strict_equal)] == ["task_082"]
     assert sum(r.bypasses for r in result.results) == 0
     assert all(r.seconds >= 0 for r in result.results)
     gate = decide(result, None)
-    assert gate.verdict is Verdict.NOT_YET
+    # Not green until the task 082 question (follow the policy or the reference) is settled.
+    assert gate.verdict is Verdict.NO_GO and "failing: task_082" in gate.reasons[0]
     text = render_report(result, gate)
-    assert "VERDICT: NOT YET" in text and "task_083: EXCLUDED" in text and "seconds per task" in text and "tokens" in text
+    assert "VERDICT: NO-GO" in text and "task_083: EXCLUDED" in text and "seconds per task" in text and "tokens" in text
 
 
 def test_the_report_names_the_verdict_and_every_reason():
