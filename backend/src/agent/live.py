@@ -556,13 +556,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover - the
     import sys
 
     from agent.llm_tools import LiteLLMToolClient
+    from agent.specialists.accounts import ACCOUNTS_SPECIALIST
     from agent.specialists.credit import CREDIT_SPECIALIST
     from agent.specialists.debit import DEBIT_SPECIALIST
     from banking_tools.manifest import load_tasks
     from knowledge.index import get_index
     from orchestrator.config import agent_model
 
-    configs = {"debit": DEBIT_SPECIALIST, "credit": CREDIT_SPECIALIST}
+    configs = {"debit": DEBIT_SPECIALIST, "credit": CREDIT_SPECIALIST, "accounts": ACCOUNTS_SPECIALIST}
     tasks = {str(t["id"]): t for t in load_tasks()}
     gradeable = gradeable_clusters(configs)
     shapes = {t: task_shape(tasks[t], configs[c]) for t, c in gradeable.items()}
