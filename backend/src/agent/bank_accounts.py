@@ -107,6 +107,11 @@ def describe(account: BankAccount) -> str:
     return f"your {account.name} ({account.product.value}){when}"
 
 
+def label(account: BankAccount) -> str:
+    """How a plan names an account to the customer: its name and kind, never its id."""
+    return f"your {account.name} ({account.product.value})"
+
+
 _FILLER = {"account", "accounts", "my", "the", "your", "a", "an"}
 
 

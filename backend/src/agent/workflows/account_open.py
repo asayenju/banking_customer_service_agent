@@ -113,7 +113,9 @@ class OpenAccount:
         steps: list[Step] = []
         for wanted in openable:
             product = _TYPE[wanted.account_type]
-            steps.append(Step(OPEN_TOOL, {"account_type": wanted.account_type, "account_class": wanted.account_class}))
+            steps.append(
+                Step(OPEN_TOOL, {"account_type": wanted.account_type, "account_class": wanted.account_class}, note=f"Open a new {wanted.account_class} ({product.value})")
+            )
             if product not in _FUNDED:
                 continue
             if wanted.fund_now == "not_asked":
@@ -145,7 +147,9 @@ class OpenAccount:
         if asks or source is None or wanted.fund_amount is None:
             return None, asks
         destination = new_account_id(ctx.user_id, wanted.account_type, wanted.account_class)
-        return Step(TRANSFER_TOOL, {"source_account_id": source.account_id, "destination_account_id": destination, "amount": float(wanted.fund_amount)}), []
+        amount = float(wanted.fund_amount)
+        note = f"Move ${amount:,.2f} from {accounts.label(source)} into your new {wanted.account_class} as its opening deposit"
+        return Step(TRANSFER_TOOL, {"source_account_id": source.account_id, "destination_account_id": destination, "amount": amount}, note=note), []
 
     def after(self, ctx: WorkflowContext, steps: Sequence[Step]) -> str:
         """What to tell the customer once the plan has run: a savings account left unfunded is closed in 30 days."""

@@ -12,9 +12,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from agent import bank_accounts as accounts
+from agent.cards import describe_credit, owned_credit_accounts, resolve_credit
 from agent.specialist import SpecialistConfig, Validator
 from agent.specialists import accounts_rules as rules
 from agent.workflows.account_close import CloseAccount
+from agent.workflows.account_move import PayCard, TransferFunds
 from agent.workflows.account_open import OpenAccount
 from knowledge.scopes import ACCOUNTS
 from orchestrator.executor import OutcomeStatus, RouteOutcome
@@ -44,7 +46,11 @@ How to work:
    with a zero balance, or with exactly the fee in it, and the fee is never moved or waived. If the
    customer asks for the fee to be waived, say so in the form. A new account must be opened before an old
    one is closed when the new one needs the old one (a savings account needs a checking account of 14 days).
-7. Wires, ACH, bill pay, overdraft, holds and check deposits have no tool. Answer questions from the
+7. Moving money has workflows: end with start_transfer_funds for a transfer between the customer's own
+   accounts and start_pay_card for a credit card payment from checking. Report the accounts as the request's
+   details give them and the exact amount the customer said; the rules are worked out for you. Money never
+   goes to anyone else's account.
+8. Wires, ACH, bill pay, overdraft, holds and check deposits have no tool. Answer questions from the
    notes; for a request, say what the customer can do themselves or hand over."""
 
 # The reads this specialist needs. Looking up other customers by name or email is never offered.
@@ -68,6 +74,7 @@ _ROLES: Mapping[K, tuple[tuple[str, tuple[str, ...]], ...]] = {
 }
 _PROMPT: Mapping[str, str] = {
     "account_id": "Which account do you mean?",
+    "checking_account_id": "Which checking account should the payment come from?",
     "from_account_id": "Which account should the money come from?",
     "to_account_id": "Which account should the money go to?",
 }
@@ -82,12 +89,50 @@ def _which(intent: Intent, slot: str, choices: list[accounts.BankAccount]) -> Ro
     )
 
 
+def _first(intent: Intent, names: tuple[str, ...]) -> str:
+    return next(((intent.slots.get(n) or "").strip() for n in names if (intent.slots.get(n) or "").strip()), "")
+
+
+def _prepare_payment(intent: Intent, user_id: str, db: Any) -> Intent | RouteOutcome:
+    """Which card is paid and from which checking account. A decomposer may have put either in ``account_id``;
+    whichever of the customer's records it names decides. One card, or one checking account, needs no question."""
+    cards = owned_credit_accounts(db, user_id)
+    checking = [a for a in accounts.accounts_of(db, user_id) if a.is_open and a.product is accounts.Product.CHECKING]
+    card_name = _first(intent, ("credit_card_account_id", "card_account_id"))
+    checking_name = _first(intent, ("checking_account_id", "from_account_id", "source_account_id"))
+    loose = _first(intent, ("account_id",))
+    if loose and not card_name and resolve_credit(loose, cards) is not None:
+        card_name = loose
+    elif loose and not checking_name:
+        checking_name = loose
+    if not cards:
+        return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text="I do not see a credit card on your profile to pay.")
+    if not checking:
+        return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text="I do not see an open checking account on your profile to pay from.")
+    card = resolve_credit(card_name, cards) if card_name else (cards[0] if len(cards) == 1 else None)
+    if card is None:
+        listing = "\n".join(f"- {describe_credit(c)}" for c in cards)
+        return RouteOutcome(
+            intent_id=intent.id,
+            status=OutcomeStatus.NEEDS_INFO,
+            questions=(Question(intent_id=intent.id, slot="credit_card_account_id", text=f"Which card would you like to pay?\n{listing}"),),
+        )
+    paying = accounts.resolve(checking_name, checking) if checking_name else (checking[0] if len(checking) == 1 else None)
+    if paying is None:
+        return _which(intent, "checking_account_id", checking)
+    return intent.model_copy(
+        update={"slots": {**intent.slots, "credit_card_account_id": str(card["account_id"]), "checking_account_id": paying.account_id}}
+    )
+
+
 def prepare(intent: Intent, user_id: str, db: Any) -> Intent | RouteOutcome:
     """Settle which of the customer's own accounts a request names. Never another customer's.
 
     A name that matches none or several, a missing account, or a number outside the list all give a
     question with the choices written here. A customer with a single account to choose from is not
     asked. An id that belongs to someone else reads exactly like an unknown one."""
+    if intent.kind is K.PAY_CREDIT_CARD:
+        return _prepare_payment(intent, user_id, db)
     roles = _ROLES.get(intent.kind)
     if roles is None:
         return intent
@@ -134,5 +179,5 @@ ACCOUNTS_SPECIALIST = SpecialistConfig(
     readbacks=READBACKS,
     prepare=prepare,
     reads=READS,
-    workflows=(OpenAccount(), CloseAccount()),
+    workflows=(OpenAccount(), CloseAccount(), TransferFunds(), PayCard()),
 )
