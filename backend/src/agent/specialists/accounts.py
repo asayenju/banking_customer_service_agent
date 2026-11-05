@@ -13,6 +13,7 @@ from typing import Any
 
 from agent import bank_accounts as accounts
 from agent.specialist import SpecialistConfig, Validator
+from agent.specialists import accounts_rules as rules
 from knowledge.scopes import ACCOUNTS
 from orchestrator.executor import OutcomeStatus, RouteOutcome
 from orchestrator.types import Intent, IntentKind as K, Question
@@ -103,9 +104,18 @@ def prepare(intent: Intent, user_id: str, db: Any) -> Intent | RouteOutcome:
     return intent.model_copy(update={"slots": {**intent.slots, **settled}})
 
 
-# The write tools' rules are added by Slice 2 of the accounts PRD.
-VALIDATORS: dict[str, Validator] = {}
-READBACKS: dict[str, Validator] = {}
+VALIDATORS: dict[str, Validator] = {
+    "open_bank_account_4821": rules.open_account,
+    "close_bank_account_7392": rules.close_account,
+    "transfer_funds_between_bank_accounts_7291": rules.transfer,
+    "pay_credit_card_from_checking_9182": rules.pay_card,
+}
+# Checks after a write that the change is really there. Opening can report success and write nothing.
+READBACKS: dict[str, Validator] = {
+    "open_bank_account_4821": rules.opened_readback,
+    "close_bank_account_7392": rules.closed_readback,
+    "transfer_funds_between_bank_accounts_7291": rules.transfer_readback,
+}
 
 ACCOUNTS_SPECIALIST = SpecialistConfig(
     name="accounts",

@@ -207,3 +207,8 @@ Adopted from the design review (open to veto):
 | 11 | #69 | Live probe (blocked on #38) |
 
 All issues carry the `enhancement` and `specialist-agents` labels. Issue titles are `[4.2.N] Accounts: ...` for Slice N.
+
+## What changed from this PRD while building it
+- **Slice 0:** tier-1 already replays customer-side gold steps (`requestor=user`) directly, so nothing changes in the specialist for the check deposits. A duplicate open is a silent no-op the wrapper reports as success (the bank words it "Failed to open account"), so the open read-back is required, not optional. See `docs/accounts-policy-decisions.md`.
+- **Slice 1:** a customer's answer can be a number from the list we showed. `"01"`, which is another customer's account id in the data, was first read as "the first one" and resolved to the customer's own account; a number is now accepted only when plain (no leading zero, two digits at most). Found by the third-party test.
+- **Slice 2:** the transfer read-back is an invariant check (both accounts still open, the source not below zero), not a before-and-after balance comparison, because every failure of the transfer tool is loud and a read-back sees only the state after. A checking account opened in the same visit cannot pay a card: the bank's pay tool reads `class`, which a new account lacks; the validator says so. All 19 reference trajectories pass the validators, so no account departure is recorded.
