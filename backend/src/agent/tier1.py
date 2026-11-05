@@ -172,6 +172,9 @@ def _preference(config: SpecialistConfig) -> list[IntentKind]:
         IntentKind.CLOSE_CARD,
         IntentKind.ORDER_REPLACEMENT_CARD,
         IntentKind.DISPUTE_TRANSACTION,
+        IntentKind.OPEN_ACCOUNT,
+        IntentKind.CLOSE_ACCOUNT,
+        IntentKind.TRANSFER_FUNDS,
     ]
     return [k for k in order if k in config.kinds]
 
