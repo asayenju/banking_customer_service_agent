@@ -14,6 +14,7 @@ from typing import Any
 from agent import bank_accounts as accounts
 from agent.specialist import SpecialistConfig, Validator
 from agent.specialists import accounts_rules as rules
+from agent.workflows.account_close import CloseAccount
 from agent.workflows.account_open import OpenAccount
 from knowledge.scopes import ACCOUNTS
 from orchestrator.executor import OutcomeStatus, RouteOutcome
@@ -37,10 +38,12 @@ How to work:
    list of what this customer can open today, with the promotions in force; recommend from that list only,
    and keep to what the customer asked for. If the customer has not said what they need, ask. What can be
    opened is worked out from the records, never from what the customer says about their own accounts.
-6. Closing: an account closes with a zero balance, or with exactly the early-closure fee in it when
-   one applies. Move the money first, to an account the customer chooses from their own. Never move
-   the fee-sized balance, and never waive a fee. A new account must be opened before an old one is
-   closed when the new one needs the old one (a savings account needs a checking account of 14 days).
+6. Closing has a workflow: end with start_close_account. Report the account (use its id from the request's
+   details), where the customer wants the money to go if they said, and why they are closing it. Which
+   money moves, the early-closure fee and the order of the steps are worked out for you: an account closes
+   with a zero balance, or with exactly the fee in it, and the fee is never moved or waived. If the
+   customer asks for the fee to be waived, say so in the form. A new account must be opened before an old
+   one is closed when the new one needs the old one (a savings account needs a checking account of 14 days).
 7. Wires, ACH, bill pay, overdraft, holds and check deposits have no tool. Answer questions from the
    notes; for a request, say what the customer can do themselves or hand over."""
 
@@ -131,5 +134,5 @@ ACCOUNTS_SPECIALIST = SpecialistConfig(
     readbacks=READBACKS,
     prepare=prepare,
     reads=READS,
-    workflows=(OpenAccount(),),
+    workflows=(OpenAccount(), CloseAccount()),
 )

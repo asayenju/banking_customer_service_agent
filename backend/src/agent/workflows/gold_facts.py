@@ -13,6 +13,26 @@ from typing import Any, Optional
 
 
 def facts_from_gold(workflow: str, writes: Sequence[Any], database: Any) -> Optional[dict[str, Any]]:
+    if workflow == "close_account":
+        from agent.workflows.account_close import CLOSE_TOOL, DEFAULT_REASON, TRANSFER_TOOL
+
+        closes = [w for w in writes if w.name == CLOSE_TOOL]
+        if not closes:
+            return None
+        return {
+            "closures": [
+                {
+                    "account_id": c.args["account_id"],
+                    "move_to_account": next(
+                        (w.args["destination_account_id"] for w in writes if w.name == TRANSFER_TOOL and w.args["source_account_id"] == c.args["account_id"]),
+                        None,
+                    ),
+                    "reason": c.args.get("reason") or DEFAULT_REASON,
+                    "asks_to_waive_fee": False,
+                }
+                for c in closes
+            ]
+        }
     if workflow == "open_account":
         from agent.workflows.account_open import OPEN_TOOL, TRANSFER_TOOL, new_account_id
 
