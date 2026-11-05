@@ -83,6 +83,7 @@ Reuse: `banking_tools.get_registry()` for reversibility and `ToolKind`, the reda
 | Reversible write, kind answer under 0.95 | asks the customer to clarify, does not run; runs once the kind is sure |
 | Escalated intent that others depend on | dependents wait, then are reported as blocked |
 | Freeze card and dispute a charge on it | freeze first, dispute after (same resource, write) |
+| Close an account and open another in one message | the opening goes first; the closing waits for it and is skipped if the opening did not complete |
 | Two reads on the same account | parallel |
 | Stolen card plus balance | verify, freeze first, then balance |
 | Unverified caller, urgent intent | verification asked first; nothing runs |

@@ -160,7 +160,10 @@ def choose_kind(writes: Sequence[Step], kinds: Sequence[IntentKind]) -> tuple[Op
 
 
 def slots_of(first: Step) -> dict[str, str]:
-    return {k: str(first.args[k]) for k in _ID_SLOTS if first.args.get(k)}
+    slots = {k: str(first.args[k]) for k in _ID_SLOTS if first.args.get(k)}
+    if "account_id" not in slots and first.args.get("source_account_id"):
+        slots["account_id"] = str(first.args["source_account_id"])  # a closing that starts by moving the money out
+    return slots
 
 
 def _preference(config: SpecialistConfig) -> list[IntentKind]:
@@ -241,7 +244,7 @@ def plan_items(steps: Sequence[Step], config: SpecialistConfig) -> list[Item]:
         pending.clear()
         i = j
     flush()
-    return _split_requests(items, config)
+    return _transfers_belong_to_the_closing(_split_requests(items, config))
 
 
 def _split_requests(items: list[Item], config: SpecialistConfig) -> list[Item]:
@@ -280,6 +283,25 @@ def _split_requests(items: list[Item], config: SpecialistConfig) -> list[Item]:
         out.append(Segment(item.kind, item.reads, tuple(disputes)))
         if rest:
             out.append(Segment(IntentKind.ORDER_REPLACEMENT_CARD, (), tuple(rest)))
+    return out
+
+
+def _transfers_belong_to_the_closing(items: list[Item]) -> list[Item]:
+    """A transfer out of an account that the next request closes is that closing's "funds first" step, not
+    part of the opening before it (the longest run of allowed writes puts it there, since both kinds may
+    transfer). Move it to the front of the closing."""
+    out = list(items)
+    for i in range(len(out) - 1):
+        opening, closing = out[i], out[i + 1]
+        if not (isinstance(opening, Segment) and isinstance(closing, Segment)):
+            continue
+        if opening.kind is not IntentKind.OPEN_ACCOUNT or closing.kind is not IntentKind.CLOSE_ACCOUNT:
+            continue
+        closed = {w.args["account_id"] for w in closing.writes if w.name == "close_bank_account_7392"}
+        moved = tuple(w for w in opening.writes if w.name == "transfer_funds_between_bank_accounts_7291" and w.args["source_account_id"] in closed)
+        if moved:
+            out[i] = Segment(opening.kind, opening.reads, tuple(w for w in opening.writes if w not in moved))
+            out[i + 1] = Segment(closing.kind, closing.reads, moved + closing.writes)
     return out
 
 

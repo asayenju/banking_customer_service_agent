@@ -87,7 +87,7 @@ def prd_edge_case_rows():
 
 def test_every_edge_case_row_has_a_scenario():
     rows = prd_edge_case_rows()
-    assert len(rows) == 21, "the edge-case table could not be read"
+    assert len(rows) == 22, "the edge-case table could not be read"
     assert set(rows) == set(COVERS), (
         f"rows without a scenario: {sorted(set(rows) - set(COVERS))}; "
         f"scenarios for rows that are gone: {sorted(set(COVERS) - set(rows))}"
@@ -172,6 +172,42 @@ def test_a_freeze_goes_before_a_dispute_on_the_same_card():
         "routed:dsp@2", "started:dsp@2", "finished:dsp@2",
     ]  # fmt: skip
     assert w.direct.calls == ["frz"] and w.sub.calls == ["dsp"]
+
+
+@covers("Close an account and open another in one message")
+def test_an_account_is_opened_before_the_one_it_replaces_is_closed():
+    """Tasks 060, 062 and 065 to 069: closing the old checking account first would leave no account 14 days
+    old, and a business account is refused once any account has been closed. The customer said it close-first."""
+    close = I("cls", K.CLOSE_ACCOUNT, {"account_id": "a1"})
+    opening = I("opn", K.OPEN_ACCOUNT)
+    both = [S("cls", 0.96), S("opn", 0.96)]
+    w = World(
+        [interp(close, opening, claims=GOOD_CLAIMS), interp(close, opening, confirmed=["cls", "opn"])],
+        [both, both],
+    )
+    first = w.turn("close my old account and open a savings account")
+    assert brief(first) == ["scored:cls", "scored:opn", "decided:cls", "asked:cls", "decided:opn", "asked:opn"]
+    second = w.turn("yes to both")
+    assert brief(second)[-6:] == [
+        "routed:opn@1", "started:opn@1", "finished:opn@1",
+        "routed:cls@2", "started:cls@2", "finished:cls@2",
+    ]  # fmt: skip
+    assert w.sub.calls == ["opn", "cls"]
+
+
+def test_the_old_account_is_not_closed_when_the_new_one_could_not_be_opened():
+    close = I("cls", K.CLOSE_ACCOUNT, {"account_id": "a1"})
+    opening = I("opn", K.OPEN_ACCOUNT)
+    both = [S("cls", 0.96), S("opn", 0.96)]
+    w = World(
+        [interp(close, opening, claims=GOOD_CLAIMS), interp(close, opening, confirmed=["cls", "opn"])],
+        [both, both],
+        sub=ScriptedRoute({"opn": Behavior.RAISES}),
+    )
+    w.turn("close my old account and open a savings account")
+    second = w.turn("yes to both")
+    assert brief(second)[-4:] == ["routed:opn@1", "started:opn@1", "failed:opn@1", "skipped:cls@2"]
+    assert w.sub.calls == ["opn"], "the closing never ran"
 
 
 @covers("Two reads on the same account")

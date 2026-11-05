@@ -50,7 +50,7 @@ from orchestrator.executor import (
     RouteRunner,
     execute_plan,
 )
-from orchestrator.plan import Plan, PlanRejected, Waiting, plan
+from orchestrator.plan import Plan, PlanRejected, Waiting, closes_wait_for_openings, plan
 from orchestrator.plan_preview import PlanPreview
 from orchestrator.reply import Reply, compose_reply
 from orchestrator.routes import Route, route_for
@@ -403,6 +403,7 @@ class Orchestrator:
             for i, d in decisions.items()
             if d.action is Action.RUN and i not in settled
         ]
+        run_intents = closes_wait_for_openings(run_intents)
         the_plan = plan(
             run_intents, done=frozenset(self._done), conflicts=decomposition.conflicts
         )

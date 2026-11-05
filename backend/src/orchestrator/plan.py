@@ -101,9 +101,20 @@ def _conflict(a: Intent, b: Intent, flagged: set[frozenset[str]]) -> bool:
 BLOCKS_A_LIMIT_INCREASE = frozenset({IntentKind.DISPUTE_TRANSACTION, IntentKind.ORDER_REPLACEMENT_CARD})
 
 
-def dependencies(intents: Sequence[Intent]) -> dict[str, tuple[str, ...]]:
-    """What each intent waits for: what the decomposer said, plus the limit-first rule."""
-    deps: dict[str, tuple[str, ...]] = {i.id: tuple(i.depends_on) for i in intents}
+# A new account has to exist before the one it replaces is closed: a savings account needs a checking
+# account that has been open 14 days, and a business account is refused once any account has been closed
+# (docs/accounts-policy-decisions.md, section 7). Closing first would make the opening impossible.
+MUST_FOLLOW_AN_OPENING = frozenset({IntentKind.CLOSE_ACCOUNT})
+
+
+def _order_first(
+    deps: dict[str, tuple[str, ...]],
+    intents: Sequence[Intent],
+    firsts: Iterable[Intent],
+    laters: Iterable[Intent],
+) -> None:
+    """Make every later intent wait for every first intent, except where the customer already said the
+    opposite: an order that would create a cycle is never added."""
     ids = set(deps)
 
     def waits_for(start: str) -> set[str]:
@@ -116,14 +127,43 @@ def dependencies(intents: Sequence[Intent]) -> dict[str, tuple[str, ...]]:
                 stack.extend(d for d in deps[current] if d in ids)
         return seen
 
-    limits = [i for i in intents if i.kind is IntentKind.CREDIT_LIMIT_REQUEST]
-    for other in intents:
-        if other.kind not in BLOCKS_A_LIMIT_INCREASE:
-            continue
-        for limit in limits:
-            if limit.id != other.id and limit.id not in deps[other.id] and other.id not in waits_for(limit.id):
-                deps[other.id] = (*deps[other.id], limit.id)
+    firsts = list(firsts)
+    for later in laters:
+        for first in firsts:
+            if first.id != later.id and first.id not in deps[later.id] and later.id not in waits_for(first.id):
+                deps[later.id] = (*deps[later.id], first.id)
+
+
+def dependencies(intents: Sequence[Intent]) -> dict[str, tuple[str, ...]]:
+    """What each intent waits for: what the decomposer said, plus the limit-first and open-before-close rules."""
+    deps: dict[str, tuple[str, ...]] = {i.id: tuple(i.depends_on) for i in intents}
+    _order_first(
+        deps,
+        intents,
+        (i for i in intents if i.kind is IntentKind.CREDIT_LIMIT_REQUEST),
+        (i for i in intents if i.kind in BLOCKS_A_LIMIT_INCREASE),
+    )
+    _order_first(
+        deps,
+        intents,
+        (i for i in intents if i.kind is IntentKind.OPEN_ACCOUNT),
+        (i for i in intents if i.kind in MUST_FOLLOW_AN_OPENING),
+    )
     return deps
+
+
+def closes_wait_for_openings(intents: Sequence[Intent]) -> list[Intent]:
+    """The same intents, with each account closing made to depend on the openings in the turn.
+
+    The wave order alone puts the opening first. Writing it into ``depends_on`` as well means a closing is
+    skipped when its opening did not go through (it needs an answer, was refused or failed), so the
+    customer is never left having closed the old account without the new one. Credit limits get only
+    the order: a denied limit request is a normal outcome and the dispute still goes ahead."""
+    effective = dependencies(intents)
+    return [
+        i.model_copy(update={"depends_on": effective[i.id]}) if i.kind in MUST_FOLLOW_AN_OPENING else i
+        for i in intents
+    ]
 
 
 def _on_a_cycle(intents: Sequence[Intent]) -> tuple[str, ...]:

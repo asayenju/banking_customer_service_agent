@@ -8,6 +8,8 @@ from orchestrator.plan import (
     Plan,
     PlanRejected,
     Waiting,
+    closes_wait_for_openings,
+    dependencies,
     plan,
 )
 from orchestrator.taxonomy import TOOL_INTENT
@@ -253,3 +255,45 @@ def test_two_limit_requests_do_not_wait_for_each_other_but_a_dispute_waits_for_b
     a, b = _cli("l1"), I("l2", K.CREDIT_LIMIT_REQUEST, {"credit_card_account_id": "cc2"})
     dispute = I("d", K.DISPUTE_TRANSACTION, {"transaction_id": "t1"})
     assert waves(plan([dispute, a, b])) == (("l1", "l2"), ("d",))
+
+
+# ---- a new account is opened before the one it replaces is closed
+
+def _open(id="opn", **kw):
+    return I(id, K.OPEN_ACCOUNT, {}, **kw)
+
+
+def _close(id="cls", account="a1", **kw):
+    return I(id, K.CLOSE_ACCOUNT, {"account_id": account}, **kw)
+
+
+def test_an_opening_runs_before_a_closing_whatever_order_they_were_said_in():
+    assert waves(plan([_close(), _open()])) == (("opn",), ("cls",))
+    assert waves(plan([_open(), _close()])) == (("opn",), ("cls",))
+
+
+def test_a_closing_waits_for_every_opening_and_openings_do_not_wait_for_each_other():
+    result = plan([_close(), _open("o1"), _open("o2")])
+    assert waves(result)[-1] == ("cls",) and set(waves(result)[0]) <= {"o1", "o2"}
+    deps = dependencies([_close(), _open("o1"), _open("o2")])
+    assert set(deps["cls"]) == {"o1", "o2"} and deps["o1"] == deps["o2"] == ()
+
+
+def test_the_rule_is_for_those_two_kinds_only():
+    other = I("c", K.CLOSE_CARD, {"card_id": "c1"})
+    assert dependencies([other, _open()]) == {"c": (), "opn": ()}, "closing a card does not wait for an opening"
+    assert waves(plan([_close()])) == (("cls",),)
+    assert waves(plan([_open()])) == (("opn",),)
+
+
+def test_the_customer_saying_the_opposite_stands_and_never_makes_a_cycle():
+    result = plan([_open(depends_on=("cls",)), _close()])
+    assert waves(result) == (("cls",), ("opn",))
+    assert dependencies([_open(depends_on=("cls",)), _close()])["cls"] == ()
+
+
+def test_a_closing_is_made_to_depend_on_the_openings_so_it_is_skipped_if_they_do_not_complete():
+    rewritten = {i.id: i for i in closes_wait_for_openings([_close(), _open()])}
+    assert rewritten["cls"].depends_on == ("opn",) and rewritten["opn"].depends_on == ()
+    limit = [I("d", K.DISPUTE_TRANSACTION, {"transaction_id": "t1"}), _cli()]
+    assert [i.depends_on for i in closes_wait_for_openings(limit)] == [(), ()], "a denied limit request does not stop a dispute"
