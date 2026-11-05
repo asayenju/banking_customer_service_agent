@@ -33,14 +33,23 @@ TRANSFER_TOOL = "transfer_funds_between_bank_accounts_7291"
 DEFAULT_REASON = "Customer requested closure"
 
 
+class Move(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    to_account: str = Field(description="An account of the customer's own that should receive money, as they named it.")
+    amount: Optional[float] = Field(
+        description="The dollar amount the customer wants moved there, or null if they want all of it to go to this account."
+    )
+
+
 class Closure(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     account_id: str = Field(description="The id of the account to close, as given in the request's details.")
-    move_to_account: Optional[str] = Field(
+    moves: list[Move] = Field(
         description=(
-            "Where the customer wants the money in this account to go before it closes, as they named it "
-            "(an account of their own), or null if they have not said. Do not choose for them."
+            "Where the customer wants the money in this account to go before it closes: one entry per account "
+            "that should receive some. Empty if they have not said. Do not choose for them."
         )
     )
     reason: str = Field(description="Why the customer is closing it, in a few words; 'Customer requested closure' if they did not say.")
@@ -86,27 +95,39 @@ class CloseAccount:
                 return Reply(_short_of_fee(account, owed))
             to_move = round(account.balance - owed, 2)
             if cents(to_move) > 0:
-                destination, ask = self._destination(ctx, account, wanted, closing, to_move)
-                if destination is None:
+                moves, ask = self._moves(ctx, account, wanted, closing, to_move)
+                if moves is None:
                     questions.extend(ask)
                     continue
-                steps.append(Step(TRANSFER_TOOL, {"source_account_id": account.account_id, "destination_account_id": destination.account_id, "amount": to_move}))
+                steps.extend(
+                    Step(TRANSFER_TOOL, {"source_account_id": account.account_id, "destination_account_id": to.account_id, "amount": amount})
+                    for to, amount in moves
+                )
             steps.append(Step(CLOSE_TOOL, {"account_id": account.account_id, "reason": wanted.reason.strip() or DEFAULT_REASON}))
         if questions:
             return NeedInfo(tuple(questions))
         return Plan(tuple(steps))
 
-    def _destination(
-        self, ctx: WorkflowContext, account: BankAccount, wanted: Closure, closing: set[str], amount: float
-    ) -> tuple[Optional[BankAccount], list[Ask]]:
+    def _moves(
+        self, ctx: WorkflowContext, account: BankAccount, wanted: Closure, closing: set[str], total: float
+    ) -> tuple[Optional[list[tuple[BankAccount, float]]], list[Ask]]:
+        """Where the money goes: every destination one of the customer's own open accounts that is not being
+        closed, and the amounts adding up to exactly what has to leave. Otherwise the question to ask."""
         options = [a for a in accounts.accounts_of(ctx.database, ctx.user_id) if a.is_open and a.account_id != account.account_id and a.account_id not in closing]
+        have = dollars(account.balance or 0.0)
         if not options:
-            return None, [Ask("move_to_account", f"Your {account.name} has {dollars(account.balance or 0.0)}, and you have no other open account to move {dollars(amount)} to before it closes.")]
-        chosen = accounts.resolve(wanted.move_to_account, options) if wanted.move_to_account else None
-        if chosen is not None:
-            return chosen, []
+            return None, [Ask("move_to_account", f"Your {account.name} has {have}, and you have no other open account to move {dollars(total)} to before it closes.")]
         listing = "\n".join(f"{n}. {accounts.describe(a)}" for n, a in enumerate(options, start=1))
-        return None, [Ask("move_to_account", f"Your {account.name} has {dollars(account.balance or 0.0)}. Where should {dollars(amount)} go before it closes?\n{listing}")]
+        resolved = [(accounts.resolve(m.to_account, options), m.amount) for m in wanted.moves]
+        targets = [(to, amount) for to, amount in resolved if to is not None]
+        if not resolved or len(targets) != len(resolved):
+            return None, [Ask("move_to_account", f"Your {account.name} has {have}. Where should {dollars(total)} go before it closes?\n{listing}")]
+        if len(targets) == 1 and targets[0][1] is None:
+            return [(targets[0][0], total)], []
+        given = [(to, amount) for to, amount in targets if amount is not None and amount > 0]
+        if len(given) != len(targets) or sum(cents(amount) for _, amount in given) != cents(total):
+            return None, [Ask("move_amounts", f"{dollars(total)} has to leave your {account.name}. How much should go to each account?\n{listing}")]
+        return [(to, float(amount)) for to, amount in given], []
 
     def after(self, ctx: WorkflowContext, steps: Sequence[Step]) -> str:
         """What to tell the customer once the plan has run: a fee that was inside the account stays there."""

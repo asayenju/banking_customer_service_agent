@@ -152,3 +152,26 @@ def test_requests_no_code_resolves_yet_still_ask_for_their_ids() -> None:
     assert run("dispute", I("a", K.DISPUTE_TRANSACTION)).intents[0].missing_slots == ("transaction_id",)
     assert run("close", I("a", K.CLOSE_ACCOUNT)).intents[0].missing_slots == ("account_id",)
     assert run("pay", I("a", K.PAY_CREDIT_CARD)).intents[0].missing_slots == ("account_id", "amount")
+
+
+def test_an_account_to_open_that_no_intent_covers_is_flagged():
+    out = run("close my old account and open a new savings account", I("a", K.CLOSE_ACCOUNT, slots={"account_id": "x"}))
+    assert Flag.POSSIBLE_DROPPED_INTENT in out.flags
+    covered = run(
+        "close my old account and open a new savings account",
+        I("a", K.CLOSE_ACCOUNT, slots={"account_id": "x"}),
+        I("b", K.OPEN_ACCOUNT),
+    )
+    assert Flag.POSSIBLE_DROPPED_INTENT not in covered.flags
+
+
+def test_a_card_payment_that_no_intent_covers_is_flagged():
+    message = "pay my credit card from checking and tell me my balance"
+    assert Flag.POSSIBLE_DROPPED_INTENT in run(message, I("a", K.ACCOUNT_BALANCE_OR_HISTORY)).flags
+    both = run(message, I("a", K.ACCOUNT_BALANCE_OR_HISTORY), I("b", K.PAY_CREDIT_CARD, slots={"account_id": "x", "amount": "5"}))
+    assert Flag.POSSIBLE_DROPPED_INTENT not in both.flags
+
+
+def test_open_and_pay_cues_do_not_fire_on_ordinary_sentences():
+    for message in ("my account is open until friday", "will you pay attention to my case", "please open the door"):
+        assert Flag.POSSIBLE_DROPPED_INTENT not in run(message, I("a", K.GENERAL_QUESTION)).flags, message

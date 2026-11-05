@@ -12,7 +12,7 @@ from agent.specialist import Specialist
 from agent.specialists.accounts import ACCOUNTS_SPECIALIST
 from agent.tier1 import SegmentError, plan_and_execute, run_tier1
 from agent.toolbox import SecretVault
-from agent.workflows.account_close import CloseAccount, CloseFacts, Closure
+from agent.workflows.account_close import CloseAccount, CloseFacts, Closure, Move
 from agent.workflows.base import HandOff, NeedInfo, Plan, Refuse, Reply, WorkflowContext
 from banking_tools import BankingSession, Fidelity
 from banking_tools.manifest import load_tasks
@@ -38,7 +38,7 @@ def put(shared, account_id, user, cls, level, opened, balance):
 
 
 def closing(account_id="03", to=None, reason="Customer requested closure", waive=False) -> Closure:
-    return Closure(account_id=account_id, move_to_account=to, reason=reason, asks_to_waive_fee=waive)
+    return Closure(account_id=account_id, moves=[Move(to_account=to, amount=None)] if to else [], reason=reason, asks_to_waive_fee=waive)
 
 
 def decide(shared, *closures, user=SAM):
@@ -63,6 +63,24 @@ def test_the_balance_moves_to_the_account_the_customer_chose_before_the_account_
         ("transfer_funds_between_bank_accounts_7291", {"source_account_id": "03", "destination_account_id": "04", "amount": 3400.0}),
         ("close_bank_account_7392", {"account_id": "03", "reason": "Customer requested closure"}),
     ]
+
+
+def test_the_money_can_be_split_between_the_customers_own_accounts_when_the_amounts_add_up():
+    shared = world()
+    put(shared, "ex", SAM, "checking", "Blue Account", "01/01/2024", "100")
+    split = Closure(account_id="03", moves=[Move(to_account="04", amount=2400.0), Move(to_account="ex", amount=1000.0)], reason="x", asks_to_waive_fee=False)
+    plan = decide(shared, split)
+    assert [(s.tool, s.args.get("destination_account_id"), s.args.get("amount")) for s in plan.steps] == [
+        ("transfer_funds_between_bank_accounts_7291", "04", 2400.0),
+        ("transfer_funds_between_bank_accounts_7291", "ex", 1000.0),
+        ("close_bank_account_7392", None, None),
+    ]
+    for wrong in (1000.0, 2400.5):  # does not add up to the $3,400.00 that has to leave
+        bad = Closure(account_id="03", moves=[Move(to_account="04", amount=wrong), Move(to_account="ex", amount=1000.0)], reason="x", asks_to_waive_fee=False)
+        asks = decide(shared, bad)
+        assert isinstance(asks, NeedInfo) and asks.questions[0].slot == "move_amounts" and "$3,400.00 has to leave" in asks.questions[0].text
+    unnamed = Closure(account_id="03", moves=[Move(to_account="04", amount=3400.0), Move(to_account="ex", amount=None)], reason="x", asks_to_waive_fee=False)
+    assert isinstance(decide(shared, unnamed), NeedInfo)
 
 
 def test_a_balance_with_no_destination_is_a_question_listing_only_their_other_accounts():
@@ -179,7 +197,7 @@ def run_with(shared: BankingSession, facts: dict, user: str = SAM, account: str 
 
 
 def form(account="03", to=None, waive=False) -> dict:
-    return {"closures": [{"account_id": account, "move_to_account": to, "reason": "Customer requested closure", "asks_to_waive_fee": waive}]}
+    return {"closures": [{"account_id": account, "moves": [{"to_account": to, "amount": None}] if to else [], "reason": "Customer requested closure", "asks_to_waive_fee": waive}]}
 
 
 def test_the_money_moves_and_the_account_closes_through_the_specialist():

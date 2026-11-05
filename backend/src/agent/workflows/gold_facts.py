@@ -23,10 +23,11 @@ def facts_from_gold(workflow: str, writes: Sequence[Any], database: Any) -> Opti
             "closures": [
                 {
                     "account_id": c.args["account_id"],
-                    "move_to_account": next(
-                        (w.args["destination_account_id"] for w in writes if w.name == TRANSFER_TOOL and w.args["source_account_id"] == c.args["account_id"]),
-                        None,
-                    ),
+                    "moves": [
+                        {"to_account": w.args["destination_account_id"], "amount": float(w.args["amount"])}
+                        for w in writes
+                        if w.name == TRANSFER_TOOL and w.args["source_account_id"] == c.args["account_id"]
+                    ],
                     "reason": c.args.get("reason") or DEFAULT_REASON,
                     "asks_to_waive_fee": False,
                 }

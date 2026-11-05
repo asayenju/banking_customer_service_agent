@@ -49,6 +49,14 @@ _CUES: tuple[tuple[re.Pattern[str], frozenset[IntentKind]], ...] = tuple(
         (r"\b(dispute|chargeback)\b", {K.DISPUTE_TRANSACTION, K.REPORT_FRAUD_OR_LOSS}),
         (r"\b(close|cancel)\b", {K.CLOSE_CARD, K.CLOSE_ACCOUNT, K.FREEZE_CARD, K.REPORT_FRAUD_OR_LOSS}),
         (r"\b(transfer|move)\b", {K.TRANSFER_FUNDS, K.PAY_CREDIT_CARD, K.REQUEST_HUMAN}),
+        (
+            r"\b(open|start|set up)\b.{0,30}\b(checking|savings|bank account|new account|an account)\b",
+            {K.OPEN_ACCOUNT, K.GENERAL_QUESTION, K.LOOKUP_INFO, K.REQUEST_HUMAN},
+        ),
+        (
+            r"\bpay\b.{0,30}\b(credit card|card balance|my card|the card)\b",
+            {K.PAY_CREDIT_CARD, K.TRANSFER_FUNDS, K.GENERAL_QUESTION, K.LOOKUP_INFO, K.REQUEST_HUMAN},
+        ),
         (r"\bbalance\b", {K.ACCOUNT_BALANCE_OR_HISTORY, K.LOOKUP_INFO, K.GENERAL_QUESTION}),
         (r"\bpin\b", {K.CHANGE_OR_RESET_PIN}),
         (r"\b(replace|replacement)\b", {K.ORDER_REPLACEMENT_CARD}),
