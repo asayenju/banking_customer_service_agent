@@ -17,7 +17,7 @@ synthetic data. The model reports which accounts and how much; code decides ever
 The plan is a single step; the customer approves it with the exact accounts and amount shown.
 """
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -27,15 +27,34 @@ from agent.cards import describe_credit, owned_credit_accounts, resolve_credit
 from agent.specialist import ValidationContext
 from agent.specialists import accounts_rules as rules
 from agent.specialists.credit_rules import money
-from agent.workflows.base import Ask, Decision, NeedInfo, Plan, Refuse, Reply, Step, WorkflowContext
+from agent.workflows.base import Ask, Decision, HandOff, NeedInfo, Plan, Refuse, Reply, Step, WorkflowContext
 from orchestrator.types import IntentKind
 
 TRANSFER_TOOL = "transfer_funds_between_bank_accounts_7291"
 PAY_TOOL = "pay_credit_card_from_checking_9182"
 
 
+Where = Literal["my_own_account", "wire", "ach", "bill_pay", "another_person_or_bank", "check_deposit"]
+
+# Document 011: a check is deposited by the customer in the mobile app; the agent cannot do it.
+CHECK_DEPOSIT_STEPS = (
+    "I can't deposit a check for you; you do that yourself in the Rho-Bank mobile app. Sign in, pick the account you want "
+    "to deposit into, choose Mobile Check Deposit, enter the amount exactly as printed, and photograph the front and the "
+    "endorsed back of the check. Standard deposits are usually available within 1 to 2 business days."
+)
+
+
 class TransferFacts(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    destination: Where = Field(
+        default="my_own_account",
+        description=(
+            "Where the money is going: 'my_own_account' for a move between the customer's own Rho-Bank accounts; "
+            "'wire', 'ach' or 'bill_pay' for those; 'another_person_or_bank' for sending money to someone else or "
+            "another bank; 'check_deposit' if the customer wants to deposit a check. The bank can only do the first."
+        ),
+    )
 
     from_account_id: str = Field(description="The account the money comes from, as the request's details or the customer name it.")
     to_account_id: str = Field(description="The account the money goes to, as the request's details or the customer name it.")
@@ -68,6 +87,11 @@ class TransferFunds:
     facts = TransferFacts
 
     def decide(self, ctx: WorkflowContext, facts: TransferFacts) -> Decision:
+        if facts.destination == "check_deposit":
+            return Reply(CHECK_DEPOSIT_STEPS)
+        if facts.destination != "my_own_account":
+            means = facts.destination.replace("_", " ")
+            return HandOff(f"the customer wants to send money by {means} to someone outside their own accounts, which the bank has no tool for")
         if rules.cents(facts.amount) <= 0:
             return Refuse("a transfer must be a dollar amount above zero")
         if (problem := _amount_differs(ctx, facts.amount)) is not None:
