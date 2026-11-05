@@ -125,6 +125,22 @@ def _prepare_payment(intent: Intent, user_id: str, db: Any) -> Intent | RouteOut
     )
 
 
+def _settle_what_is_named(
+    intent: Intent, roles: tuple[tuple[str, tuple[str, ...]], ...], owned: list[accounts.BankAccount]
+) -> Intent:
+    """For a transfer: put the id of each account the customer named and that is theirs into the slots, and
+    ask nothing. What is missing or does not resolve is left for the workflow, which asks with the same list
+    once it knows the request is a transfer between the customer's own accounts at all (a wire, a bill payment
+    and a check deposit are not, and a question about which account would be the wrong thing to ask)."""
+    settled: dict[str, str] = {}
+    for slot, names in roles:
+        named = _first(intent, names)
+        chosen = accounts.resolve(named, [a for a in owned if a.account_id not in settled.values()]) if named else None
+        if chosen is not None:
+            settled[slot] = chosen.account_id
+    return intent.model_copy(update={"slots": {**intent.slots, **settled}})
+
+
 def prepare(intent: Intent, user_id: str, db: Any) -> Intent | RouteOutcome:
     """Settle which of the customer's own accounts a request names. Never another customer's.
 
@@ -143,6 +159,8 @@ def prepare(intent: Intent, user_id: str, db: Any) -> Intent | RouteOutcome:
             status=OutcomeStatus.DONE,
             text="I do not see an open bank account on your profile, so there is nothing to change or move.",
         )
+    if intent.kind is K.TRANSFER_FUNDS:
+        return _settle_what_is_named(intent, roles, owned)
     settled: dict[str, str] = {}
     for slot, names in roles:
         named = next(((intent.slots.get(n) or "").strip() for n in names if (intent.slots.get(n) or "").strip()), "")

@@ -143,28 +143,30 @@ def test_a_close_with_several_accounts_and_no_name_is_a_question_without_ids():
     assert not re.search(r"\b0[12]\b", text), "no id in the question"
 
 
-def test_a_transfer_resolves_both_ends_and_asks_for_the_one_that_is_missing():
+def test_a_transfer_gets_the_ids_of_the_accounts_the_customer_named_and_asks_nothing_itself():
+    """The workflow asks (test_accounts_move.py); prepare cannot know yet that this is a transfer between the
+    customer's own accounts and not a wire or a check deposit."""
     shared = world()
     both = settled(prepare(intent(K.TRANSFER_FUNDS, from_account_id="Green checking", to_account_id="Silver savings", amount="100"), SAM, shared.database))
     assert (both.slots["from_account_id"], both.slots["to_account_id"]) == ("03", "04")
-    slot, text = question(prepare(intent(K.TRANSFER_FUNDS, from_account_id="03", amount="100"), SAM, shared.database))
-    assert slot == "to_account_id"
-    assert "Green Account" not in text, "the account the money comes from is not offered as the destination"
-    assert "1. your Silver Account (savings)" in text
+    half = settled(prepare(intent(K.TRANSFER_FUNDS, from_account_id="03", amount="100"), SAM, shared.database))
+    assert half.slots["from_account_id"] == "03" and "to_account_id" not in half.slots
+    nothing = settled(prepare(intent(K.TRANSFER_FUNDS), SAM, shared.database))
+    assert nothing.slots == {}
 
 
-def test_a_transfer_to_a_third_partys_account_is_asked_again_with_only_the_customers_own():
+def test_a_transfer_names_nothing_that_is_someone_elses_and_the_ids_never_cross():
     shared = world()
     for third_party in ("01", "someone elses account", "9999"):
-        slot, text = question(prepare(intent(K.TRANSFER_FUNDS, from_account_id="03", to_account_id=third_party, amount="100"), SAM, shared.database))
-        assert slot == "to_account_id"
-        assert "Bronze" not in text and "Blue" not in text, "Mia's accounts never appear in Sam's list"
+        out = settled(prepare(intent(K.TRANSFER_FUNDS, from_account_id="03", to_account_id=third_party, amount="100"), SAM, shared.database))
+        assert out.slots["from_account_id"] == "03"
+        assert out.slots["to_account_id"] == third_party, "left as said; it resolves to nothing and the workflow asks"
+        assert accounts.resolve(out.slots["to_account_id"], accounts.accounts_of(shared.database, SAM)) is None
 
 
-def test_the_answer_to_a_list_question_is_taken_by_its_number():
-    shared = world()
-    asked = intent(K.TRANSFER_FUNDS, from_account_id="03", to_account_id="1", amount="100")
-    assert settled(prepare(asked, SAM, shared.database)).slots["to_account_id"] == "04"
+def test_the_same_account_is_not_settled_twice():
+    out = settled(prepare(intent(K.TRANSFER_FUNDS, from_account_id="03", to_account_id="03"), SAM, world().database))
+    assert out.slots["from_account_id"] == "03" and out.slots["to_account_id"] == "03", "both left; the workflow refuses a transfer to the same account"
 
 
 def test_a_customer_with_no_open_account_is_told_so_and_nothing_is_asked():

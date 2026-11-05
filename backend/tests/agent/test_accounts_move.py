@@ -99,7 +99,7 @@ def test_the_yes_is_bound_to_the_amount_so_a_changed_amount_makes_it_stale():
     shared = world()
     asked = Intent(id="i1", kind=K.TRANSFER_FUNDS, summary="s", slots={"from_account_id": "03", "to_account_id": "04", "amount": "100"})
     changed = asked.model_copy(update={"slots": {**asked.slots, "amount": "900"}})
-    proposal = _plan_with(shared, asked, {"from_account_id": "03", "to_account_id": "04", "amount": 100.0})
+    proposal = _plan_with(shared, asked, {"destination": "my_own_account", "from_account_id": "03", "to_account_id": "04", "amount": 100.0})
     assert proposal.intent_fp == fingerprint(asked) != fingerprint(changed)
     assert "Move $100.00 from your Green Account (checking) to your Silver Account (savings)" in proposal.rendered
     assert proposal.steps[0].args["amount"] == 100.0
@@ -132,14 +132,14 @@ def run(shared, facts, *, slots=None, user=SAM, progress=(), tool="start_transfe
 
 def test_the_transfer_moves_the_money_through_the_specialist():
     shared = world()
-    done = run(shared, {"from_account_id": "03", "to_account_id": "04", "amount": 100.0}, slots={"from_account_id": "03", "to_account_id": "04", "amount": "100"})
+    done = run(shared, {"destination": "my_own_account", "from_account_id": "03", "to_account_id": "04", "amount": 100.0}, slots={"from_account_id": "03", "to_account_id": "04", "amount": "100"})
     assert done.status is OutcomeStatus.DONE
     assert shared.database.accounts.data["03"]["current_holdings"] == "$3300.00" and shared.database.accounts.data["04"]["current_holdings"] == "$1000.00"
 
 
 def test_a_repeated_run_after_a_timeout_does_not_move_the_money_twice():
     shared = world()
-    facts = {"from_account_id": "03", "to_account_id": "04", "amount": 100.0}
+    facts = {"destination": "my_own_account", "from_account_id": "03", "to_account_id": "04", "amount": 100.0}
     slots = {"from_account_id": "03", "to_account_id": "04", "amount": "100"}
     assert run(shared, facts, slots=slots).status is OutcomeStatus.DONE
     earlier = tuple(shared.completed_for("i1"))
@@ -155,7 +155,7 @@ def test_a_model_that_changes_the_amount_cannot_get_it_approved():
     with pytest.raises(SegmentError):
         run_wrong = Specialist(
             ACCOUNTS_SPECIALIST,
-            llm=FakeToolLLM([AssistantTurn(tool_calls=(ToolCall(id="c1", name="start_transfer_funds", arguments_json=json.dumps({"from_account_id": "03", "to_account_id": "04", "amount": 900.0})),), usage=Usage(input_tokens=1))]),
+            llm=FakeToolLLM([AssistantTurn(tool_calls=(ToolCall(id="c1", name="start_transfer_funds", arguments_json=json.dumps({"destination": "my_own_account", "from_account_id": "03", "to_account_id": "04", "amount": 900.0, "destination": "my_own_account"})),), usage=Usage(input_tokens=1))]),
             index=INDEX, database=shared.database, vault=SecretVault(),
         )
         plan_and_execute(run_wrong, Intent(id="i1", kind=K.TRANSFER_FUNDS, summary="s", slots={"amount": "100"}), shared, SAM, label="move")
@@ -281,8 +281,8 @@ def test_the_plan_for_an_opening_names_the_class_and_the_deposit_in_words():
 def test_the_words_shown_are_not_part_of_what_the_yes_is_bound_to():
     shared = world()
     asked = Intent(id="i1", kind=K.TRANSFER_FUNDS, summary="s", slots={"from_account_id": "03", "to_account_id": "04", "amount": "100"})
-    one = _plan_with(shared, asked, {"from_account_id": "03", "to_account_id": "04", "amount": 100.0})
-    other = _plan_with(world(), asked, {"from_account_id": "03", "to_account_id": "04", "amount": 100.0})
+    one = _plan_with(shared, asked, {"destination": "my_own_account", "from_account_id": "03", "to_account_id": "04", "amount": 100.0})
+    other = _plan_with(world(), asked, {"destination": "my_own_account", "from_account_id": "03", "to_account_id": "04", "amount": 100.0})
     assert one.plan_fp == other.plan_fp
-    changed = _plan_with(world(), asked.model_copy(update={"slots": {**asked.slots, "amount": "101"}}), {"from_account_id": "03", "to_account_id": "04", "amount": 101.0})
+    changed = _plan_with(world(), asked.model_copy(update={"slots": {**asked.slots, "amount": "101"}}), {"destination": "my_own_account", "from_account_id": "03", "to_account_id": "04", "amount": 101.0})
     assert changed.plan_fp != one.plan_fp
