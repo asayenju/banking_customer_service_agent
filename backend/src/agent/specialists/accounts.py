@@ -14,6 +14,7 @@ from typing import Any
 from agent import bank_accounts as accounts
 from agent.specialist import SpecialistConfig, Validator
 from agent.specialists import accounts_rules as rules
+from agent.workflows.account_open import OpenAccount
 from knowledge.scopes import ACCOUNTS
 from orchestrator.executor import OutcomeStatus, RouteOutcome
 from orchestrator.types import Intent, IntentKind as K, Question
@@ -30,8 +31,12 @@ How to work:
 3. The bank's tools check very little themselves. Check the rules in the policy notes yourself, and
    expect your plan to be refused if it breaks one.
 4. Money only moves between accounts the customer owns. Never offer or accept another person's account.
-5. Opening: check the eligibility rules for the product, and give the exact account class name from
-   the notes. The customer must confirm the exact name before anything is opened.
+5. Opening has a workflow: end with start_open_account. Report only what the customer said: the type and
+   the exact class name of each account, and whether they want the opening deposit of a savings account
+   moved. If you do not know the exact names yet, call it with an empty account_class and you are given the
+   list of what this customer can open today, with the promotions in force; recommend from that list only,
+   and keep to what the customer asked for. If the customer has not said what they need, ask. What can be
+   opened is worked out from the records, never from what the customer says about their own accounts.
 6. Closing: an account closes with a zero balance, or with exactly the early-closure fee in it when
    one applies. Move the money first, to an account the customer chooses from their own. Never move
    the fee-sized balance, and never waive a fee. A new account must be opened before an old one is
@@ -126,4 +131,5 @@ ACCOUNTS_SPECIALIST = SpecialistConfig(
     readbacks=READBACKS,
     prepare=prepare,
     reads=READS,
+    workflows=(OpenAccount(),),
 )

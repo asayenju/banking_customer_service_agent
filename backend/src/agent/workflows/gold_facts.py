@@ -13,6 +13,26 @@ from typing import Any, Optional
 
 
 def facts_from_gold(workflow: str, writes: Sequence[Any], database: Any) -> Optional[dict[str, Any]]:
+    if workflow == "open_account":
+        from agent.workflows.account_open import OPEN_TOOL, TRANSFER_TOOL, new_account_id
+
+        opens = [w for w in writes if w.name == OPEN_TOOL]
+        if not opens:
+            return None
+        accounts = []
+        for o in opens:
+            destination = new_account_id(o.args["user_id"], o.args["account_type"], o.args["account_class"])
+            move = next((w for w in writes if w.name == TRANSFER_TOOL and w.args["destination_account_id"] == destination), None)
+            accounts.append(
+                {
+                    "account_type": o.args["account_type"],
+                    "account_class": o.args["account_class"],
+                    "fund_now": "yes" if move is not None else "no",
+                    "fund_from_account": move.args["source_account_id"] if move is not None else None,
+                    "fund_amount": float(move.args["amount"]) if move is not None else None,
+                }
+            )
+        return {"accounts": accounts}
     if workflow == "debit_dispute":
         disputes = [w for w in writes if w.name == "file_debit_card_transaction_dispute_6281"]
         if not disputes:
