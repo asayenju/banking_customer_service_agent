@@ -292,8 +292,8 @@ class Specialist:
     def _workflows_for(self, kind: IntentKind) -> dict[str, Workflow]:
         return {terminal_name(w): w for w in self.config.workflows if kind in w.kinds}
 
-    def _context(self, ctx: RouteContext) -> WorkflowContext:
-        return WorkflowContext(self._db, str(ctx.verified_user_id), self._today())
+    def _context(self, ctx: RouteContext, intent: Intent) -> WorkflowContext:
+        return WorkflowContext(self._db, str(ctx.verified_user_id), self._today(), dict(intent.slots))
 
     def _review_workflow(
         self,
@@ -308,7 +308,7 @@ class Specialist:
             facts = workflow.facts.model_validate(dict(arguments))
         except ValidationError:
             return "the form did not fit; fill in every field with an allowed value"
-        decision = workflow.decide(self._context(ctx), facts)
+        decision = workflow.decide(self._context(ctx, intent), facts)
         if isinstance(decision, Refuse):
             return decision.reason
         if isinstance(decision, Plan):
@@ -316,6 +316,7 @@ class Specialist:
                 [{"tool": s.tool, "arguments_json": json.dumps(dict(s.args))} for s in decision.steps],
                 intent,
                 ctx,
+                notes=[s.note for s in decision.steps],
             )
             if isinstance(steps, str):
                 return steps
@@ -331,6 +332,7 @@ class Specialist:
                 [{"tool": s.tool, "arguments_json": json.dumps(dict(s.args))} for s in decision.steps],
                 intent,
                 ctx,
+                notes=[s.note for s in decision.steps],
             )
             if isinstance(steps, str):
                 return _failed(intent, steps)
@@ -432,8 +434,12 @@ class Specialist:
             results[step.index] = str(outcome.text)
         return None
 
-    def _steps_from(self, raw: Any, intent: Intent, ctx: RouteContext) -> tuple[PlanStep, ...] | str:
-        """The model's proposal as steps built by code, or a code-worded reason it is unusable."""
+    def _steps_from(
+        self, raw: Any, intent: Intent, ctx: RouteContext, notes: Optional[Sequence[str]] = None
+    ) -> tuple[PlanStep, ...] | str:
+        """The model's proposal as steps built by code, or a code-worded reason it is unusable.
+
+        ``notes`` are the descriptions a workflow wrote for its own steps; a model's own wording is never used."""
         if not isinstance(raw, list) or not raw:
             return "the plan had no steps"
         registry = get_registry()
@@ -465,7 +471,7 @@ class Specialist:
                         tool=tool,
                         args=_keep_references(arguments, checked),
                         reversible=spec.reversibility is Reversibility.REVERSIBLE,
-                        description=spec.description.rstrip("."),
+                        description=(notes[position - 1] if notes and position <= len(notes) and notes[position - 1] else spec.description.rstrip(".")),
                     )
                 )
             except ValidationError:

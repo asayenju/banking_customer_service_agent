@@ -14,7 +14,7 @@ cannot be submitted.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Protocol, get_args, get_origin
 
@@ -30,6 +30,9 @@ class WorkflowContext:
     database: Any
     user_id: str
     today: date
+    # What the orchestrator holds for the request (the customer's own words, settled by code): a workflow
+    # can check that the form the model filled in agrees with it, an amount above all.
+    slots: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -38,6 +41,9 @@ class Step:
 
     tool: str
     args: Mapping[str, Any]
+    # What this step does in the customer's words, written by code from their records (account names, not
+    # ids). Shown in the plan the customer approves; not part of what the approval is bound to.
+    note: str = ""
 
 
 @dataclass(frozen=True)

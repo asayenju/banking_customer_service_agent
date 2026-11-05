@@ -100,10 +100,15 @@ class CloseAccount:
                     questions.extend(ask)
                     continue
                 steps.extend(
-                    Step(TRANSFER_TOOL, {"source_account_id": account.account_id, "destination_account_id": to.account_id, "amount": amount})
+                    Step(
+                        TRANSFER_TOOL,
+                        {"source_account_id": account.account_id, "destination_account_id": to.account_id, "amount": amount},
+                        note=f"Move {dollars(amount)} from {accounts.label(account)} to {accounts.label(to)}",
+                    )
                     for to, amount in moves
                 )
-            steps.append(Step(CLOSE_TOOL, {"account_id": account.account_id, "reason": wanted.reason.strip() or DEFAULT_REASON}))
+            closing_note = f"Close {accounts.label(account)}" + (f"; its {dollars(float(owed))} early-closure fee stays in it" if owed else "")
+            steps.append(Step(CLOSE_TOOL, {"account_id": account.account_id, "reason": wanted.reason.strip() or DEFAULT_REASON}, note=closing_note))
         if questions:
             return NeedInfo(tuple(questions))
         return Plan(tuple(steps))
