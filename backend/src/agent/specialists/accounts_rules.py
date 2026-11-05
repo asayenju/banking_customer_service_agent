@@ -75,6 +75,8 @@ def open_account(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]
 
     held = accounts.accounts_of(v.database, v.user_id, include_closed=True)
     live = _live(held)
+    if (too_young_or_old := _page_age(v, product, name)) is not None:
+        return too_young_or_old
     if len([a for a in live if a.product is product]) >= products.CAP[product]:
         label = "personal checking" if product is Product.CHECKING else product.value
         return f"you already hold the most {label} accounts allowed ({products.CAP[product]})"
@@ -85,6 +87,24 @@ def open_account(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]
     if product is Product.BUSINESS_CHECKING:
         return _may_open_business_checking(held, live)
     return _may_open_business_savings(v, live)
+
+
+def _page_age(v: ValidationContext, product: Product, name: str) -> Optional[str]:
+    """The holder age limits a product page states (Gold Years: 62 or older; Dark Green: 17 through 26)."""
+    limits = products.AGE_LIMITS.get((product, name))
+    if limits is None:
+        return None
+    user = v.database.users.data.get(v.user_id)
+    born = day(user.get("date_of_birth")) if isinstance(user, Mapping) else None
+    if born is None:
+        return "your date of birth is not on file, so a person has to check that you can have this account"
+    age = _years_old(born, v.today)
+    youngest, oldest = limits
+    if youngest is not None and age < youngest:
+        return f"a {name} is for customers {youngest} or older"
+    if oldest is not None and age > oldest:
+        return f"a {name} is for customers {oldest} or younger"
+    return None
 
 
 def _may_open_checking(v: ValidationContext) -> Optional[str]:
