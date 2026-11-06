@@ -179,3 +179,54 @@ def interest_report_readback(v: ValidationContext, args: Mapping[str, Any]) -> O
     """Nothing to read back: the bank's tool stores no report, so it cannot be seen afterwards. The reply says
     'submitted for review', never 'credited'."""
     return None
+
+
+# ---------------------------------------------------------------- rewards
+
+REWARDS_TOOL = "update_transaction_rewards_3847"
+
+
+def approved_dispute(db: Any, user_id: str, transaction_id: str) -> bool:
+    """A cash back dispute of this customer's on this purchase was reviewed and approved (document 004)."""
+    for row in db.cash_back_disputes.data.values():
+        if (
+            isinstance(row, Mapping)
+            and row.get("user_id") == user_id
+            and row.get("transaction_id") == transaction_id
+            and str(row.get("status") or "").upper() == "RESOLVED"
+            and str(row.get("resolution") or "").upper() == "APPROVED"
+        ):
+            return True
+    return False
+
+
+def rewards_update(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
+    from agent.rewards_review import points_text, review_transaction, stored_points
+
+    transaction_id = str(args.get("transaction_id"))
+    row = v.database.credit_card_transaction_history.data.get(transaction_id)
+    # Another customer's purchase reads exactly like one that does not exist.
+    if not isinstance(row, Mapping) or row.get("user_id") != v.user_id:
+        return "that purchase does not exist"
+    if str(row.get("status") or "").upper() != "COMPLETED":
+        return "only a completed purchase has its rewards corrected"
+    if not approved_dispute(v.database, v.user_id, transaction_id):
+        return "rewards are corrected only after a cash back dispute for this purchase has been reviewed and approved"
+    new = str(args.get("new_rewards_earned"))
+    if stored_points({"rewards_earned": new}) is None or new != new.strip():
+        return "the rewards must be written as a whole number of points, like '250 points'"
+    review = review_transaction(v.database, row, v.user_id)
+    if review.cannot_decide is not None:
+        return f"I cannot confirm the rewards on this purchase: {review.cannot_decide}"
+    if new != points_text(review.expected):
+        return f"this purchase should have earned {points_text(review.expected)}, not {new}"
+    if review.stored == review.expected:
+        return "the rewards on this purchase are already correct"
+    return None
+
+
+def rewards_readback(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
+    row = v.database.credit_card_transaction_history.data.get(str(args.get("transaction_id")))
+    if not isinstance(row, Mapping) or row.get("rewards_earned") != args.get("new_rewards_earned"):
+        return "the purchase's rewards were not changed"
+    return None

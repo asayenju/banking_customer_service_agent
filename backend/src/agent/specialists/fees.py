@@ -11,6 +11,7 @@ from agent.specialist import SpecialistConfig, Validator
 from agent.specialists import fees_rules as rules
 from agent.workflows.fee_checking import CheckingFeeCredit
 from agent.workflows.fee_interest import SavingsInterestCorrection
+from agent.workflows.fee_rewards import RewardsCorrection
 from knowledge.scopes import FEES
 from orchestrator.types import IntentKind as K
 
@@ -30,7 +31,11 @@ How to work:
 5. Savings interest paid at the wrong rate has a workflow: end with start_savings_interest_correction. Report
    only which savings accounts the customer named (none if they did not). The rate the account should earn,
    the amount owed and the report that follows are worked out for you; never use a figure the customer gives.
-6. A credit card's annual fee, late fee or interest charge is not handled here; say a person will review it."""
+6. Wrong rewards on a card purchase has a workflow: end with start_rewards_correction. Report only which
+   purchases the customer named (none if they did not). Rewards are corrected only after the customer's cash back
+   dispute for the purchase was approved; the right number of points is worked out for you, never taken from the
+   customer or the dispute record.
+7. A credit card's annual fee, late fee or interest charge is not handled here; say a person will review it."""
 
 READS = frozenset(
     {
@@ -46,11 +51,13 @@ VALIDATORS: dict[str, Validator] = {
     rules.CHECKING_CREDIT_TOOL: rules.checking_credit,
     rules.SAVINGS_CREDIT_TOOL: rules.savings_credit,
     rules.REPORT_TOOL: rules.interest_report,
+    rules.REWARDS_TOOL: rules.rewards_update,
 }
 READBACKS: dict[str, Validator] = {
     rules.CHECKING_CREDIT_TOOL: rules.checking_credit_readback,
     rules.SAVINGS_CREDIT_TOOL: rules.savings_credit_readback,
     rules.REPORT_TOOL: rules.interest_report_readback,
+    rules.REWARDS_TOOL: rules.rewards_readback,
 }
 
 FEES_SPECIALIST = SpecialistConfig(
@@ -61,5 +68,5 @@ FEES_SPECIALIST = SpecialistConfig(
     validators=VALIDATORS,
     readbacks=READBACKS,
     reads=READS,
-    workflows=(CheckingFeeCredit(), SavingsInterestCorrection()),
+    workflows=(CheckingFeeCredit(), SavingsInterestCorrection(), RewardsCorrection()),
 )
