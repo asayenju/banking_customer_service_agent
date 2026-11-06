@@ -104,3 +104,26 @@ def test_a_refund_in_the_last_14_days_is_found_and_an_old_one_is_not() -> None:
     }
     assert F.recent_credit(db, account, TODAY) == date(2025, 11, 10)
     assert F.recent_credit(db, account, date(2025, 12, 10)) is None
+
+
+def test_the_credit_type_follows_the_larger_part() -> None:
+    """Document 017: a missing rebate is a rebate_credit, a wrong fee a fee_refund, and a mix takes the larger.
+    Every gold credit of 072 to 074 is a fee_refund, including the Bluest and Purple accounts that also
+    lacked rebates."""
+    for task in ("task_072", "task_073", "task_074"):
+        db = BankingSession.from_task(TASKS[task]).database
+        for account in accounts_of(db, user_of(task)):
+            if account.is_checking:
+                review = F.review_atm_fees(db, account)
+                assert review.credit_type == "fee_refund", (task, account.name, review.fee_part, review.rebate_part)
+    db = BankingSession.from_task(TASKS["task_072"]).database
+    bluest = get(db, user_of("task_072"), "chk_lj82d4f1a9")
+    assert bluest is not None
+    review = F.review_atm_fees(db, bluest)
+    assert (review.fee_part, review.rebate_part, review.credit) == (12.0, 2.0, 14.0)
+    # With no foreign over-charge left, the missing rebates alone are a rebate credit.
+    for row in db.bank_account_transaction_history.data.values():
+        if row["account_id"] == bluest.account_id and "FOREIGN ATM FEE" in row["description"]:
+            row["amount"] = 0.0
+    only = F.review_atm_fees(db, bluest)
+    assert only.credit_type == "rebate_credit" and only.credit == 2.5
