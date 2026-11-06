@@ -33,6 +33,14 @@ class FeeReview:
     months: tuple[str, ...] = ()
     cannot_decide: Optional[str] = None  # why the review stops short (hand off), else None
     notes: tuple[str, ...] = field(default=())
+    # Where the credit comes from, signed and summed over the months: fees charged above the schedule, and
+    # rebate the class owed but did not post. The credit type is the larger part (document 017).
+    fee_part: float = 0.0
+    rebate_part: float = 0.0
+
+    @property
+    def credit_type(self) -> str:
+        return "rebate_credit" if self.rebate_part > self.fee_part else "fee_refund"
 
 
 def _undecided(reason: str) -> FeeReview:
@@ -53,7 +61,7 @@ def review_atm_fees(db: Any, account: BankAccount) -> FeeReview:
         if t.when is not None:
             by_month[(t.when.year, t.when.month)].append(t)
 
-    total_over = total_under = 0.0
+    total_over = total_under = fee_part = rebate_part = 0.0
     months: list[str] = []
     for (year, month), rows in sorted(by_month.items()):
         oon_seen = foreign_seen = 0
@@ -83,6 +91,8 @@ def review_atm_fees(db: Any, account: BankAccount) -> FeeReview:
         expected_net = expected_foreign + expected_oon - expected_rebate
         paid_net = charged - rebated
         gap = paid_net - expected_net
+        fee_part += charged - (expected_oon + expected_foreign)
+        rebate_part += expected_rebate - rebated
         if gap > 0:
             total_over += gap
         else:
@@ -96,6 +106,8 @@ def review_atm_fees(db: Any, account: BankAccount) -> FeeReview:
         over_charged=cents(total_over),
         under_charged=cents(total_under),
         months=tuple(months),
+        fee_part=cents(fee_part),
+        rebate_part=cents(rebate_part),
     )
 
 
