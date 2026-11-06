@@ -7,7 +7,7 @@ Slice 0 of `docs/prd-fees-interest-rewards-specialist.md` (Issue #70). Status: *
 - `apply_checking_account_credit_5829` writes `current_holdings` as `"$x.xx"`; `apply_savings_account_credit_6831` writes `"x.xx"`. Neither checks ownership, a cap, a cooldown or once-per-account. Both write a transaction row with a deterministic id (account, type, amount, date), so a repeat call rewrites the row but adds the balance again.
 - `update_transaction_rewards_3847` accepts any string for any transaction id.
 
-## 2. Savings interest correction (tasks 093 to 097): credit = round(balance x (expected APY - actual APY) / 100 / 12, 2)
+## 2. Savings interest correction (tasks 093 to 097): credit = expected month's interest minus the interest paid
 Balances are `current_holdings` in each task's `initial_state`; gap is expected minus actual APY from the gold report call.
 
 | Task | Account | Balance | Gap | Computed | Gold | Match |
@@ -17,12 +17,12 @@ Balances are `current_holdings` in each task's `initial_state`; gap is expected 
 | 095 | gold | 96,000 | 6.85 - 5.625 | 98.00 | 98.00 | yes |
 | 096 | bronze | 30,000 | 0.70 | 17.50 | 17.50 | yes |
 | 096 | gold plus | 60,000 | 0.30 | 15.00 | 15.00 | yes |
-| 097 | silver | 100,000 | 6.65 - 4.0 | 220.8333 | 220.84 | **no, +0.01** |
+| 097 | silver | 100,000 | 6.65 - 4.0 | 220.8333 by the gap, **220.84** by interest | 220.84 | yes, by the interest method |
 | 097 | platinum | 70,000 | 7.65 - 6.5 | 67.0833 | 67.08 | yes |
 | 097 | diamond | 120,000 | 8.2 - 7.5 | 70.00 | 70.00 | yes |
 | 097 | silver plus | 18,000 | 5.3 - 4.5 | 12.00 | 12.00 | yes |
 
-**Decision:** 097 silver credits 220.83 (correct rounding) and is a recorded departure in `evals/policy_departures.json`. Platinum shows gold rounds normally elsewhere, so 220.84 is a quirk in that gold value.
+**Correction (found while building Slice 3):** the credit is not balance x gap / 12 but the expected month's interest (balance x expected APY / 12) minus the interest actually paid. The 'gap' column above is a cross-check only. By the interest method all nine accounts match gold, 097 silver included (554.1667 - 333.33 = 220.8367 = 220.84), so **097 is not a departure** and no entry is added to `evals/policy_departures.json` for it. The actual APY is the interest paid x 12 / balance, to 3 decimals (097 silver: 3.99996 shown as 4.0). The earlier 'rounding departure' was an artefact of using the gap formula; the PRD's formula was the less faithful one.
 
 **Relationship bonus (revised).** The earlier hypothesis (it applies only with a matching rewards card) is wrong: task 093 holds no credit card and gold still includes 0.025. A reading that fits all three tasks: the Silver 0.025 relationship bonus is its own bonus and stacks with everything (Silver documents 003 and 006); Gold's 0.025 is the same figure as the Gold card bonus in `gold_account_014` ("Gold +0.025"), so it competes with other card bonuses and only the highest applies. In 094 and 095 the user holds a Gold card and an EcoCard, EcoCard's +0.6 wins, and 5.5 + 0.75 (Green checking with Gold savings) + 0.6 = 6.85. Document 045 confirms the Gold half: it lists "Gold Rewards Card: +0.025% APY bonus" among the card bonuses that do not stack, and says relationship bonuses are a separate kind that does stack. Still open (moved to Slice 1 table tests, because it needs the per-tier checking-boost numbers): derive 096 (Bronze 3.25, Gold Plus 6.85, user holds Diamond Elite and Crypto cards and three checking accounts) and 097 (four accounts, five cards) the same way.
 

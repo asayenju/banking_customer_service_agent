@@ -181,7 +181,7 @@ def test_the_readback_catches_a_credit_that_is_not_there() -> None:
 def test_the_specialist_is_wired_for_its_kind_and_tool() -> None:
     assert FEES_SPECIALIST.name == "fees"
     assert TOOL in FEES_SPECIALIST.validators and TOOL in FEES_SPECIALIST.readbacks
-    assert [w.name for w in FEES_SPECIALIST.workflows] == ["checking_fee_credit"]
+    assert [w.name for w in FEES_SPECIALIST.workflows] == ["checking_fee_credit", "savings_interest_correction"]
 
 
 def test_the_review_and_the_workflow_agree_on_every_account() -> None:
