@@ -10,7 +10,7 @@ Issue #43 asked for three things: an interest credit equal to balance x APY gap 
    - `apply_checking_account_credit_5829` and `apply_savings_account_credit_6831` check a positive amount, class and an open status. They do not check ownership, a cap, a cooldown or once-per-account. A repeat call with identical arguments rewrites the same transaction row but adds the balance again.
    - The two credit tools write the balance in different formats (`"$x.xx"` against `"x.xx"`). The savings tool accepts class `saving` and `savings`.
    - `update_transaction_rewards_3847` accepts any string for any transaction.
-   - `submit_interest_discrepancy_report_7294` stores nothing: `interest_discrepancy_reports` is not a table in tau2's database, `add_to_db` returns False and the tool ignores it, yet it prints "Submitted... PENDING_REVIEW". The state hash cannot show it ran.
+   - `submit_interest_discrepancy_report_7294` stores no report: `interest_discrepancy_reports` is not a table in tau2's database, `add_to_db` returns False and the tool ignores it, yet it prints "Submitted... PENDING_REVIEW". Only the tool's `CALLED` marker remains, so it cannot be verified beyond "it ran".
 3. **The documents carry the rules, and some are wrong or inconsistent.** One credit per checking account with a 14-day cooldown (doc 017), goodwill over $25 needs a supervisor (doc 043), credit before report (doc 044), non-stacking boost rules (docs 045, 046), floored whole points (docs 004, 007). Gold 013 says 5.5 + 0.025 = 6.0; Silver 002 has an unfilled `[[linked_checking_apy_bonus]]`; Light Green's daily limit is 300 in one document and 250 in another; rebate caps differ.
 4. **Customers say untrue things.** In 094 the customer believes the shortfall is $72 and the real figure is $140. In 097 the customer quotes $583, $554, $1,050 and $112 against real figures far lower. The amount has to come from the records.
 5. **The formula matches gold almost everywhere.** Balance x gap / 100 / 12 reproduces the gold credit for 093, 094, 095, 096 (both accounts) and 097 (platinum, diamond, silver plus). A balance x gap / 12 formula is one cent off on task 097 silver (220.83 against 220.84), but the expected month's interest minus the interest paid matches all nine gold credits (found while building Slice 3); the credit is computed that way. Rewards have one real quirk: task 026's e411 gives 1499 by the floor policy and gold has 1500.
@@ -55,7 +55,7 @@ Reads both savings-account layouts (`class`/`level`, `account_type`/`account_cla
 ### Validators and read-backs
 - **Checking credit**: own account, class checking, open, positive amount with two decimals at most, `credit_type` valid, amount equals the recomputed net correction, no credit of type `fee_refund` or `rebate_credit` in the past 14 days, one call per account in the plan, transaction id not already present (a repeat would add the balance twice). Read-back: balance rose by exactly the amount.
 - **Savings credit**: own account, class `saving` or `savings`, open, `interest_correction` amount equals the expected month's interest (balance x expected APY / 12) minus the interest paid, goodwill over $25 refused (hand-off), fee refund no larger than the fee found. Read-back: balance and transaction row.
-- **Discrepancy report**: only after a completed savings credit for the same account in the same plan, expected APY equals the recomputed value, own account and user. Read-back cannot verify; the reply says "submitted for review", never "credited".
+- **Discrepancy report**: only after a completed savings credit for the same account in the same plan, expected APY equals the recomputed value, own account and user. Read-back sees only the tool's `CALLED` marker; the reply says "submitted for review", never "credited".
 - **Rewards update**: own card transaction, value is `"N points"` with N a whole number equal to the floored recomputation (EcoCard: 5 points per dollar on green purchases, 1 otherwise; every other card 1 point = $0.01), differs from the stored value, a resolved cash-back dispute exists (Decision 2). `expected_rewards` in a dispute record is never trusted.
 
 ### Workflows
@@ -126,4 +126,13 @@ Sub-issues of #43, label `specialist-agents`.
 6. Whether 097 counts toward the tier-1 pass total as a departure or is excluded. **Pending.**
 
 ## What changed from this PRD while building it
-(filled in during implementation)
+Status: built and committed as Slices 0 to 6 (Issues #70 to #76); Slice 7 (#77) has its offline evidence and docs, and its optional live probe is still blocked on #38.
+
+1. **The credit is the expected month's interest minus the interest paid, not balance x gap / 12.** The PRD's formula is a cent off on 097 silver; the interest method matches all nine gold credits, so 097 is not a departure (only task 026 e411 is). Found building Slice 3.
+2. **The discrepancy report is not invisible.** It stores no report, but the tool's `CALLED` marker is in the state hash; the read-back checks that marker.
+3. **The relationship bonus was settled by inference** (Silver/Silver Plus with a linked checking account and no card bonus), because the documents give no criteria and tau2 has no separate policy. It is one table flag, `RELATIONSHIP_LEVELS`.
+4. **One credit type rule** (document 017) became `fee_part` / `rebate_part` in `fee_review`; every gold credit is a `fee_refund`.
+5. **Savings credits of any type other than `interest_correction` are never planned** (fee refund and goodwill need a person), so the $25 goodwill limit is enforced by absence, not by a threshold check.
+6. **The replay needed one change outside this specialist:** `tier1.workflow_turns` stopped at the first workflow of a kind whose gold facts did not match; with three workflows on one kind it now tries the next.
+7. **Green checking's foreign fee** is in document 012, not 001 or 010 (found by the value-by-value document tests).
+8. **Not built:** the card annual-fee/late-fee/interest-charge reversal (Decision 5: handed off), Gold Years and Green Fee-Free ATM schedules (no document values found, so a hand-off), and any live measurement.

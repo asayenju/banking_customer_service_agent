@@ -3,7 +3,7 @@
 Slice 0 of `docs/prd-fees-interest-rewards-specialist.md` (Issue #70). Status: **partial**. Sections marked TODO are not yet derived. Every statement names its document or database evidence; statements about the bank's tools become tests in `tests/agent/test_fees_policy.py`.
 
 ## 1. The bank's tools (read from `tau2-bench/src/tau2/domains/banking_knowledge/tools.py`)
-- `submit_interest_discrepancy_report_7294` stores nothing: `interest_discrepancy_reports` is not a table in the data model, `add_to_db` returns False, the tool ignores it and prints "Submitted... PENDING_REVIEW".
+- `submit_interest_discrepancy_report_7294` stores no report: `interest_discrepancy_reports` is not a table in the data model, `add_to_db` returns False, the tool ignores it and prints "Submitted... PENDING_REVIEW". The one trace is the tool's own `CALLED` marker in `agent_discoverable_tools` (that is what changes the state hash), so a read-back can confirm the report was submitted, never what it said. It also checks neither the figures nor that the user owns the account. (An earlier version of this note said the hash is unaffected; running it showed the marker.)
 - `apply_checking_account_credit_5829` writes `current_holdings` as `"$x.xx"`; `apply_savings_account_credit_6831` writes `"x.xx"`. Neither checks ownership, a cap, a cooldown or once-per-account. Both write a transaction row with a deterministic id (account, type, amount, date), so a repeat call rewrites the row but adds the balance again.
 - `update_transaction_rewards_3847` accepts any string for any transaction id.
 

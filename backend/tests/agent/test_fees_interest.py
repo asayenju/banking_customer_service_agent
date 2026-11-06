@@ -179,3 +179,13 @@ def test_a_balance_that_moved_after_the_interest_is_left_out_not_guessed() -> No
     }
     result = decide("task_094", [], shared)
     assert isinstance(result, HandOff) and "balance changed" in result.reason
+
+
+def test_the_report_readback_sees_only_that_the_tool_ran() -> None:
+    shared = world("task_094")
+    plan = decide("task_094", [], shared)
+    assert isinstance(plan, Plan)
+    credit, report = plan.steps
+    assert rules.interest_report_readback(v(shared, "task_094"), report.args) == "the report was not submitted"
+    assert shared.call(CREDIT, credit.args).ok and shared.call(REPORT, report.args).ok
+    assert rules.interest_report_readback(v(shared, "task_094"), report.args) is None
