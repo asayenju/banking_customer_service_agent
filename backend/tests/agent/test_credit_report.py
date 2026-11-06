@@ -42,7 +42,7 @@ def test_every_credit_task_passes_or_departs_for_a_documented_reason_and_nothing
 
 def test_the_departures_file_names_each_task_with_a_reason_and_the_tables_that_may_differ():
     departures = load_departures()
-    assert set(departures) == {"task_048"}
+    assert set(departures) == {"task_048", "task_026"}, "026 is the fees specialist's (docs/fees-policy-decisions.md, section 4)"
     assert departures["task_048"]["tables"] == ["credit_card_transaction_history"]
     assert "entry tier" in departures["task_048"]["reason"]
     assert DEPARTURES_PATH.exists()

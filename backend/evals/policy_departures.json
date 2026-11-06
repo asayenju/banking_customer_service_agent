@@ -1,6 +1,14 @@
 {
   "task_048": {
     "reason": "The reference gives the Crypto-Cash Back card the mid-tier $20 retention credit. The documents put that card in the entry tier (provisional-credit document), whose credit is $5, as task 049 gives. Documented policy wins (docs/credit-policy-decisions.md, section 2).",
-    "tables": ["credit_card_transaction_history"]
+    "tables": [
+      "credit_card_transaction_history"
+    ]
+  },
+  "task_026": {
+    "reason": "The reference gives the Business Silver card's $149.99 software purchase 1500 points. The documents round every reward down (credit_cards_(general)_007), so 149.99 x 10% = 1499.9 earns 1499 points. Documented policy wins (docs/fees-policy-decisions.md, section 4).",
+    "tables": [
+      "credit_card_transaction_history"
+    ]
   }
 }
