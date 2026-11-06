@@ -148,7 +148,8 @@ def savings_credit_readback(v: ValidationContext, args: Mapping[str, Any]) -> Op
 
 def interest_report(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
     """A report is filed only after the credit it follows, and only with the figures the records give. The bank's
-    tool stores nothing (docs/fees-policy-decisions.md, section 1), so this is the only check there is."""
+    tool stores no report and checks neither the figures nor the owner (docs/fees-policy-decisions.md, section 1),
+    so this is the only check there is."""
     from agent.interest_review import CORRECTION_KIND, review_interest
     from agent.fee_records import transactions_of
 
@@ -176,9 +177,13 @@ def interest_report(v: ValidationContext, args: Mapping[str, Any]) -> Optional[s
 
 
 def interest_report_readback(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
-    """Nothing to read back: the bank's tool stores no report, so it cannot be seen afterwards. The reply says
+    """The bank's tool stores no report row. All that remains is its marker in ``agent_discoverable_tools``
+    (status CALLED), which shows the report was submitted but not what it said. The reply therefore says
     'submitted for review', never 'credited'."""
-    return None
+    table = getattr(v.database, "agent_discoverable_tools", None)
+    rows = getattr(table, "data", {}) or {}
+    called = any(isinstance(r, Mapping) and r.get("tool_name") == REPORT_TOOL and str(r.get("status")).upper() == "CALLED" for r in rows.values())
+    return None if called else "the report was not submitted"
 
 
 # ---------------------------------------------------------------- rewards
