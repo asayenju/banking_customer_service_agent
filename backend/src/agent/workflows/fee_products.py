@@ -191,3 +191,52 @@ RELATIONSHIP_LEVELS = frozenset({"Silver Account", "Silver Plus Account"})
 # Hand-off thresholds the tools do not enforce (documents 017 and 043).
 GOODWILL_SUPERVISOR_LIMIT = 25.0
 CHECKING_CREDIT_COOLDOWN_DAYS = 14
+
+
+# ---------------------------------------------------------------- credit card rewards
+# Points earned = floor(amount x rate x multiplier), the rate in percent (1 point = $0.01, so 4% is 4 points
+# a dollar; the EcoCard's "5 points a dollar" is 5 here too). Documents credit_cards_(general)_004, _006 and
+# _007 (floor, whole points), the card pages named per rule, and the merchants that do not earn the higher
+# rate. A card not in this table is a hand-off.
+@dataclass(frozen=True)
+class RewardRule:
+    rates: dict[str, float]  # transaction category (lowercase) -> percent
+    default: float
+    excluded_merchants: frozenset[str] = frozenset()  # lowercase; these earn the default rate
+    promo_months: int = 0  # the card doubles its rewards for this many months after opening ...
+    promo_window: Optional[tuple[str, str]] = None  # ... if opened inside this window (ISO dates)
+    docs: tuple[str, ...] = ()
+
+
+REWARDS: dict[str, RewardRule] = {
+    "Business Silver Rewards Card": RewardRule(
+        rates={"travel": 10.0, "software": 10.0},
+        default=1.0,
+        excluded_merchants=frozenset(
+            {
+                "concur", "sap concur", "expensify", "navan", "apple", "microsoft", "dell", "xbox game pass",
+                "playstation plus", "nintendo switch online", "coursera", "udemy", "linkedin learning", "skillshare",
+                "pluralsight",
+            }
+        ),
+        promo_months=6,
+        promo_window=("2024-11-14", "2025-11-14"),
+        docs=(
+            "business_credit_cards_business_silver_rewards_card_002",
+            "business_credit_cards_business_silver_rewards_card_005",
+            "business_credit_cards_business_silver_rewards_card_012",
+        ),
+    ),
+    "Silver Rewards Card": RewardRule(
+        rates={"travel": 4.0, "software": 4.0}, default=1.0, docs=("credit_cards_silver_rewards_card_002",)
+    ),
+    "Business Platinum Rewards Card": RewardRule(
+        rates={"travel": 4.0, "software": 4.0, "media": 4.0}, default=1.5,
+        docs=("business_credit_cards_business_platinum_rewards_card_002",),
+    ),
+    "Crypto-Cash Back": RewardRule(rates={}, default=2.0, docs=("credit_cards_crypto-cash_back_001",)),
+    "EcoCard": RewardRule(
+        rates={"green": 5.0}, default=1.0, excluded_merchants=frozenset({"target", "walmart", "amazon", "thredup"}),
+        docs=("credit_cards_ecocard_002", "credit_cards_ecocard_004"),
+    ),
+}
