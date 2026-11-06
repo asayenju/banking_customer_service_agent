@@ -13,7 +13,7 @@ Issue #43 asked for three things: an interest credit equal to balance x APY gap 
    - `submit_interest_discrepancy_report_7294` stores nothing: `interest_discrepancy_reports` is not a table in tau2's database, `add_to_db` returns False and the tool ignores it, yet it prints "Submitted... PENDING_REVIEW". The state hash cannot show it ran.
 3. **The documents carry the rules, and some are wrong or inconsistent.** One credit per checking account with a 14-day cooldown (doc 017), goodwill over $25 needs a supervisor (doc 043), credit before report (doc 044), non-stacking boost rules (docs 045, 046), floored whole points (docs 004, 007). Gold 013 says 5.5 + 0.025 = 6.0; Silver 002 has an unfilled `[[linked_checking_apy_bonus]]`; Light Green's daily limit is 300 in one document and 250 in another; rebate caps differ.
 4. **Customers say untrue things.** In 094 the customer believes the shortfall is $72 and the real figure is $140. In 097 the customer quotes $583, $554, $1,050 and $112 against real figures far lower. The amount has to come from the records.
-5. **The formula matches gold almost everywhere.** Balance x gap / 100 / 12 reproduces the gold credit for 093, 094, 095, 096 (both accounts) and 097 (platinum, diamond, silver plus). Task 097's silver account gives 220.83 and gold has 220.84, while platinum's 67.0833 rounds down to 67.08. Gold is one cent away from correct rounding. Rewards have the same quirk: task 026's e411 gives 1499 by the floor policy and gold has 1500.
+5. **The formula matches gold almost everywhere.** Balance x gap / 100 / 12 reproduces the gold credit for 093, 094, 095, 096 (both accounts) and 097 (platinum, diamond, silver plus). A balance x gap / 12 formula is one cent off on task 097 silver (220.83 against 220.84), but the expected month's interest minus the interest paid matches all nine gold credits (found while building Slice 3); the credit is computed that way. Rewards have one real quirk: task 026's e411 gives 1499 by the floor policy and gold has 1500.
 6. **The checking tasks have no formula.** Tasks 072 to 074 need a fee schedule per checking class applied to each transaction (free withdrawals, tiers, caps, minimums). This is the largest unknown and is settled in Slice 0.
 7. **Some wiring is missing or inconsistent.**
    - `tier1._preference` has no entry for the kind, so a replay would fall through to a direct call.
@@ -54,7 +54,7 @@ Reads both savings-account layouts (`class`/`level`, `account_type`/`account_cla
 
 ### Validators and read-backs
 - **Checking credit**: own account, class checking, open, positive amount with two decimals at most, `credit_type` valid, amount equals the recomputed net correction, no credit of type `fee_refund` or `rebate_credit` in the past 14 days, one call per account in the plan, transaction id not already present (a repeat would add the balance twice). Read-back: balance rose by exactly the amount.
-- **Savings credit**: own account, class `saving` or `savings`, open, `interest_correction` amount equals `round(balance x gap / 100 / 12, 2)`, goodwill over $25 refused (hand-off), fee refund no larger than the fee found. Read-back: balance and transaction row.
+- **Savings credit**: own account, class `saving` or `savings`, open, `interest_correction` amount equals the expected month's interest (balance x expected APY / 12) minus the interest paid, goodwill over $25 refused (hand-off), fee refund no larger than the fee found. Read-back: balance and transaction row.
 - **Discrepancy report**: only after a completed savings credit for the same account in the same plan, expected APY equals the recomputed value, own account and user. Read-back cannot verify; the reply says "submitted for review", never "credited".
 - **Rewards update**: own card transaction, value is `"N points"` with N a whole number equal to the floored recomputation (EcoCard: 5 points per dollar on green purchases, 1 otherwise; every other card 1 point = $0.01), differs from the stored value, a resolved cash-back dispute exists (Decision 2). `expected_rewards` in a dispute record is never trusted.
 
@@ -76,7 +76,7 @@ Reads both savings-account layouts (`class`/`level`, `account_type`/`account_cla
 - **Interest uses the current balance**, as gold does. Real interest accrues daily; this ignores balance history. State it in the decisions document.
 - **Hand-curated tables can drift** from the documents. Each value has a test that checks the document text.
 - **A wrong table is wrong money.** Credits are irreversible; the preview shows the working (balance, gap, result) and the customer's yes binds to the exact amount.
-- **Gold quirks.** 097 silver is one cent above correct rounding. The code credits the correct amount and the task is a recorded departure.
+- **Gold quirks.** Task 026 e411 is one point above the documented floor. The code writes the documented value and the task is a recorded departure.
 - Tier-1 proves plumbing, not model quality.
 
 ## Edge cases
@@ -118,7 +118,7 @@ Sub-issues of #43, label `specialist-agents`.
 - `agent.fees_report` committed output, CLAUDE.md section, "what changed while building" below, optional capped live probe.
 
 ## Decisions
-1. Task 097 silver (220.83 against gold 220.84) and task 026 e411 (1499 against gold 1500): follow policy and record each as a departure in `evals/policy_departures.json`. Tier-1 pass total therefore 8 of 10 strict plus 2 departures.
+1. Task 026 e411 (1499 by the documented floor, gold 1500): follow policy and record a departure in `evals/policy_departures.json`. Task 097 is not a departure (the interest method matches). Tier-1 total: 9 of 10 strict plus 1 departure.
 2. Rewards update only when a resolved cash-back dispute exists. **Pending.** The alternative is to fix any wrong row the agent finds. The user-side dispute tool is out of scope, so this needs a fixture decision.
 3. Hand-curated policy tables in code, not parsed from documents at run time and not supplied by the model.
 4. Checking credits enforce one credit per account per turn and a 14-day cooldown from transaction history. A discrepancy report is filed only after a completed credit.
