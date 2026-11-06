@@ -178,6 +178,7 @@ def _preference(config: SpecialistConfig) -> list[IntentKind]:
         IntentKind.OPEN_ACCOUNT,
         IntentKind.CLOSE_ACCOUNT,
         IntentKind.TRANSFER_FUNDS,
+        IntentKind.FEE_OR_INTEREST_ADJUSTMENT,
     ]
     return [k for k in order if k in config.kinds]
 
@@ -482,7 +483,7 @@ def workflow_turns(
             continue
         facts = facts_from_gold(workflow.name, writes, database)
         if facts is None:
-            return None
+            continue  # another workflow of the same kind may be the one this segment is about (fees has three)
         turns = [AssistantTurn(tool_calls=(ids.make(r.name, r.args),), usage=Usage(input_tokens=1)) for r in reads]
         turns.append(
             AssistantTurn(tool_calls=(ids.make(terminal_name(workflow), facts),), usage=Usage(input_tokens=1))

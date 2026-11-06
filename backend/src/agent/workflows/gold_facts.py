@@ -135,6 +135,15 @@ def facts_from_gold(workflow: str, writes: Sequence[Any], database: Any) -> Opti
             "credit_card_account_id": first["credit_card_account_id"],
             "requested_increase_amount": int(first["requested_increase_amount"]),
         }
+    if workflow == "checking_fee_credit":
+        credits = [w for w in writes if w.name == "apply_checking_account_credit_5829"]
+        return {"accounts": [str(c.args["account_id"]) for c in credits]} if credits else None
+    if workflow == "savings_interest_correction":
+        credits = [w for w in writes if w.name == "apply_savings_account_credit_6831"]
+        return {"accounts": [str(c.args["account_id"]) for c in credits]} if credits else None
+    if workflow == "rewards_correction":
+        updates = [w for w in writes if w.name == "update_transaction_rewards_3847"]
+        return {"purchases": [str(u.args["transaction_id"]) for u in updates]} if updates else None
     if workflow == "credit_closure":
         mine = [w for w in writes if w.args.get("credit_card_account_id")]
         if not mine:

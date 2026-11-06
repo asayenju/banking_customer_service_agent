@@ -54,6 +54,15 @@ def describe(db: Any, entry: AuditEntry) -> str:
         return f"The limit of {card} was raised to {_dollars(a.get('new_credit_limit'))}."
     if tool == "deny_credit_limit_increase_5848":
         return f"A limit increase for {card} was denied ({_words(a.get('denial_reason'))})."
+    if tool == "apply_checking_account_credit_5829":
+        return f"A {_dollars(a.get('amount'))} ATM fee credit ({_words(a.get('credit_type'))}) was applied to a checking account."
+    if tool == "apply_savings_account_credit_6831":
+        return f"A {_dollars(a.get('amount'))} interest correction was applied to a savings account."
+    if tool == "submit_interest_discrepancy_report_7294":
+        return "An interest discrepancy report was submitted for review (a report only, not a credit)."
+    if tool == "update_transaction_rewards_3847":
+        txn = db.credit_card_transaction_history.data.get(str(a.get("transaction_id")), {})
+        return f"The rewards on a {txn.get('merchant_name', 'card')} purchase were corrected to {a.get('new_rewards_earned')}."
     return "Another change was made to the customer's accounts."
 
 
