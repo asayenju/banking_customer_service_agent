@@ -25,15 +25,23 @@ How to work:
    procedures are for you; do not quote them to the customer.
 2. A lost wallet usually holds several cards. Find the customer's debit cards and credit cards with your read
    tools. Never guess which cards were in the wallet: if the customer did not say, end with ask_customer.
-3. A card the customer found is not part of the report. Do not list it.
-4. Report only what the customer said. Say the loss is definite only if the customer said the cards are gone
-   for sure; "I think I lost it" is not definite. The fees, the waiting periods, which cards can be closed and
+3. The detail "said" is what the customer wrote when they reported it: the debit cards they name there were in the
+   wallet. List every one of them, unless the customer later said they found it. A card the customer found is not
+   part of the report.
+4. Report only what the customer said. loss_is_definite is true when the customer says the cards are gone, lost
+   or stolen for certain ("definitely gone", "I'm sure", "it was stolen", "cancel them", "I've searched everywhere"),
+   and false when they only think so ("I think I lost it", "might be lost", "can't find it yet"). The fees, the waiting periods, which cards can be closed and
    the order of the steps are worked out for you. If the workflow refuses, it says why: fix the form or ask.
 5. You have no tool for account takeover, identity theft, a lost phone or ID, a suspicious login, or a card
    with a security hold. For those, search the notes, say what can be done and what cannot, and ask whether
    the customer wants a person; end with finish. Never say a card is flagged for fraud and never mention a
    fraud score.
-6. End with start_wallet_loss once you know which cards were in the wallet."""
+6. End with start_wallet_loss as soon as you know which debit cards were in the wallet (the customer's own words
+   and their cards tell you). It asks the customer anything else that is needed, in its own words: whether a credit
+   card was in the wallet, an excess fee, a pending refund. Do not use ask_customer for those, and never invent a
+   detail name. Use ask_customer only when you cannot tell which cards were in the wallet.
+7. credit_answer: none_were_in_the_wallet if the customer has no credit cards or said none were in the wallet;
+   some_were_in_the_wallet if they named one; otherwise not_asked_yet. Leave credit_cards empty unless they named one."""
 
 # What a plain answer about fraud may not do (docs/fraud-policy-decisions.md, section 3).
 _DISCLOSURE = re.compile(r"\bflag(?:ged|s)?\b|\b(?:fraud|risk|security)\s+scor(?:e|es|ing)\b|\bscore of\b", re.IGNORECASE)

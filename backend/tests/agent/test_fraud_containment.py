@@ -152,3 +152,79 @@ def test_only_an_active_card_is_frozen_and_the_freeze_intents_carry_ids_not_word
     intents = WalletContainment(db).freezes(report({"card_ids": "Light Blue, Green and Light Green"}), USER)
     assert [(i.kind, i.slots) for i in intents] == [(K.FREEZE_CARD, {"card_id": LG})]
     assert WalletContainment(db).freezes(Intent(id="x", kind=K.FREEZE_CARD, summary="s", slots={"card_id": LG}), USER) == ()
+
+
+def test_the_customers_own_words_name_the_cards_even_when_the_decomposer_filled_in_nothing():
+    """The exact message of the live run, where the model gave one card (or none) in the details."""
+    from agent.containment import named_in_text
+
+    db = BankingSession.from_task(TASK).database
+    said = "I lost my wallet with my Light Blue, Green and Light Green debit cards in it. It's definitely gone."
+    assert [c["card_id"] for c in named_in_text(db, USER, said)] == [LG, LB, GREEN] or {c["card_id"] for c in named_in_text(db, USER, said)} == {LB, GREEN, LG}
+    assert [c["card_id"] for c in named_in_text(db, USER, "my Green card")] == [GREEN], "Green is not read out of Light Green"
+    assert [c["card_id"] for c in named_in_text(db, USER, "the one ending 8624")] == [LG]
+    assert named_in_text(db, USER, "I lost my wallet") == [] and named_in_text(db, "someone_else", said) == []
+
+
+def test_containment_freezes_the_cards_the_message_names_when_the_details_are_empty():
+    orch, shared = world([form_turn(wallet_form([LB, GREEN, LG]))], [report({})])
+    asyncio.run(orch.handle_turn("m1", "I lost my wallet with my Light Blue, Green and Light Green cards"))
+    assert {status(shared, c) for c in (LB, GREEN, LG)} == {"FROZEN"}
+
+
+def test_a_yes_to_the_are_you_sure_question_is_the_answer_and_the_plan_follows():
+    not_sure = form_turn(wallet_form([LB, GREEN], loss_is_definite=False))
+    sure = form_turn(wallet_form([LB, GREEN]))
+    orch, shared = world([not_sure, sure], [report({"card_ids": "Light Blue and Green"})], later=[CONFIRM, CONFIRM])
+    first = asyncio.run(orch.handle_turn("m1", "I think my wallet is gone"))
+    assert "Are you sure the cards are gone?" in first.reply.text and (status(shared, LB), status(shared, GREEN)) == ("FROZEN", "FROZEN")
+    second = asyncio.run(orch.handle_turn("m2", "yes, I'm sure"))
+    assert "Here is exactly what I will do" in second.reply.text, second.reply.text
+    asyncio.run(orch.handle_turn("m3", "yes"))
+    assert (status(shared, LB), status(shared, GREEN)) == ("CLOSED", "CLOSED")
+
+
+class ShortAnswerScores:
+    """First the request is clear; then a bare "yes" is scored on its own and looks unclear (what a real scorer does)."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def score(self, message, decomposition):
+        self.calls += 1
+        if self.calls == 1:
+            return [IntentScore.flat(i.id, 0.99) for i in decomposition.intents]
+        return [IntentScore(intent_id=i.id, kind_confidence=0.6, slots_confidence=0.99, scope_confidence=0.99) for i in decomposition.intents]
+
+
+def test_a_short_answer_that_relists_the_open_request_keeps_the_kind_confidence_it_earned():
+    not_sure = form_turn(wallet_form([LB, GREEN], loss_is_definite=False))
+    sure = form_turn(wallet_form([LB, GREEN]))
+    relisted = Interpretation(decomposition=Decomposition(intents=(report({"card_ids": "Light Blue and Green"}),)), confirmed=("w",))
+    orch, shared = world([not_sure, sure], [report({"card_ids": "Light Blue and Green"})], later=[relisted])
+    orch._scorer = ShortAnswerScores()
+    asyncio.run(orch.handle_turn("m1", "I think my wallet is gone"))
+    second = asyncio.run(orch.handle_turn("m2", "yes, I am sure"))
+    assert "Here is exactly what I will do" in second.reply.text, second.reply.text
+
+
+def test_a_different_kind_does_not_inherit_an_earlier_score():
+    orch, _ = world([], [])
+    from orchestrator.types import Intent as I
+
+    orch._active["x"] = I(id="x", kind=K.CLOSE_CARD, summary="s")
+    orch._scores["x"] = IntentScore.flat("x", 0.99)
+    orch._scored_kind["x"] = K.REPORT_FRAUD_OR_LOSS  # it was a different kind when it earned that score
+    low = IntentScore(intent_id="x", kind_confidence=0.5, slots_confidence=0.9, scope_confidence=0.9)
+    assert orch._continued(low).kind_confidence == 0.5
+
+
+def test_a_yes_that_also_relists_the_request_is_still_the_answer_to_the_question():
+    """The live model re-lists the open request on "yes", which touches it and clears the pending question first."""
+    not_sure = form_turn(wallet_form([LB, GREEN], loss_is_definite=False))
+    sure_but_unsaid = form_turn(wallet_form([LB, GREEN], loss_is_definite=False))  # the model still reports not definite
+    relisted = Interpretation(decomposition=Decomposition(intents=(report({"card_ids": "Light Blue and Green"}),)), confirmed=("w",))
+    orch, shared = world([not_sure, sure_but_unsaid], [report({"card_ids": "Light Blue and Green"})], later=[relisted])
+    asyncio.run(orch.handle_turn("m1", "I think my wallet is gone"))
+    second = asyncio.run(orch.handle_turn("m2", "yes, I am sure"))
+    assert "Here is exactly what I will do" in second.reply.text, second.reply.text

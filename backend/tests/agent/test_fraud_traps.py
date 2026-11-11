@@ -97,7 +97,8 @@ def test_a_credit_account_that_is_not_the_customers_cannot_be_replaced():
 def test_a_possible_loss_closes_nothing_even_if_the_model_lists_cards_and_a_close_plan_is_refused():
     spec, shared = world([call("start_wallet_loss", **form([LB, GREEN], loss_is_definite=False))])
     outcome = planned(spec, shared)
-    assert outcome.status is OutcomeStatus.DONE and "Nothing is closed" in outcome.text and shared.audit_log == ()
+    assert outcome.status is OutcomeStatus.NEEDS_INFO and shared.audit_log == ()
+    assert [q.slot for q in outcome.questions] == ["loss_is_definite"] and "Nothing is closed" in outcome.questions[0].text
     close = {"tool": "close_debit_card_4721", "arguments_json": json.dumps({"card_id": LB, "reason": "lost"})}
     spec, shared = world([call("propose_plan", steps=[close])])
     assert planned(spec, shared).status is OutcomeStatus.FAILED and cards(shared)[LB] == "ACTIVE"

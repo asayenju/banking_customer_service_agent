@@ -174,6 +174,8 @@ class Orchestrator:
         # Freezes made before a lost-wallet plan is worked out: (the freeze intent, what happened), this turn only.
         self._containment = containment
         self._contained: list[tuple[Intent, RouteOutcome]] = []
+        # What the customer wrote while a lost-wallet report was open: containment reads the cards named in it.
+        self._report_text: dict[str, str] = {}
         # Requests for a person made while card protection was open: how many, and the last one, still owed.
         self._human_asks = 0
         self._deferred_human: Optional[Intent] = None
@@ -190,6 +192,7 @@ class Orchestrator:
         self._pending_route_questions: dict[str, tuple[Question, ...]] = {}
         self._prints: dict[str, str] = {}
         self._scores: dict[str, IntentScore] = {}
+        self._scored_kind: dict[str, IntentKind] = {}
         self._pending_confirm: dict[str, str] = {}
         self._confirmed: dict[str, str] = {}
         self._auth = AuthState()
@@ -266,6 +269,8 @@ class Orchestrator:
             self._scores,
             self._pending_confirm,
             self._confirmed,
+            self._report_text,
+            self._scored_kind,
         ):
             table.pop(intent_id, None)
 
@@ -362,10 +367,17 @@ class Orchestrator:
                     )
                 )
 
+        asked_before = dict(self._pending_route_questions)  # what a route was waiting on, before this message
         touched: set[str] = set()
         for intent in decomposition.intents:
             if intent.id in self._done:
                 continue
+            if intent.kind is IntentKind.REPORT_FRAUD_OR_LOSS:
+                # The customer's words when they reported it, kept once as a detail of the intent: the cards they
+                # name there are what containment freezes and what the specialist is told was in the wallet. It
+                # never changes afterwards, so a plan's approval stays bound to the same details.
+                said = self._report_text.setdefault(intent.id, message[:2000])
+                intent = intent.model_copy(update={"slots": {**intent.slots, "said": said}})
             current = fingerprint(intent)
             earlier = self._prints.get(intent.id)
             if earlier is not None and earlier != current:
@@ -395,6 +407,18 @@ class Orchestrator:
                 touched.add(intent_id)
                 events.append(
                     TraceEvent(kind=TraceKind.DECIDED, intent_id=intent_id, detail="confirmed")
+                )
+            elif intent_id in self._active and len(asked_before.get(intent_id, ())) == 1:
+                # A yes to the one question a route asked ("are you sure?") is its answer: the asked detail is "yes".
+                (asked,) = asked_before[intent_id]
+                self._pending_route_questions.pop(intent_id, None)
+                answered = self._active[intent_id]
+                self._active[intent_id] = answered.model_copy(update={"slots": {**answered.slots, asked.slot: "yes"}})
+                self._prints[intent_id] = fingerprint(self._active[intent_id])
+                # Not "touched": the customer only answered, so the request keeps the score it earned when it was
+                # stated. Scoring a bare "yes" on its own would call a clear request unclear.
+                events.append(
+                    TraceEvent(kind=TraceKind.DECIDED, intent_id=intent_id, detail="answered yes", reason=asked.slot)
                 )
 
         if interpretation.claims:
@@ -491,6 +515,31 @@ class Orchestrator:
             # Settled while previewing (nothing needed changing, or the plan was refused)
             # first, then what ran.
             outcomes=contained + previewed + executed.outcomes,
+        )
+
+    def _continued(self, score: IntentScore) -> IntentScore:
+        """A request continued with the same kind keeps the kind and scope confidence it earned when it was
+        stated. A short reply ("yes, I am sure") says nothing about what the request is, so scoring it alone would
+        call a clear request unclear. Only the details are scored again, and nothing is ever raised above what an
+        earlier score gave."""
+        intent = self._active.get(score.intent_id)
+        earlier = self._scores.get(score.intent_id)
+        kept = self._scored_kind.get(score.intent_id)
+        if intent is not None:
+            self._scored_kind[score.intent_id] = intent.kind
+        if (
+            intent is None
+            or earlier is None
+            or kept is not intent.kind
+            or earlier.error is not None
+            or score.error is not None
+        ):
+            return score
+        return score.model_copy(
+            update={
+                "kind_confidence": max(score.kind_confidence, earlier.kind_confidence),
+                "scope_confidence": max(score.scope_confidence, earlier.scope_confidence),
+            }
         )
 
     def _protection_open(self) -> bool:
@@ -623,7 +672,7 @@ class Orchestrator:
             intent = self._active[intent_id]
             if intent.kind is not IntentKind.REPORT_FRAUD_OR_LOSS:
                 continue
-            freezes = self._containment.freezes(intent, user_id)
+            freezes = self._containment.freezes(intent, user_id, self._report_text.get(intent_id, ""))
             if not freezes:
                 continue
             executed = await self._execute(
@@ -720,6 +769,7 @@ class Orchestrator:
             for score in await score_intents(
                 self._scorer, message, _view(to_score), timeout=self._scorer_timeout
             ):
+                score = self._continued(score)
                 self._scores[score.intent_id] = score
                 events.append(
                     TraceEvent(

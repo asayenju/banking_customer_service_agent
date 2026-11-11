@@ -15,6 +15,7 @@ from orchestrator.types import Intent
 
 
 class Containment(Protocol):
-    def freezes(self, intent: Intent, user_id: str) -> tuple[Intent, ...]:
-        """One FREEZE_CARD intent per card to freeze now (the verified customer's own, named, ACTIVE)."""
+    def freezes(self, intent: Intent, user_id: str, text: str = "") -> tuple[Intent, ...]:
+        """One FREEZE_CARD intent per card to freeze now (the verified customer's own, named, ACTIVE). ``text`` is what
+        the customer wrote about the report, for the names a decomposer may not have filled in."""
         ...

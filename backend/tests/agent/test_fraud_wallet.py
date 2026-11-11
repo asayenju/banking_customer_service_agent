@@ -88,9 +88,10 @@ def test_the_dispatcher_hands_the_kind_to_the_composer_and_a_missing_one_fails_p
 def test_nothing_is_closed_until_the_loss_is_definite_and_the_credit_card_is_still_asked_about():
     asked = decide("task_077", "lj82d4f1a9", loss_is_definite=False, credit_answer="not_asked_yet",
                    debit_cards=[card("dbc_lj82d4f1a9_bluest")])
-    assert isinstance(asked, NeedInfo) and [a.slot for a in asked.questions] == ["credit_cards_in_the_wallet"]
+    assert isinstance(asked, NeedInfo)
+    assert [a.slot for a in asked.questions] == ["credit_cards_in_the_wallet", "loss_is_definite"]
     waiting = decide("task_077", "lj82d4f1a9", loss_is_definite=False, debit_cards=[card("dbc_lj82d4f1a9_bluest")])
-    assert isinstance(waiting, Reply) and "Nothing is closed" in waiting.text
+    assert isinstance(waiting, NeedInfo) and "Nothing is closed" in waiting.questions[-1].text
 
 
 def test_a_wallet_with_no_named_card_asks_which_and_lists_the_customers_own_cards():
@@ -215,3 +216,11 @@ def test_the_five_wallet_tasks_replay_as_strict_passes_with_no_write_outside_a_p
     report = run_fraud_report(INDEX)
     assert [r.status.value for r in report.rows] == ["PASS"] * 5, [(r.task_id, r.note) for r in report.rows]
     assert all(r.strict for r in report.rows) and report.bypasses == 0 and report.clean
+
+
+def test_the_customers_yes_to_are_you_sure_counts_even_if_the_model_reports_not_definite():
+    ctx = WorkflowContext(db_of("task_078"), "mc78a5b9d2", TODAY, {"loss_is_definite": "yes"})
+    plan = WalletLoss().decide(ctx, facts(loss_is_definite=False, debit_cards=[card("dbc_mc78a5b9d2_green")]))
+    assert isinstance(plan, Plan) and ("close_debit_card_4721", "dbc_mc78a5b9d2_green") in tools(plan)
+    unsure = WalletLoss().decide(WorkflowContext(db_of("task_078"), "mc78a5b9d2", TODAY, {"loss_is_definite": "maybe"}), facts(loss_is_definite=False, debit_cards=[card("dbc_mc78a5b9d2_green")]))
+    assert isinstance(unsure, NeedInfo), "only a yes counts"
