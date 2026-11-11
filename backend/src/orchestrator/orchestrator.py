@@ -39,6 +39,7 @@ from orchestrator.auth import (
     reject_unknown,
     verify,
 )
+from orchestrator.containment import Containment
 from orchestrator.context import AgentSession, Mode, RouteContext, SessionRequest
 from orchestrator.decision import CONFIRM_SLOT, Action, IntentDecision, decide, fingerprint
 from orchestrator.decomposer import Decomposer, Interpretation
@@ -140,6 +141,7 @@ class Orchestrator:
         session_for: Optional[Callable[[SessionRequest], AgentSession]] = None,
         capture_secrets: Optional[Callable[..., str]] = None,
         scorer_timeout: float = SCORER_TIMEOUT_SECONDS,
+        containment: Optional[Containment] = None,
     ) -> None:
         self._decomposer = decomposer
         self._scorer = scorer
@@ -169,6 +171,9 @@ class Orchestrator:
         self._approved: dict[str, PlanPreview] = {}
         self._mode: Mode = "execute"
         self._scorer_timeout = scorer_timeout
+        # Freezes made before a lost-wallet plan is worked out: (the freeze intent, what happened), this turn only.
+        self._containment = containment
+        self._contained: list[tuple[Intent, RouteOutcome]] = []
 
         self._active: dict[str, Intent] = {}
         self._done: list[str] = []
@@ -332,6 +337,7 @@ class Orchestrator:
         self, message: str, interpretation: Interpretation, events: list[TraceEvent]
     ) -> TurnResult:
         decomposition = interpretation.decomposition
+        self._contained = []
         if any(i.kind is not IntentKind.UNCLEAR_OR_GREETING for i in decomposition.intents):
             self._help = HelpState()
         for flag in decomposition.flags:
@@ -453,7 +459,9 @@ class Orchestrator:
         self._last_asked = frozenset(
             q.slot for d in ordered if d.action is Action.ASK for q in d.questions
         )
-        reported = previewed + tuple(
+        contained = tuple(outcome for _, outcome in self._contained)
+        view.update({freeze.id: freeze for freeze, _ in self._contained})
+        reported = contained + previewed + tuple(
             o
             for o in executed.outcomes
             if o.status is not OutcomeStatus.NEEDS_INFO and o.intent_id not in waiting_on_answer
@@ -468,7 +476,7 @@ class Orchestrator:
             decisions=ordered,
             # Settled while previewing (nothing needed changing, or the plan was refused)
             # first, then what ran.
-            outcomes=previewed + executed.outcomes,
+            outcomes=contained + previewed + executed.outcomes,
         )
 
     def _keep_for_retry(self, intent_id: str, view: Mapping[str, Intent]) -> None:
@@ -529,6 +537,7 @@ class Orchestrator:
         """
         for intent_id in intent_ids:
             events.extend(_decision_events(decisions[intent_id]))
+        await self._contain(intent_ids, events)
         self._mode = "plan"
         try:
             executed = await self._execute(
@@ -563,6 +572,25 @@ class Orchestrator:
                     intent_id=intent_id, action=Action.RUN, reason="nothing needed to change"
                 )
         return tuple(final), frozenset(o.intent_id for o in final)
+
+    async def _contain(self, intent_ids: Sequence[str], events: list[TraceEvent]) -> None:
+        """Freeze the cards a lost-wallet report names, before its plan is worked out (the freeze is reversible)."""
+        user_id = self._auth.verified_user_id
+        if self._containment is None or user_id is None:
+            return
+        for intent_id in intent_ids:
+            intent = self._active[intent_id]
+            if intent.kind is not IntentKind.REPORT_FRAUD_OR_LOSS:
+                continue
+            freezes = self._containment.freezes(intent, user_id)
+            if not freezes:
+                continue
+            executed = await self._execute(
+                Plan(waves=(tuple(f.id for f in freezes),), waiting=()), {f.id: f for f in freezes}
+            )
+            events.extend(executed.trace.events)
+            by_id = {f.id: f for f in freezes}
+            self._contained.extend((by_id[o.intent_id], o) for o in executed.outcomes if o.intent_id in by_id)
 
     def _route_asked(
         self,
