@@ -41,7 +41,7 @@ from orchestrator.auth import (
 )
 from orchestrator.containment import Containment
 from orchestrator.context import AgentSession, Mode, RouteContext, SessionRequest
-from orchestrator.decision import CONFIRM_SLOT, Action, IntentDecision, decide, fingerprint
+from orchestrator.decision import CONFIRM_SLOT, HUMAN_AFTER_ASKS, Action, IntentDecision, decide, fingerprint
 from orchestrator.decomposer import Decomposer, Interpretation
 from orchestrator.executor import (
     ROUTE_TIMEOUTS,
@@ -174,6 +174,9 @@ class Orchestrator:
         # Freezes made before a lost-wallet plan is worked out: (the freeze intent, what happened), this turn only.
         self._containment = containment
         self._contained: list[tuple[Intent, RouteOutcome]] = []
+        # Requests for a person made while card protection was open: how many, and the last one, still owed.
+        self._human_asks = 0
+        self._deferred_human: Optional[Intent] = None
 
         self._active: dict[str, Intent] = {}
         self._done: list[str] = []
@@ -451,8 +454,19 @@ class Orchestrator:
                 continue  # stays open until the question it depends on is answered
             self._forget(outcome.intent_id)
         for decision in decisions.values():
-            if decision.action is Action.ESCALATE:
+            if decision.action in (Action.ESCALATE, Action.DEFER):
                 self._forget(decision.intent_id)
+        if self._deferred_human is not None and not self._protection_open():
+            # The cards are protected (or the report was withdrawn): the person the customer asked for.
+            owed, self._deferred_human = self._deferred_human, None
+            owed_decision = IntentDecision(
+                intent_id=owed.id,
+                action=Action.ESCALATE,
+                reason="the customer asked for a person while their cards were being protected",
+            )
+            decisions[owed.id] = owed_decision
+            view[owed.id] = owed
+            events.extend(_decision_events(owed_decision))
 
         ordered = tuple(decisions.values())
         self._awaiting = any(d.action is Action.ASK for d in ordered)
@@ -477,6 +491,33 @@ class Orchestrator:
             # Settled while previewing (nothing needed changing, or the plan was refused)
             # first, then what ran.
             outcomes=contained + previewed + executed.outcomes,
+        )
+
+    def _protection_open(self) -> bool:
+        """A lost-wallet report is still being worked on: asked about, waiting for a yes, or half done."""
+        return any(
+            i.kind is IntentKind.REPORT_FRAUD_OR_LOSS
+            for i in (*self._active.values(), *self._resumable.values())
+        )
+
+    def _hand_off_decision(self, intent: Intent) -> IntentDecision:
+        """A request for a person escalates at once, except while card protection is open: then it is counted and
+        kept for when the cards are safe, and escalates at once on the HUMAN_AFTER_ASKS-th ask."""
+        if intent.kind is not IntentKind.REQUEST_HUMAN or not self._protection_open():
+            return decide(intent, IntentScore.unscored(intent.id, "not scored"), {})
+        self._human_asks += 1
+        if self._human_asks >= HUMAN_AFTER_ASKS:
+            self._deferred_human = None
+            return IntentDecision(
+                intent_id=intent.id,
+                action=Action.ESCALATE,
+                reason=f"the customer asked for a person {self._human_asks} times",
+            )
+        self._deferred_human = intent
+        return IntentDecision(
+            intent_id=intent.id,
+            action=Action.DEFER,
+            reason="card protection is open: the customer's cards come first",
         )
 
     def _keep_for_retry(self, intent_id: str, view: Mapping[str, Intent]) -> None:
@@ -693,7 +734,7 @@ class Orchestrator:
             if intent.kind is IntentKind.UNCLEAR_OR_GREETING:
                 decision, self._help = handle_unclear(intent, self._help)
             elif route_for(intent.kind) is Route.HAND_OFF:
-                decision = decide(intent, IntentScore.unscored(intent.id, "not scored"), {})
+                decision = self._hand_off_decision(intent)
             elif intent.id in self._pending_route_questions and intent.id not in touched:
                 decision = IntentDecision(
                     intent_id=intent.id,
