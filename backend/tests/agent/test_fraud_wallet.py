@@ -1,6 +1,7 @@
 """Slices 1, 3 and 4 of the fraud composer: the wallet workflow's rules, and that it is wired in."""
 
 import asyncio
+import json
 from datetime import date
 
 from agent.dispatcher import FIXED, Name, RecordKinds, SubAgentDispatcher, unmapped_kinds
@@ -70,7 +71,7 @@ def test_every_write_the_guard_lets_the_kind_make_has_a_validator():
 
 def test_the_dispatcher_hands_the_kind_to_the_composer_and_a_missing_one_fails_plainly():
     shared = BankingSession.from_task(TASKS["task_077"])
-    llm = FakeToolLLM([AssistantTurn(tool_calls=(ToolCall(id="c1", name="finish", arguments_json='{"message": "ok"}'),), usage=Usage(input_tokens=1))])
+    llm = FakeToolLLM([AssistantTurn(tool_calls=(ToolCall(id="c1", name="finish", arguments_json=json.dumps({"message": "I can only guide you from here. Would you like me to connect you with a person?"})),), usage=Usage(input_tokens=1))])
     specialist = Specialist(FRAUD_SPECIALIST, llm=llm, index=INDEX, database=shared.database, vault=SecretVault())
     it = Intent(id="i1", kind=K.REPORT_FRAUD_OR_LOSS, summary="lost my wallet", slots={})
 
