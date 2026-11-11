@@ -126,6 +126,13 @@ def compose_reply(
         handed = "; ".join(_summary(intents, i) for i in escalated_ids)
         lines.append(f"I'm handing this to a human agent: {handed}.")
 
+    deferred_ids = tuple(d.intent_id for d in decisions if d.action is Action.DEFER)
+    if deferred_ids:
+        lines.append(
+            "I have noted that you want to speak to a person. Your cards come first, so I will finish protecting "
+            "them, and then connect you."
+        )
+
     for hold in waiting:
         blockers = " and ".join(
             _summary(intents, b) if b in intents else EARLIER_STEP for b in hold.blocked_by

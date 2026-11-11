@@ -29,6 +29,9 @@ from orchestrator.routes import Route, route_for
 from orchestrator.scoring import IntentScore
 from orchestrator.types import Intent, IntentKind, Question
 
+# policy_header.md: transfer to a person only after the customer has asked this many times, except when
+# the work they came for is finished or the knowledge base offers no action.
+HUMAN_AFTER_ASKS = 4
 CONFIRM_SLOT = "confirmation"
 CLARIFY_SLOT = "clarification"
 
@@ -53,6 +56,8 @@ class Action(StrEnum):
     PREVIEW = "preview"
     ASK = "ask"
     ESCALATE = "escalate"
+    # Noted and not acted on yet: a request for a person while a card-protection plan is open.
+    DEFER = "defer"
 
 
 class IntentDecision(BaseModel):

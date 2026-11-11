@@ -22,6 +22,21 @@ def _card(db: Any, arguments: Mapping[str, Any]) -> str:
     return str(account["card_type"]) if account else "a card"
 
 
+def _cap(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
+# The reason a lost-wallet or fraud hand-over carries (one of the bank's transfer reasons, tests check it).
+SECURITY_REASON = "fraud_or_security_concern"
+
+
+def _debit_card(db: Any, arguments: Mapping[str, Any]) -> str:
+    """A debit card by the account it is on, never by id or number."""
+    card = db.debit_cards.data.get(str(arguments.get("card_id")))
+    account = db.accounts.data.get(str(card.get("account_id"))) if card else None
+    return f"the debit card on the {account['level']}" if account and account.get("level") else "a debit card"
+
+
 def _dollars(value: Any) -> str:
     try:
         return f"${float(value):,.2f}"
@@ -63,6 +78,19 @@ def describe(db: Any, entry: AuditEntry) -> str:
     if tool == "update_transaction_rewards_3847":
         txn = db.credit_card_transaction_history.data.get(str(a.get("transaction_id")), {})
         return f"The rewards on a {txn.get('merchant_name', 'card')} purchase were corrected to {a.get('new_rewards_earned')}."
+    if tool == "freeze_debit_card_3892":
+        return f"{_cap(_debit_card(db, a))} was frozen."
+    if tool == "unfreeze_debit_card_3893":
+        return f"{_cap(_debit_card(db, a))} was unfrozen."
+    if tool == "close_debit_card_4721":
+        return f"{_cap(_debit_card(db, a))} was closed ({_words(a.get('reason'))})."
+    if tool == "order_debit_card_5739":
+        account = db.accounts.data.get(str(a.get("account_id")), {})
+        return f"A new debit card was ordered for the {account.get('level', 'account')} ({str(a.get('delivery_option')).lower()} delivery)."
+    if tool in ("activate_debit_card_8291", "activate_debit_card_8292", "activate_debit_card_8293"):
+        return f"{_cap(_debit_card(db, a))} was activated."
+    if tool == "file_debit_card_transaction_dispute_6281":
+        return f"A debit card dispute was filed ({_words(a.get('dispute_category'))})."
     return "Another change was made to the customer's accounts."
 
 
