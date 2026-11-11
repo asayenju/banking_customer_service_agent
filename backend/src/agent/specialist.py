@@ -100,6 +100,9 @@ class SpecialistConfig:
     # Structured workflows: each one is offered as a ``start_<name>`` way of ending the run, for
     # the kinds it covers. For those kinds a free-form ``propose_plan`` is refused.
     workflows: tuple[Workflow, ...] = ()
+    # A rule every plain answer (a ``finish``) must meet, written as code: it returns a reason the model is
+    # told when the answer breaks it, or None.
+    answer_check: Optional[Callable[[str], Optional[str]]] = None
 
 
 BASE_RULES = """You are a bank's specialist for one kind of request. You act only for the customer who
@@ -281,10 +284,12 @@ class Specialist:
             if isinstance(steps, str):
                 return steps
             return self._dry_run(steps, intent, str(ctx.verified_user_id))
-        if name == "finish" and self.config.cite_documents:
+        if name == "finish":
             answer = self._vault.scrub(str(arguments.get("message", "")))
-            if not _grounded(answer, seen):
+            if self.config.cite_documents and not _grounded(answer, seen):
                 return "cite at least one document you found, by its id in square brackets, and only documents your search returned"
+            if self.config.answer_check is not None and (broken := self.config.answer_check(answer)) is not None:
+                return broken
         if name == "ask_customer" and not _clean_details(arguments.get("details")):
             return "name the details you need in a few words, like card_id"
         return None

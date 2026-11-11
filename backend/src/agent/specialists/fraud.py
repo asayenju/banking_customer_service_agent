@@ -7,6 +7,9 @@ comes from, which is why the validators of both are merged here. A freeze is mad
 (``agent/containment.py``), so a card in the wallet is already frozen when the plan is made.
 """
 
+import re
+from typing import Optional
+
 from agent.specialist import SpecialistConfig, Validator
 from agent.specialists import credit, debit
 from agent.workflows.fraud_wallet import WalletLoss
@@ -31,6 +34,29 @@ How to work:
    fraud score.
 6. End with start_wallet_loss once you know which cards were in the wallet."""
 
+# What a plain answer about fraud may not do (docs/fraud-policy-decisions.md, section 3).
+_DISCLOSURE = re.compile(r"\bflag(?:ged|s)?\b|\b(?:fraud|risk|security)\s+scor(?:e|es|ing)\b|\bscore of\b", re.IGNORECASE)
+_INVENTED_ACTION = re.compile(
+    r"\b(?:I|we)(?:'ve|\s+have|'ll|\s+will|\s+am going to|\s+are going to)\s+(?:reported|report|filed|file|notified|"
+    r"notify|alerted|alert|lock(?:ed)?|block(?:ed)?|freez(?:e|ing)|froze|(?:changed|change|reset) your password|"
+    r"put a hold|placed a hold)\b",
+    re.IGNORECASE,
+)
+_OFFERS_A_PERSON = re.compile(r"\b(?:person|human|agent|specialist|security team|representative)\b", re.IGNORECASE)
+
+
+def answer_check(answer: str) -> Optional[str]:
+    """The three rules for a fraud answer with no action behind it: never say a card is flagged or give a
+    score (037, 041), never claim an action there is no tool for, and ask whether the customer wants a person."""
+    if _DISCLOSURE.search(answer):
+        return "never say a card or account is flagged and never mention a fraud or risk score; say only what the customer can do"
+    if _INVENTED_ACTION.search(answer):
+        return "you have no tool to report, alert, lock or block anything here: say what can be done and what cannot"
+    if "?" not in answer or not _OFFERS_A_PERSON.search(answer):
+        return "end by asking whether the customer wants to be connected with a person"
+    return None
+
+
 # A step comes from the debit or the credit specialist: its own validator checks it.
 VALIDATORS: dict[str, Validator] = {**debit.VALIDATORS, **credit.VALIDATORS}
 
@@ -41,5 +67,9 @@ FRAUD_SPECIALIST = SpecialistConfig(
     scope=FRAUD,
     validators=VALIDATORS,
     readbacks=credit.READBACKS,
+    # It never hands over by itself: a person is offered, and only the customer's yes (a request for a
+    # person, which the orchestrator routes) transfers.
+    terminals=("finish", "ask_customer"),
     workflows=(WalletLoss(),),
+    answer_check=answer_check,
 )
