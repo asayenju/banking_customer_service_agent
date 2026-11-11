@@ -219,3 +219,15 @@ Each issue body: "Part of `docs/prd-fraud-loss-composer.md`" and the criteria as
 - **Evidence:** `python -m agent.fraud_report` gives 5 strict passes and no departure. The facts the scripted model
   hands the composer are derived from the gold, so this proves the plumbing and the rules, not model behaviour.
 - **Not done:** Slice 10, the capped live probe (blocked on #38), and a decomposer prompt change for card details.
+
+## What the first live run changed
+
+One capped live conversation (the real decomposer, Jev scorer and gpt-4o-mini, task 078's customer) found problems no scripted test could, and they were fixed:
+
+- **Containment read nothing.** The model returned the report with empty or partial `card_ids`. The orchestrator now keeps the customer's own words as the stable detail `said` on a report intent, and containment finds the named cards in them (`agent.containment.named_in_text`: account names, longest first, and last four digits). The specialist is told to list every card named there.
+- **"Yes" broke the decomposer.** The model confirmed the open request and also re-listed it (as a new intent, with a dependency on the open one), which made an invalid decomposition thrown away three times. A bare yes, a new intent of the kind being confirmed, and a dependency on an open intent are now handled in `llm_decomposer.py`; its prompt says where a report's cards go and that a short reply belongs to an open intent.
+- **A yes had nowhere to land.** A route's question ("are you sure?") was answered only by a slot, never by a confirmation. A single pending route question now takes a yes as its answer. The not-definite branch of the workflow asks that question instead of ending the report, and the customer's yes counts in code even if the model reports "not definite".
+- **A short reply was scored alone.** Jev rated "yes, I am sure" as an unclear request. A continued request of the same kind keeps the kind and scope confidence it earned (`Orchestrator._continued`); nothing is raised above an earlier score.
+- **Result:** the conversation freezes all three named cards, previews the right plan (Light Blue closed with its reorder deferred 48 hours, Green closed and reordered, Light Green held frozen for its pending purchases), and on the yes closes, reorders and holds exactly those, with no write outside the plan.
+- **Still true:** one conversation, one customer, one model. How often the model fills the form correctly across many runs is unmeasured, and the debit pilot's live pass rate (#38) is still 0 of 12. The general answerer answered a policy question with a citation and escalated when the notes did not answer.
+
