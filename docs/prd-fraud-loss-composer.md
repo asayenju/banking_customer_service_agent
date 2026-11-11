@@ -190,3 +190,32 @@ Each issue body: "Part of `docs/prd-fraud-loss-composer.md`" and the criteria as
 
 ## Verification
 - `cd backend && uv run pytest` (offline), `uv run mypy --strict src/banking_tools src/orchestrator src/agent`, `uv run python -m agent.fraud_report`. No live run before #38.
+
+## What changed from this PRD while building it
+
+- **Containment is not an urgent-wave expansion.** The plan said the orchestrator would expand a report into
+  `FREEZE_CARD` intents that the composer depends on. A preview runs before the wave executes, so the composer
+  would have planned against ACTIVE cards and then met FROZEN ones at the yes (the close tool refuses a frozen
+  card). Instead `Orchestrator._contain` freezes the named cards through the same direct recipe just before the
+  preview, so the plan already contains `unfreeze` then `close`. The synthetic freeze intents are reported in the
+  reply and the outcomes.
+- **Which cards are named is read from the decomposer's details** (`card_id`, `card_ids`, `cards`, `account_name`,
+  and similar) in `agent/containment.py`. The decomposer prompt was not changed and no live evaluation was run, so
+  how often a real model fills those details is **unmeasured**; when it does not, the composer asks which cards.
+- **The composer ends only with `finish`, `ask_customer` or `start_wallet_loss`.** `propose_plan` and `escalate`
+  were removed: a free-form plan is not a way to end a run, and a hand-over is the customer's yes, never the
+  model's. A plain answer is checked by `fraud.answer_check` (no "flagged", no score, no invented action, a person
+  offered).
+- **Human requests:** `Action.DEFER` was added and `HUMAN_AFTER_ASKS = 4` lives in `orchestrator/decision.py`.
+  The note and the transfer reason are built (`agent/handoff.py`) but no code calls `transfer_to_human_agents`
+  yet: an escalation is still a reply, as for every other kind. Task 081's replay does its transfer directly.
+- **The guard's allow-list for the kind needed no change.** It already held every tool the composer plans.
+- **A fraud-only close validator** re-checks pending purchases just before the step runs. A pending refund is not
+  re-checked (a refund to a closed card is credited to checking, doc 025).
+- **The Entry wait applies to Light Blue only,** the one level the tier table calls Entry. A reorder for a level
+  with no tier is a hand-off, as before.
+- **No new manifest cluster and no live harness wiring.** The replay cuts the gold with `tier1.wallet_items`.
+  Tasks 078 and 079 stay in the debit pilot and are replayed here as well.
+- **Evidence:** `python -m agent.fraud_report` gives 5 strict passes and no departure. The facts the scripted model
+  hands the composer are derived from the gold, so this proves the plumbing and the rules, not model behaviour.
+- **Not done:** Slice 10, the capped live probe (blocked on #38), and a decomposer prompt change for card details.

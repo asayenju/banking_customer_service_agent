@@ -14,7 +14,10 @@ from typing import Any
 from agent.cards import Card, owned_cards, resolve
 from orchestrator.types import Intent, IntentKind
 
-_SLOTS = ("card_id", "card_ids", "cards", "debit_cards", "card", "account_id", "accounts", "account_names")
+_SLOTS = (
+    "card_id", "card_ids", "cards", "debit_cards", "card", "card_name", "card_names", "card_type",
+    "account_id", "accounts", "account_name", "account_names",
+)
 _SPLIT = re.compile(r"\s*(?:,|;|/|&|\band\b|\bplus\b)\s*", re.IGNORECASE)
 _NOISE = {"account", "accounts", "card", "cards", "debit", "my", "the", "both", "all", "of"}
 

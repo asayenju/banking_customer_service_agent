@@ -139,6 +139,7 @@ def test_cards_are_named_by_id_last_four_or_account_name_and_only_the_customers_
     assert ids({"card_id": LB}) == [LB]
     assert ids({"card_id": "7391"}) == [GREEN], "the last four digits"
     assert ids({"cards": "my Green account card, and the Light Green"}) == [GREEN, LG], "an account name must match exactly one"
+    assert ids({"account_name": "Light Blue Account", "card_type": "Green"}) == [GREEN, LB], "other slot names the decomposer may use"
     assert ids({"card_id": "dbc_stranger"}) == [] and ids({"card_id": "9999"}) == [], "another customer's card never matches"
     assert ids({"cards": "the Blue one"}) == [], "a name that matches nothing is ignored"
 
