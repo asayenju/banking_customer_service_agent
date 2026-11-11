@@ -316,3 +316,45 @@ def test_a_lone_write_that_is_only_a_symptom_becomes_a_read_not_a_failure() -> N
 def test_the_schema_requires_a_communication_type() -> None:
     props = OUTPUT_SCHEMA["$defs"]["_RawIntent"]
     assert "communication_type" in props["required"]
+
+
+# --- found by a live run: a bare yes while a plan waits ---
+
+
+def _open_report() -> Intent:
+    return Intent(id="t1-i1", kind=K.REPORT_FRAUD_OR_LOSS, summary="report lost wallet with debit cards")
+
+
+def test_a_yes_that_the_model_also_relists_as_a_new_request_is_only_a_confirmation() -> None:
+    """The live model answered "yes" with confirmed=[open id] and ALSO a new intent (evidence "yes") that depends on the
+    open one. That used to be an invalid decomposition, thrown away three times, ending in a hand-over."""
+    relisted = {**raw("i1", "REPORT_FRAUD_OR_LOSS", "report lost wallet", depends_on=["t1-i1"]), "evidence": "yes"}
+    result = interpret(FakeLLMClient([reply(relisted, confirmed=["t1-i1"])]), "yes", [_open_report()])
+    assert result.decomposition.intents == ()
+    assert result.confirmed == ("t1-i1",)
+
+
+def test_a_real_new_request_that_follows_an_open_intent_keeps_its_place_but_not_a_dependency_on_it() -> None:
+    new = {**raw("i1", "ACCOUNT_BALANCE_OR_HISTORY", "my balance", depends_on=["t1-i1"]), "evidence": "my balance"}
+    result = interpret(FakeLLMClient([reply(new)]), "and what is my balance", [_open_report()])
+    (intent,) = result.decomposition.intents
+    assert intent.kind is K.ACCOUNT_BALANCE_OR_HISTORY and intent.depends_on == ()
+
+
+def test_the_prompt_says_where_a_lost_wallets_cards_go_and_how_a_short_answer_is_read() -> None:
+    from orchestrator.llm_decomposer import SYSTEM_PROMPT
+
+    assert "card_ids" in SYSTEM_PROMPT and "belongs to an open intent" in SYSTEM_PROMPT
+
+
+def test_a_new_request_of_the_kind_being_confirmed_in_the_same_message_is_the_same_request_said_twice() -> None:
+    """Seen live: "yes, I am sure" came back as confirmed=[open id] plus a new report with that evidence."""
+    twice = {**raw("i1", "REPORT_FRAUD_OR_LOSS", "report lost wallet"), "evidence": "yes, I am sure"}
+    result = interpret(FakeLLMClient([reply(twice, confirmed=["t1-i1"])]), "yes, I am sure", [_open_report()])
+    assert result.decomposition.intents == () and result.confirmed == ("t1-i1",)
+
+
+def test_a_different_kind_next_to_a_confirmation_is_a_real_second_request() -> None:
+    other = {**raw("i1", "ACCOUNT_BALANCE_OR_HISTORY", "my balance"), "evidence": "what is my balance"}
+    result = interpret(FakeLLMClient([reply(other, confirmed=["t1-i1"])]), "yes, and what is my balance", [_open_report()])
+    assert kinds(result) == [K.ACCOUNT_BALANCE_OR_HISTORY] and result.confirmed == ("t1-i1",)

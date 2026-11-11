@@ -127,14 +127,17 @@ class WalletLoss:
             return Refuse("the customer said no credit card was in the wallet, but credit cards are listed")
         if facts.credit_answer == "some_were_in_the_wallet" and not facts.credit_cards:
             asks.append(Ask("which_credit_cards", "Which credit cards were in the wallet?"))
-        if not facts.loss_is_definite:
-            if asks:
-                return NeedInfo(tuple(asks))
-            return Reply(
-                "Nothing is closed or replaced yet. The cards you named are frozen, so nobody can use them, and "
-                "you can unfreeze one if you find it. Tell me when you are sure they are gone and I will close "
-                "them and order replacements."
+        # The customer's yes to "are you sure?" is held by the orchestrator as this detail; it counts whatever the
+        # model reports, because it is the customer's own answer to this exact question.
+        said_yes = ctx.slots.get("loss_is_definite", "").strip().lower() in ("yes", "y", "true")
+        if not (facts.loss_is_definite or said_yes):
+            sure = Ask(
+                "loss_is_definite",
+                "Nothing is closed or replaced yet. Any card you named is frozen, so nobody can use it, and you can "
+                "unfreeze one if you find it. Are you sure the cards are gone? If you are, I will close them and order "
+                "replacements.",
             )
+            return NeedInfo((*asks, sure))
         steps: list[Step] = []
         notes: list[str] = []
         needs: list[Ask] = list(asks)
