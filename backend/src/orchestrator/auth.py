@@ -114,6 +114,10 @@ def _matches(field: IdentityField, claimed: str, record: CustomerRecord) -> bool
     return bool(on_file) and _normalize(field, claimed) == on_file
 
 
+# Public name for a directory that finds a candidate by one claimed field.
+claim_matches = _matches
+
+
 def verify(
     state: AuthState, record: CustomerRecord, claimed: Mapping[str, str]
 ) -> AuthState:
