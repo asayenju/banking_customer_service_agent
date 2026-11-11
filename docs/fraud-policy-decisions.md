@@ -62,6 +62,10 @@ from `credit_tiers.EXPEDITED_FEE`.
 provisional-credit rule. The caps for tasks 039 to 041 are inferred from gold, not documented
 (`credit-policy-decisions.md`); the composer inherits that and says so here.
 
+**Pending purchases are checked twice.** The workflow checks them when it plans; the fraud close validator checks
+them again just before the step runs. A pending refund is not checked again: closing never loses it, because a refund
+to a closed card is credited to the linked checking account (025, Important Notes).
+
 **No double close.** A fraud dispute implies `close_and_reissue` (doc 031) but the composer plans the closes
 itself and files only credit disputes, so a card is closed once.
 
