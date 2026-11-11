@@ -162,4 +162,58 @@ def facts_from_gold(workflow: str, writes: Sequence[Any], database: Any) -> Opti
             "credit_answer": "yes" if credit else ("no" if closing and logged else None),
             "keeps_card": bool(logged) and not (waiver or credit or closing),
         }
+    if workflow == "wallet_loss":
+        return _wallet_facts(writes, database)
     return None
+
+
+def _wallet_facts(writes: Sequence[Any], database: Any) -> Optional[dict[str, Any]]:
+    """The wallet protocol's form from the gold: the cards closed, the cards held back (frozen and not closed),
+    what was ordered for them, the credit replacements and the credit disputes."""
+    closes = [w for w in writes if w.name == "close_debit_card_4721"]
+    orders = [w for w in writes if w.name == "order_debit_card_5739"]
+    credit = facts_from_gold("credit_replacement", writes, database)
+    disputes = facts_from_gold("credit_dispute", writes, database)
+    if not (closes or orders or credit or disputes):
+        return None
+    user = next(
+        (str(w.args["user_id"]) for w in writes if w.args.get("user_id")),
+        str(database.debit_cards.data[closes[0].args["card_id"]]["user_id"]) if closes else "",
+    )
+    closed = {str(c.args["card_id"]) for c in closes}
+    held = sorted(
+        card_id
+        for card_id, card in database.debit_cards.data.items()
+        if card.get("user_id") == user and card.get("status") == "FROZEN" and card_id not in closed
+    )
+    address = database.users.data[user].get("address")
+    cards = []
+    for card_id in [str(c.args["card_id"]) for c in closes] + held:
+        account = database.debit_cards.data[card_id]["account_id"]
+        order = next((o for o in orders if o.args["account_id"] == account), None)
+        cards.append(
+            {
+                "card_id": card_id,
+                "accepts_refund_to_checking": True,
+                "replacement": None
+                if order is None
+                else {
+                    "delivery_option": order.args["delivery_option"],
+                    "card_design": order.args["card_design"],
+                    "shipping_address": None if order.args["shipping_address"] == address else order.args["shipping_address"],
+                    "accepts_excess_fee": order.args.get("excess_replacement_fee") is not None,
+                },
+            }
+        )
+    reason = (closes[0].args["reason"] if closes else None) or (credit["replacements"][0]["reason"] if credit else "lost")
+    return {
+        "reason": reason,
+        "loss_is_definite": True,
+        "debit_cards": cards,
+        "credit_answer": "some_were_in_the_wallet" if credit else "none_were_in_the_wallet",
+        "credit_cards": [
+            {k: r[k] for k in ("credit_card_account_id", "expedited", "accepts_expedite_fee", "shipping_address")}
+            for r in (credit["replacements"] if credit else [])
+        ],
+        "credit_disputes": disputes["disputes"] if disputes else [],
+    }

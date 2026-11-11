@@ -202,8 +202,57 @@ class Segment:
 Item = Direct | Segment
 
 
+ACTIVATIONS = frozenset({"activate_debit_card_8291", "activate_debit_card_8292", "activate_debit_card_8293"})
+WALLET_WRITES = frozenset(
+    {
+        "close_debit_card_4721",
+        "order_debit_card_5739",
+        "order_replacement_credit_card_7291",
+        "file_credit_card_transaction_dispute_4829",
+    }
+)
+
+
+def wallet_items(steps: Sequence[Step]) -> list[Item]:
+    """The gold of a lost wallet as the composer sees it. The freezes are the containment (done before the
+    plan, as the orchestrator does), a card found again is unfrozen on its own, and activating the new card
+    is the debit specialist's request; everything else is one request, planned and approved once."""
+    closed = {str(s.args["card_id"]) for s in steps if s.name == "close_debit_card_4721"}
+    items: list[Item] = []
+    reads: list[Step] = []
+    writes: list[Step] = []
+
+    def is_plan_write(step: Step) -> bool:
+        if step.kind != "write":
+            return False
+        if step.name == "unfreeze_debit_card_3893":
+            return str(step.args["card_id"]) in closed
+        return step.name in WALLET_WRITES
+
+    def flush() -> None:
+        if writes:
+            items.append(Segment(IntentKind.REPORT_FRAUD_OR_LOSS, tuple(reads), tuple(writes)))
+        else:
+            items.extend(Direct(r) for r in reads)
+        reads.clear()
+        writes.clear()
+
+    for step in steps:
+        if step.kind == "read":
+            reads.append(step)
+        elif is_plan_write(step):
+            writes.append(step)
+        else:
+            flush()
+            items.append(Direct(step))
+    flush()
+    return items
+
+
 def plan_items(steps: Sequence[Step], config: SpecialistConfig) -> list[Item]:
     """Cut the gold into direct steps and specialist segments, keeping every step in order."""
+    if IntentKind.REPORT_FRAUD_OR_LOSS in config.kinds:
+        return wallet_items(steps)
     items: list[Item] = []
     pending: list[Step] = []
     i = 0
