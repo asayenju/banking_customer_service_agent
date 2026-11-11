@@ -8,9 +8,10 @@ comes from, which is why the validators of both are merged here. A freeze is mad
 """
 
 import re
-from typing import Optional
+from collections.abc import Mapping
+from typing import Any, Optional
 
-from agent.specialist import SpecialistConfig, Validator
+from agent.specialist import SpecialistConfig, ValidationContext, Validator
 from agent.specialists import credit, debit
 from agent.workflows.fraud_wallet import WalletLoss
 from knowledge.scopes import FRAUD
@@ -57,8 +58,31 @@ def answer_check(answer: str) -> Optional[str]:
     return None
 
 
+def close_card(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
+    """The debit rule, and the one the bank's tool never checks (doc 025): no pending purchases. The workflow
+    checks it when it plans; this checks it again just before the step runs, since a purchase can appear between
+    the preview and the yes. A pending refund is not re-checked: a refund to a closed card is credited to the
+    checking account anyway (025), so closing never loses it."""
+    problem = debit.close(v, args)
+    if problem is not None:
+        return problem
+    card = v.database.debit_cards.data.get(str(args.get("card_id"))) or {}
+    if any(
+        t.get("account_id") == card.get("account_id")
+        and str(t.get("status")).lower() == "pending"
+        and t.get("type") != "refund"
+        for t in v.database.bank_account_transaction_history.data.values()
+    ):
+        return "this card's account has purchases still pending, so the card cannot be closed yet"
+    return None
+
+
 # A step comes from the debit or the credit specialist: its own validator checks it.
-VALIDATORS: dict[str, Validator] = {**debit.VALIDATORS, **credit.VALIDATORS}
+VALIDATORS: dict[str, Validator] = {
+    **debit.VALIDATORS,
+    **credit.VALIDATORS,
+    "close_debit_card_4721": close_card,
+}
 
 FRAUD_SPECIALIST = SpecialistConfig(
     name="fraud",
