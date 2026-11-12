@@ -50,6 +50,11 @@ Blue. A reorder for an Entry account whose card this plan closes is replaced by 
 earliest date. A level with no tier in the table (Light Green, Green Fee-Free: gold never reorders them) keeps
 today's rule: a reorder for it is a hand-off, never a guess.
 
+**Where each rule lives.** The pending-purchase hold and the pending-refund accept are in `DebitReplacement`, so every
+debit close follows them, not only a lost wallet (the live debit run of 078 and 079 had no such rule). The Entry wait
+stays in the composer: task 091's gold closes an Entry (Light Blue) card and orders its replacement the same day, so
+a debit-wide wait would fail 091. That is a contradiction between doc 029 and 091's gold, left open on purpose.
+
 **The excess replacement fee is the customer's choice (029).** 078: the customer declines $25 and Light Blue is
 closed with no reorder. The fee is computed by code from the tier table (`debit_replacement.py`), never
 taken from the customer or the model.

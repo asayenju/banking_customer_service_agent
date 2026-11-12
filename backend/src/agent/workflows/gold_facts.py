@@ -76,7 +76,10 @@ def facts_from_gold(workflow: str, writes: Sequence[Any], database: Any) -> Opti
         if not orders and not closes:
             return None
         return {
-            "closures": [{"card_id": c.args["card_id"], "reason": c.args["reason"]} for c in closes],
+            "closures": [
+                {"card_id": c.args["card_id"], "reason": c.args["reason"], "accepts_refund_to_checking": True}
+                for c in closes
+            ],
             "new_cards": [
                 {
                     "account_id": o.args["account_id"],
