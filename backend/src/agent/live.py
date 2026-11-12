@@ -573,8 +573,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:  # pragma: no cover - the
     except LiveRunRefused as refusal:
         print(f"not started: {refusal}")
         return 2
-    print(render_estimate(estimate, plan))
     index = get_index()
+    from agent import preflight
+
+    checks = preflight.validate(index, task_ids=list(plan.task_ids), model=plan.model, configs=configs)
+    blocked = [c for c in checks if c.blocked_without(rerecord=args.rerecord)]
+    if blocked:
+        print(preflight.render(blocked))
+        print(f"not started: {len(blocked)} of {len(checks)} task(s) failed the free preflight, so a paid run of them would mean nothing")
+        return 2
+    print(f"preflight: {len(checks)} task(s) valid; {sum(1 for c in checks if c.asks >= 3)} lean on customer replies the one-shot harness cannot give")
+    print(render_estimate(estimate, plan))
 
     def run_task(task_id: str, cassettes: Path, context: RunContext) -> LiveTaskResult:
         return run_live_task(tasks[task_id], configs[gradeable[task_id]], cassettes, context, index=index)
