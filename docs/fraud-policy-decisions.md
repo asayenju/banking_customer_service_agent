@@ -52,10 +52,12 @@ today's rule: a reorder for it is a hand-off, never a guess.
 
 **Where each rule lives.** The pending-purchase hold and the pending-refund accept are in `DebitReplacement`, so every
 debit close follows them, not only a lost wallet (the live debit run of 078 and 079 had no such rule). The Entry wait
-stays in the composer: task 091's gold closes an Entry (Light Blue) card and orders its replacement the same day, so
-a debit-wide wait would fail 091. That is a contradiction between doc 029 and 091's gold, left open on purpose.
+is enforced by the composer for every Entry card it closes, and by `DebitReplacement` only for an Entry account that is
+past its replacement limit and whose card is closed in the same plan. That narrower rule fits all three golds: 079
+(over the limit, waits), 078 (declines the fee) and 091 (no prior replacements, ordered the same day). It is inferred
+from the golds, not written in doc 029, which says only "48-hour waiting period after card closure".
 
-**The excess replacement fee is the customer's choice (029).** 078: the customer declines $25 and Light Blue is
+**The excess replacement fee is the customer's choice (029).** The answer is yes, no or not asked: only "not asked" asks. 078: the customer declines $25 and Light Blue is
 closed with no reorder. The fee is computed by code from the tier table (`debit_replacement.py`), never
 taken from the customer or the model.
 

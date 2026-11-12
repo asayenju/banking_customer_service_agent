@@ -57,7 +57,7 @@ def test_a_speed_the_tier_does_not_offer_is_refused_with_the_options():
             "closures": [],
             "new_cards": [
                 {"account_id": card["account_id"], "delivery_option": "RUSH", "card_design": "CLASSIC",
-                 "shipping_address": None, "accepts_excess_fee": False}
+                 "shipping_address": None, "accepts_excess_fee": "not_asked"}
             ],
         }
     )
@@ -82,7 +82,7 @@ def test_an_account_level_with_no_known_tier_is_handed_to_a_person():
             "closures": [],
             "new_cards": [
                 {"account_id": card["account_id"], "delivery_option": "STANDARD", "card_design": "CLASSIC",
-                 "shipping_address": None, "accepts_excess_fee": False}
+                 "shipping_address": None, "accepts_excess_fee": "not_asked"}
             ],
         }
     )
@@ -104,7 +104,7 @@ def test_fastest_free_is_worked_out_per_tier():
             "closures": [],
             "new_cards": [
                 {"account_id": order.args["account_id"], "delivery_option": "FASTEST_FREE", "card_design": "CLASSIC",
-                 "shipping_address": None, "accepts_excess_fee": False}
+                 "shipping_address": None, "accepts_excess_fee": "not_asked"}
             ],
         }
     )
@@ -124,7 +124,7 @@ def test_best_free_design_is_worked_out_per_tier():
     order = next(s for s in gold_steps(task) if s.name == "order_debit_card_5739")
     facts = ReplacementFacts.model_validate(
         {"closures": [], "new_cards": [{"account_id": order.args["account_id"], "delivery_option": "FASTEST_FREE",
-                                        "card_design": "BEST_FREE", "shipping_address": None, "accepts_excess_fee": False}]}
+                                        "card_design": "BEST_FREE", "shipping_address": None, "accepts_excess_fee": "not_asked"}]}
     )
     plan = DebitReplacement().decide(WorkflowContext(db, order.args["user_id"], TODAY), facts)
     assert isinstance(plan, Plan)
@@ -167,7 +167,7 @@ def test_a_held_card_gets_no_new_card_ordered():
     db = _task_world("task_078")
     order = {
         "account_id": "chk_mc78a5b9d2_3", "delivery_option": "STANDARD", "card_design": "CLASSIC",
-        "shipping_address": None, "accepts_excess_fee": False,
+        "shipping_address": None, "accepts_excess_fee": "not_asked",
     }
     decision = _close(db, "mc78a5b9d2", "dbc_mc78a5b9d2_lg", accepts=True, new_cards=[order])
     assert isinstance(decision, Plan) and all(s.tool != "order_debit_card_5739" for s in decision.steps)
@@ -183,3 +183,42 @@ def test_a_pending_refund_is_asked_about_and_the_accept_unlocks_the_close():
     assert isinstance(asked, NeedInfo) and asked.questions[0].slot == "accepts_refund_to_checking"
     agreed = _close(db, "cr89a2b3c4", card, accepts=True)
     assert isinstance(agreed, Plan) and "close_debit_card_4721" in [s.tool for s in agreed.steps]
+
+
+# ---------------------------------------------------------------- the excess fee answer and the Entry wait (078, 079)
+
+LB_ACCOUNT = "chk_cr89a2b3c4_2"
+LB_CARD = "dbc_cr89a2b3c4_lb"
+
+
+def _light_blue(answer, *, closing=True):
+    db = _task_world("task_079")
+    order = {
+        "account_id": LB_ACCOUNT, "delivery_option": "STANDARD", "card_design": "CLASSIC",
+        "shipping_address": None, "accepts_excess_fee": answer,
+    }
+    closures = [{"card_id": LB_CARD, "reason": "stolen", "accepts_refund_to_checking": True}] if closing else []
+    facts = ReplacementFacts.model_validate({"closures": closures, "new_cards": [order]})
+    return DebitReplacement().decide(WorkflowContext(db, "cr89a2b3c4", TODAY), facts)
+
+
+def test_a_declined_excess_fee_closes_the_card_and_orders_nothing():
+    decision = _light_blue("no")
+    assert isinstance(decision, Plan) and [s.tool for s in decision.steps][-1] == "close_debit_card_4721"
+    assert "excess replacement fee" in decision.steps[0].note
+
+
+def test_an_unanswered_excess_fee_is_asked_not_assumed():
+    decision = _light_blue("not_asked", closing=False)
+    assert isinstance(decision, NeedInfo) and decision.questions[0].slot == "accepts_excess_fee"
+
+
+def test_an_entry_card_past_its_limit_closed_in_the_same_plan_waits_48_hours():
+    decision = _light_blue("yes")
+    assert isinstance(decision, Plan) and all(s.tool != "order_debit_card_5739" for s in decision.steps)
+    assert "48 hours" in decision.steps[0].note
+
+
+def test_an_entry_card_past_its_limit_whose_card_is_already_closed_can_be_ordered_with_the_fee():
+    decision = _light_blue("yes", closing=False)
+    assert isinstance(decision, Plan) and decision.steps[-1].tool == "order_debit_card_5739"

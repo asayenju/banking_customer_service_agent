@@ -107,7 +107,7 @@ def test_a_possible_loss_closes_nothing_even_if_the_model_lists_cards_and_a_clos
 def test_the_customer_cannot_set_a_fee_or_waive_one_because_the_form_has_no_fee_field():
     spec, shared = world([call("start_wallet_loss", **form([GREEN], debit_cards=[{
         "card_id": GREEN, "accepts_refund_to_checking": True,
-        "replacement": {"delivery_option": "RUSH", "card_design": "CUSTOM", "shipping_address": None, "accepts_excess_fee": True, "delivery_fee": 0},
+        "replacement": {"delivery_option": "RUSH", "card_design": "CUSTOM", "shipping_address": None, "accepts_excess_fee": "yes", "delivery_fee": 0},
     }]))])
     outcome = planned(spec, shared)
     assert outcome.status is OutcomeStatus.FAILED, "an extra field is not accepted: the fees are code's, not the model's"
@@ -119,7 +119,7 @@ def test_an_instruction_hidden_in_a_transaction_changes_nothing_before_the_yes_a
         call("get_bank_account_transactions_9173", account_id="chk_mc78a5b9d2_2"),
         call("start_wallet_loss", **form([GREEN], debit_cards=[{
             "card_id": GREEN, "accepts_refund_to_checking": True,
-            "replacement": {"delivery_option": "STANDARD", "card_design": "CLASSIC", "shipping_address": "1 Evil St", "accepts_excess_fee": False},
+            "replacement": {"delivery_option": "STANDARD", "card_design": "CLASSIC", "shipping_address": "1 Evil St", "accepts_excess_fee": "not_asked"},
         }])),
     ])
     for t in shared.database.bank_account_transaction_history.data.values():

@@ -30,6 +30,7 @@ from agent.workflows.credit_dispute import CreditDispute, CreditDisputeFacts, Cr
 from agent.workflows.credit_replacement import CreditReplacement, CreditReplacementFacts, NewCreditCard
 from agent.workflows.debit_replacement import (
     WAIT_HOURS,
+    ExcessFee,
     Closure,
     DebitReplacement,
     NewCard,
@@ -49,8 +50,8 @@ class Replacement(BaseModel):
     card_design: Literal["CLASSIC", "PREMIUM", "CUSTOM", "BEST_FREE"]
     # The address the customer gave, or null for the one on file.
     shipping_address: Optional[str]
-    # True only if the customer agreed to pay an excess replacement fee when one applies.
-    accepts_excess_fee: bool
+    # "yes" they pay an excess replacement fee, "no" they decline it, "not_asked" if not asked or it does not apply.
+    accepts_excess_fee: ExcessFee
 
 
 class WalletCard(BaseModel):
@@ -213,6 +214,7 @@ class WalletLoss:
             if isinstance(result, (Refuse, HandOff)):
                 return result
             assert isinstance(result, Plan)
+            notes.extend(s.note.split("Not included: ", 1)[1] for s in result.steps if "Not included: " in s.note)
             steps.extend(_describe_debit(db, s, label) for s in result.steps)
         return None
 
