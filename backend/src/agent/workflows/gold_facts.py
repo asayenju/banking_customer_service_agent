@@ -88,7 +88,7 @@ def facts_from_gold(workflow: str, writes: Sequence[Any], database: Any) -> Opti
                     "shipping_address": None
                     if o.args["shipping_address"] == database.users.data[o.args["user_id"]].get("address")
                     else o.args["shipping_address"],
-                    "accepts_excess_fee": o.args.get("excess_replacement_fee") is not None,
+                    "accepts_excess_fee": "yes" if o.args.get("excess_replacement_fee") is not None else "not_asked",
                 }
                 for o in orders
             ],
@@ -204,7 +204,7 @@ def _wallet_facts(writes: Sequence[Any], database: Any) -> Optional[dict[str, An
                     "delivery_option": order.args["delivery_option"],
                     "card_design": order.args["card_design"],
                     "shipping_address": None if order.args["shipping_address"] == address else order.args["shipping_address"],
-                    "accepts_excess_fee": order.args.get("excess_replacement_fee") is not None,
+                    "accepts_excess_fee": "yes" if order.args.get("excess_replacement_fee") is not None else "not_asked",
                 },
             }
         )

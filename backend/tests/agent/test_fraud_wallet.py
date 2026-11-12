@@ -121,7 +121,7 @@ def test_a_pending_refund_waits_for_the_customers_accept_and_then_the_card_close
 
 def test_an_entry_account_is_closed_but_not_reordered_the_same_day():
     """The 48 hour wait (doc 029): Light Blue is Entry, so its card closes and the order is left for later."""
-    order = {"delivery_option": "STANDARD", "card_design": "CLASSIC", "shipping_address": None, "accepts_excess_fee": True}
+    order = {"delivery_option": "STANDARD", "card_design": "CLASSIC", "shipping_address": None, "accepts_excess_fee": "yes"}
     plan = decide("task_079", "cr89a2b3c4", debit_cards=[card("dbc_cr89a2b3c4_lb", replacement=order)])
     assert isinstance(plan, Plan)
     assert [t for t, _ in tools(plan)] == ["close_debit_card_4721"]
@@ -129,7 +129,7 @@ def test_an_entry_account_is_closed_but_not_reordered_the_same_day():
 
 
 def test_a_level_with_no_tier_cannot_be_reordered_and_hands_over_rather_than_guessing():
-    order = {"delivery_option": "STANDARD", "card_design": "CLASSIC", "shipping_address": None, "accepts_excess_fee": False}
+    order = {"delivery_option": "STANDARD", "card_design": "CLASSIC", "shipping_address": None, "accepts_excess_fee": "not_asked"}
     result = decide("task_077", "lj82d4f1a9", debit_cards=[card("dbc_538bfb9cba", replacement=order)])
     assert isinstance(result, HandOff)
 

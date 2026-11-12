@@ -32,6 +32,7 @@ SPEED = ("STANDARD", "EXPEDITED", "RUSH")
 Design = Literal["CLASSIC", "PREMIUM", "CUSTOM", "BEST_FREE"]
 # Plainest to fanciest. "BEST_FREE" means the fanciest of these that costs nothing on the tier.
 LOOKS = ("CLASSIC", "PREMIUM", "CUSTOM")
+ExcessFee = Literal["yes", "no", "not_asked"]
 Reason = Literal["lost", "stolen", "fraud_suspected", "damaged"]
 
 DELIVERY_FEE: dict[str, dict[str, float]] = {
@@ -51,7 +52,7 @@ EXCESS_FEE = {"Entry": 25.0, "Mid": 15.0}
 COUNTS = frozenset({"lost", "stolen", "fraud", "damaged"})
 WINDOW_DAYS = 365
 # Entry tier: doc 029 says a new card waits this long after closure. The bank's tool never checks it, and the gold
-# of task 091 orders an Entry card the same day, so only the lost-wallet composer enforces it (docs/fraud-policy-decisions.md).
+# of task 091 orders an Entry card the same day, so the debit workflow enforces it only for an account past its limit (docs/fraud-policy-decisions.md).
 WAIT_HOURS = 48
 
 
@@ -73,8 +74,9 @@ class NewCard(BaseModel):
     card_design: Design
     # The address the customer gave, or null for the one on file.
     shipping_address: Optional[str]
-    # True only if the customer agreed to pay an excess replacement fee when it applies.
-    accepts_excess_fee: bool
+    # The customer's answer to the excess replacement fee: "yes" they pay it, "no" they decline it, or
+    # "not_asked" if they have not been asked (or it does not apply).
+    accepts_excess_fee: ExcessFee
 
 
 class ReplacementFacts(BaseModel):
@@ -130,6 +132,7 @@ class DebitReplacement:
         notes: list[str] = []
         needs: list[Ask] = []
         closing: set[str] = set()
+        closing_accounts: set[str] = set()
         held_accounts: set[str] = set()
         for item in facts.closures:
             card = db.debit_cards.data.get(item.card_id)
@@ -167,6 +170,7 @@ class DebitReplacement:
                     )
                 )
                 continue
+            closing_accounts.add(account_id)
             if card.get("status") == "FROZEN":
                 steps.append(Step("unfreeze_debit_card_3893", {"card_id": item.card_id}))
             steps.append(Step("close_debit_card_4721", {"card_id": item.card_id, "reason": item.reason}))
@@ -213,7 +217,20 @@ class DebitReplacement:
                         "A new one can be ordered once the oldest has aged out."
                     )
                 excess = EXCESS_FEE[tier]
-                if not new.accepts_excess_fee:
+                if new.accepts_excess_fee == "no":
+                    notes.append(
+                        f"No new card is ordered for your {account.get('level')}: it is past its replacement "
+                        f"limit and you chose not to pay the ${excess:.0f} excess replacement fee."
+                    )
+                    continue
+                if tier == "Entry" and new.account_id in closing_accounts:
+                    notes.append(
+                        f"A new card for your {account.get('level')} cannot be ordered today: this tier waits "
+                        f"{WAIT_HOURS} hours after a card is closed. It can be ordered from "
+                        f"{ctx.today + timedelta(hours=WAIT_HOURS):%m/%d/%Y}."
+                    )
+                    continue
+                if new.accepts_excess_fee != "yes":
                     return NeedInfo(
                         (
                             Ask(
