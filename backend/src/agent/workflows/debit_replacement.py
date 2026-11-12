@@ -6,8 +6,9 @@ the fees (tier tables), the limit on replacements in 12 months and the waiting p
 and refuses a speed the tier does not offer.
 """
 
-from datetime import date, datetime
-from typing import Literal, Optional
+from collections.abc import Mapping
+from datetime import date, datetime, timedelta
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -49,6 +50,9 @@ LIMIT = {"Entry": 2, "Mid": 3, "Premium": 5}
 EXCESS_FEE = {"Entry": 25.0, "Mid": 15.0}
 COUNTS = frozenset({"lost", "stolen", "fraud", "damaged"})
 WINDOW_DAYS = 365
+# Entry tier: doc 029 says a new card waits this long after closure. The bank's tool never checks it, and the gold
+# of task 091 orders an Entry card the same day, so only the lost-wallet composer enforces it (docs/fraud-policy-decisions.md).
+WAIT_HOURS = 48
 
 
 class Closure(BaseModel):
@@ -57,6 +61,8 @@ class Closure(BaseModel):
     card_id: str
     # Why the old card is being closed.
     reason: Reason
+    # True only if the customer agreed that a refund still pending on the card is credited to the checking account.
+    accepts_refund_to_checking: bool
 
 
 class NewCard(BaseModel):
@@ -90,6 +96,21 @@ def _issued(card: dict[str, object]) -> Optional[date]:
     return None
 
 
+def pending_rows(db: Any, account_id: str) -> tuple[list[Mapping[str, Any]], list[Mapping[str, Any]]]:
+    """The account's pending purchases and its pending refunds. The bank's close tool checks neither (doc 025)."""
+    rows = [
+        t
+        for t in db.bank_account_transaction_history.data.values()
+        if t.get("account_id") == account_id and str(t.get("status")).lower() == "pending"
+    ]
+    refunds = [t for t in rows if t.get("type") == "refund"]
+    return [t for t in rows if t.get("type") != "refund"], refunds
+
+
+def _cap(text: str) -> str:
+    return text[0].upper() + text[1:]
+
+
 class DebitReplacement:
     name = "debit_replacement"
     kinds = frozenset({IntentKind.ORDER_REPLACEMENT_CARD, IntentKind.CLOSE_CARD})
@@ -106,7 +127,10 @@ class DebitReplacement:
             return Refuse("list at least one card to close or one new card to order")
         db = ctx.database
         steps: list[Step] = []
+        notes: list[str] = []
+        needs: list[Ask] = []
         closing: set[str] = set()
+        held_accounts: set[str] = set()
         for item in facts.closures:
             card = db.debit_cards.data.get(item.card_id)
             account = db.accounts.data.get(str(card.get("account_id"))) if card else None
@@ -116,7 +140,33 @@ class DebitReplacement:
                 return Refuse(f"{item.card_id} is listed twice")
             closing.add(item.card_id)
             if card.get("status") == "CLOSED":
-                return Refuse(f"{item.card_id} is already closed; leave it out of closures")
+                return Refuse(
+                    f"{item.card_id} is already closed; leave it out of closures and do not tell the customer "
+                    "that anything will be done for it"
+                )
+            account_id = str(card["account_id"])
+            label = f"your {account.get('level') or 'account'} card"
+            purchases, refunds = pending_rows(db, account_id)
+            if purchases:
+                # A card with purchases still pending is held, not closed (doc 025): frozen if it is not yet.
+                if card.get("status") == "ACTIVE":
+                    steps.append(Step("freeze_debit_card_3892", {"card_id": item.card_id}))
+                held_accounts.add(account_id)
+                notes.append(
+                    f"{_cap(label)} stays frozen, not closed: it has purchases still pending, and a card with "
+                    "pending purchases cannot be closed until they settle."
+                )
+                continue
+            if refunds and not item.accepts_refund_to_checking:
+                needs.append(
+                    Ask(
+                        "accepts_refund_to_checking",
+                        f"{_cap(label)} has a refund still pending. It cannot be closed until the refund "
+                        "processes, unless you agree that it is credited to your checking account instead. "
+                        "Do you agree?",
+                    )
+                )
+                continue
             if card.get("status") == "FROZEN":
                 steps.append(Step("unfreeze_debit_card_3893", {"card_id": item.card_id}))
             steps.append(Step("close_debit_card_4721", {"card_id": item.card_id, "reason": item.reason}))
@@ -129,6 +179,9 @@ class DebitReplacement:
             if new.account_id in ordering:
                 return Refuse(f"{new.account_id} is listed twice")
             ordering.add(new.account_id)
+            if new.account_id in held_accounts:
+                notes.append(f"No new card is ordered for your {account.get('level')} while its card is held.")
+                continue
             tier = tier_of_level(str(account.get("level")))
             if tier is None:
                 return HandOff(f"the account level {account.get('level')} has no replacement rules on file")
@@ -182,4 +235,12 @@ class DebitReplacement:
             if excess is not None:
                 order["excess_replacement_fee"] = excess
             steps.append(Step("order_debit_card_5739", order))
+        if needs:
+            return NeedInfo(tuple(needs))
+        if not steps:
+            return Reply(" ".join(notes))
+        if notes:
+            first = steps[0]
+            extra = "Not included: " + " ".join(notes)
+            steps[0] = Step(first.tool, first.args, f"{first.note}. {extra}" if first.note else extra)
         return Plan(tuple(steps))

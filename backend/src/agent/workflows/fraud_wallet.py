@@ -28,12 +28,18 @@ from agent.cards import describe, describe_credit, owned_credit_accounts
 from agent.workflows.base import Ask, Decision, HandOff, NeedInfo, Plan, Refuse, Reply, Step, WorkflowContext
 from agent.workflows.credit_dispute import CreditDispute, CreditDisputeFacts, CreditDisputeRequest
 from agent.workflows.credit_replacement import CreditReplacement, CreditReplacementFacts, NewCreditCard
-from agent.workflows.debit_replacement import Closure, DebitReplacement, NewCard, ReplacementFacts
+from agent.workflows.debit_replacement import (
+    WAIT_HOURS,
+    Closure,
+    DebitReplacement,
+    NewCard,
+    ReplacementFacts,
+    pending_rows,
+)
 from agent.workflows.tiers import tier_of_level
 from orchestrator.types import IntentKind
 
 LossReason = Literal["lost", "stolen", "fraud_suspected"]
-WAIT_HOURS = 48
 
 
 class Replacement(BaseModel):
@@ -82,15 +88,7 @@ class WalletFacts(BaseModel):
     credit_disputes: list[CreditDisputeFacts]
 
 
-def _pending(db: Any, account_id: str) -> tuple[list[Mapping[str, Any]], list[Mapping[str, Any]]]:
-    """The account's pending purchases and its pending refunds."""
-    rows = [
-        t
-        for t in db.bank_account_transaction_history.data.values()
-        if t.get("account_id") == account_id and str(t.get("status")).lower() == "pending"
-    ]
-    refunds = [t for t in rows if t.get("type") == "refund"]
-    return [t for t in rows if t.get("type") != "refund"], refunds
+_pending = pending_rows
 
 
 def _level(db: Any, account_id: str) -> str:
@@ -226,7 +224,7 @@ class WalletLoss:
         return DebitReplacement().decide(
             ctx,
             ReplacementFacts(
-                closures=[Closure(card_id=choice.card_id, reason=reason)],
+                closures=[Closure(card_id=choice.card_id, reason=reason, accepts_refund_to_checking=choice.accepts_refund_to_checking)],
                 new_cards=[]
                 if replacement is None
                 else [

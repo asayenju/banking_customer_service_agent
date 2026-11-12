@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 
 from agent.tier1 import gold_steps
-from agent.workflows.base import HandOff, Plan, Refuse
+from agent.workflows.base import HandOff, NeedInfo, Plan, Refuse
 from agent.workflows.base import WorkflowContext
 from agent.workflows.debit_replacement import DebitReplacement, ReplacementFacts
 from agent.workflows.gold_facts import facts_from_gold
@@ -68,7 +68,7 @@ def test_a_speed_the_tier_does_not_offer_is_refused_with_the_options():
 def test_another_customers_card_is_refused():
     db, card = a_light_blue_card()
     facts = ReplacementFacts.model_validate(
-        {"closures": [{"card_id": card["card_id"], "reason": "lost"}], "new_cards": []}
+        {"closures": [{"card_id": card["card_id"], "reason": "lost", "accepts_refund_to_checking": False}], "new_cards": []}
     )
     decision = DebitReplacement().decide(WorkflowContext(db, "someone_else", TODAY), facts)
     assert isinstance(decision, Refuse)
@@ -132,3 +132,54 @@ def test_best_free_design_is_worked_out_per_tier():
         "delivery_option": order.args["delivery_option"], "card_design": order.args["card_design"],
         "delivery_fee": 0.0, "design_fee": 0.0,
     }
+
+
+# ---------------------------------------------------------------- pending transactions (tasks 078 and 079)
+
+def _task_world(task: str):
+    from banking_tools import BankingSession
+    from banking_tools.manifest import load_tasks
+
+    session = BankingSession.from_task({t["id"]: t for t in load_tasks()}[task])
+    return session.database
+
+
+def _close(db, user, card, *, accepts, new_cards=()):
+    facts = ReplacementFacts.model_validate(
+        {
+            "closures": [{"card_id": card, "reason": "lost", "accepts_refund_to_checking": accepts}],
+            "new_cards": list(new_cards),
+        }
+    )
+    return DebitReplacement().decide(WorkflowContext(db, user, TODAY), facts)
+
+
+def test_a_card_with_pending_purchases_is_frozen_not_closed_by_the_debit_workflow():
+    """Task 078: Light Green has two pending purchases. Any debit request holds it, not only a lost wallet."""
+    db = _task_world("task_078")
+    decision = _close(db, "mc78a5b9d2", "dbc_mc78a5b9d2_lg", accepts=True)
+    assert isinstance(decision, Plan)
+    assert [s.tool for s in decision.steps] == ["freeze_debit_card_3892"]
+    assert "pending" in decision.steps[0].note
+
+
+def test_a_held_card_gets_no_new_card_ordered():
+    db = _task_world("task_078")
+    order = {
+        "account_id": "chk_mc78a5b9d2_3", "delivery_option": "STANDARD", "card_design": "CLASSIC",
+        "shipping_address": None, "accepts_excess_fee": False,
+    }
+    decision = _close(db, "mc78a5b9d2", "dbc_mc78a5b9d2_lg", accepts=True, new_cards=[order])
+    assert isinstance(decision, Plan) and all(s.tool != "order_debit_card_5739" for s in decision.steps)
+
+
+def test_a_pending_refund_is_asked_about_and_the_accept_unlocks_the_close():
+    """Task 079: Green has a pending refund; the customer must agree it goes to checking."""
+    db = _task_world("task_079")
+    card = next(
+        c for c in db.debit_cards.data.values() if c["account_id"] == "chk_cr89a2b3c4_3" and c["status"] != "CLOSED"
+    )["card_id"]
+    asked = _close(db, "cr89a2b3c4", card, accepts=False)
+    assert isinstance(asked, NeedInfo) and asked.questions[0].slot == "accepts_refund_to_checking"
+    agreed = _close(db, "cr89a2b3c4", card, accepts=True)
+    assert isinstance(agreed, Plan) and "close_debit_card_4721" in [s.tool for s in agreed.steps]
