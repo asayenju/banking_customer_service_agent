@@ -217,6 +217,11 @@ _AFFIRMATION = re.compile(
 )
 
 
+def is_affirmation(text: str) -> bool:
+    """A bare yes, no or "go ahead": an answer to a yes or no question, not the answer to an open one."""
+    return bool(_AFFIRMATION.match(text.strip()))
+
+
 def _span(start: Optional[int], end: Optional[int]) -> Optional[tuple[int, int]]:
     if start is None or end is None or start < 0 or end < start:
         return None

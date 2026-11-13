@@ -33,6 +33,7 @@ from pydantic import BaseModel, ConfigDict
 
 from banking_tools.types import CompletedStep
 from orchestrator.auth import (
+    IDENTITY_SLOT,
     AuthState,
     Directory,
     gate_intents,
@@ -41,7 +42,8 @@ from orchestrator.auth import (
 )
 from orchestrator.containment import Containment
 from orchestrator.context import AgentSession, Mode, RouteContext, SessionRequest
-from orchestrator.decision import CONFIRM_SLOT, HUMAN_AFTER_ASKS, Action, IntentDecision, decide, fingerprint
+from orchestrator.llm_decomposer import is_affirmation
+from orchestrator.decision import CLARIFY_SLOT, CONFIRM_SLOT, HUMAN_AFTER_ASKS, Action, IntentDecision, decide, fingerprint
 from orchestrator.decomposer import Decomposer, Interpretation
 from orchestrator.executor import (
     ROUTE_TIMEOUTS,
@@ -51,7 +53,7 @@ from orchestrator.executor import (
     RouteRunner,
     execute_plan,
 )
-from orchestrator.plan import Plan, PlanRejected, Waiting, closes_wait_for_openings, plan
+from orchestrator.plan import READ_ONLY_KINDS, Plan, PlanRejected, Waiting, closes_wait_for_openings, plan
 from orchestrator.plan_preview import PlanPreview
 from orchestrator.reply import Reply, compose_reply
 from orchestrator.routes import Route, route_for
@@ -61,6 +63,8 @@ from orchestrator.types import Decomposition, Intent, IntentKind, Question
 from orchestrator.unclear import HelpState, handle_unclear, offer_help, precheck
 
 MAX_ASKS = 3
+# What the decomposer makes of an answer it did not recognise as one; never a request to change anything.
+_ANSWER_NOISE = READ_ONLY_KINDS | {IntentKind.OTHER, IntentKind.UNCLEAR_OR_GREETING, IntentKind.GENERAL_QUESTION}
 # Details that are secrets: an answer to a question about one is captured even without a cue word.
 SECRET_SLOTS = frozenset({"pin", "new_pin", "current_pin", "cvv"})
 
@@ -327,6 +331,29 @@ class Orchestrator:
             context_for=self._context_for,
         )
 
+    def _free_answer(
+        self, message: str, asked_before: Mapping[str, tuple[Question, ...]], decomposition: Decomposition
+    ) -> Optional[tuple[str, str]]:
+        """(intent id, detail) when this message is the customer's answer to the one open question a route asked.
+
+        Only when exactly one intent waits on one question of its own (not a yes, not identity), the message is short,
+        it is not a bare yes or no, the decomposer gave that intent no new details, and nothing it found is a new
+        request that changes anything."""
+        waiting = [
+            (iid, qs[0])
+            for iid, qs in asked_before.items()
+            if iid in self._active and len(qs) == 1 and qs[0].slot not in (CONFIRM_SLOT, CLARIFY_SLOT, IDENTITY_SLOT)
+        ]
+        if len(waiting) != 1 or len(message) > 300 or is_affirmation(message):
+            return None
+        intent_id, question = waiting[0]
+        for found in decomposition.intents:
+            if found.id == intent_id and found.slots != self._active[intent_id].slots:
+                return None  # the decomposer already put the details where they belong
+            if found.id not in self._active and found.kind not in _ANSWER_NOISE:
+                return None  # a real new request
+        return intent_id, question.slot
+
     async def _verify(self, claims: Mapping[str, str], events: list[TraceEvent]) -> None:
         try:
             record = await self._directory.find(claims)
@@ -370,6 +397,13 @@ class Orchestrator:
                 )
 
         asked_before = dict(self._pending_route_questions)  # what a route was waiting on, before this message
+        answering = self._free_answer(message, asked_before, decomposition)
+        if answering is not None:
+            # The message answers the one question on screen. The decomposer sometimes reads such an answer as a new
+            # request or as a yes; the answer is kept as the detail that was asked for, and nothing new is made of it.
+            decomposition = decomposition.model_copy(
+                update={"intents": tuple(i for i in decomposition.intents if i.id in self._active)}
+            )
         touched: set[str] = set()
         for intent in decomposition.intents:
             if intent.id in self._done:
@@ -396,6 +430,21 @@ class Orchestrator:
             self._active[intent.id] = intent
             self._resumable.pop(intent.id, None)  # asked to try again: it runs with its progress
             touched.add(intent.id)
+
+        if answering is not None:
+            answered_id, asked_slot = answering
+            waiting_intent = self._active[answered_id]
+            self._active[answered_id] = waiting_intent.model_copy(
+                update={"slots": {**waiting_intent.slots, asked_slot: message.strip()[:500]}}
+            )
+            self._prints[answered_id] = fingerprint(self._active[answered_id])
+            self._asks[answered_id] = 0
+            # Not "touched", like a yes: the customer only answered, so the request keeps the score it earned when it
+            # was stated (scoring the answer alone would call a clear request unclear), and runs again at once.
+            self._pending_route_questions.pop(answered_id, None)
+            events.append(
+                TraceEvent(kind=TraceKind.DECIDED, intent_id=answered_id, detail="answered", reason=asked_slot)
+            )
 
         for intent_id in touched:
             # The customer said something about it: whatever the route asked is answered

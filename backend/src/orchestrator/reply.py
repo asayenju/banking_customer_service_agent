@@ -50,7 +50,7 @@ def _already_answered(intents: Mapping[str, Intent], question: Question) -> bool
 
 
 def _wording(intents: Mapping[str, Intent], question: Question) -> str:
-    what = _summary(intents, question.intent_id)
+    what = _summary(intents, question.intent_id).strip().rstrip(".?! ")
     if question.slot == IDENTITY_SLOT:
         return IDENTITY_PROMPT
     if question.slot == CONFIRM_SLOT:
