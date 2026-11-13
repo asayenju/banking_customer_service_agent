@@ -273,11 +273,32 @@ def recurring_block(v: ValidationContext, args: Mapping[str, Any]) -> Optional[s
     return _active_card(v, args, "recurring payments blocked or allowed")
 
 
+def limit_blocker(v: ValidationContext, card: Optional[Mapping[str, Any]]) -> Optional[str]:
+    """Doc 040's eligibility rules the bank's tool never checks: the account is OPEN and at least 60 days old, and
+    it has had no overdraft fee in the last 30 days (task 089: the Blue card's overdraft 13 days ago)."""
+    account = _row(v, "accounts", (card or {}).get("account_id"))
+    if account is None:
+        return "that card's account does not exist"
+    if account.get("status") != "OPEN":
+        return "the account is not open"
+    opened = _day(account.get("date_opened"))
+    if opened is not None and (v.today - opened).days < 60:
+        return "the account must be at least 60 days old for a temporary limit increase"
+    for t in v.database.bank_account_transaction_history.data.values():
+        if t.get("account_id") == account.get("account_id") and "OVERDRAFT" in str(t.get("description", "")).upper():
+            when = _day(t.get("date"))
+            if when is not None and 0 <= (v.today - when).days <= 30:
+                return "an overdraft fee in the last 30 days means the account is not eligible for a temporary limit increase"
+    return None
+
+
 def temporary_limit(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
     if (problem := _active_card(v, args, "a limit increase")) is not None:
         return problem
     if args.get("limit_type") not in ("atm", "purchase"):
         return "the limit is either atm or purchase"
+    if (problem := limit_blocker(v, _card(v, args))) is not None:
+        return problem
     limit = args.get("new_limit")
     if not isinstance(limit, (int, float)) or isinstance(limit, bool) or limit <= 0 or limit != int(limit):
         return "the new limit must be a whole number of dollars above zero"
