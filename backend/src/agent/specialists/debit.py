@@ -186,6 +186,12 @@ def order(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
         for c in v.database.debit_cards.data.values()
     ):
         return "this account already has an active card: close it first"
+    from agent.workflows.debit_replacement import order_blocker
+
+    user = _row(v, "users", account.get("user_id")) or {}
+    on_file = str(args.get("shipping_address") or "") == str(user.get("address") or "")
+    if (blocker := order_blocker(v.database, account, user, str(user.get("address") or "") if on_file else "", v.today)) is not None:
+        return blocker
     delivery = str(args.get("delivery_option", "")).upper()
     design = str(args.get("card_design", "")).upper()
     if delivery not in DELIVERY_FEES or design not in DESIGN_FEES:

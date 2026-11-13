@@ -6,6 +6,7 @@ the fees (tier tables), the limit on replacements in 12 months and the waiting p
 and refuses a speed the tier does not offer.
 """
 
+import re
 from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 from typing import Any, Literal, Optional
@@ -33,7 +34,14 @@ Design = Literal["CLASSIC", "PREMIUM", "CUSTOM", "BEST_FREE"]
 # Plainest to fanciest. "BEST_FREE" means the fanciest of these that costs nothing on the tier.
 LOOKS = ("CLASSIC", "PREMIUM", "CUSTOM")
 ExcessFee = Literal["yes", "no", "not_asked"]
-Reason = Literal["lost", "stolen", "fraud_suspected", "damaged"]
+Reason = Literal["lost", "stolen", "fraud_suspected", "damaged", "no_longer_needed", "account_closing"]
+# These reasons close a card at once; any other needs the card to be 14 days old (doc 025, requirement 6).
+URGENT_REASONS = frozenset({"lost", "stolen", "fraud_suspected"})
+MIN_CARD_AGE_DAYS = 14
+MIN_ACCOUNT_BUSINESS_DAYS = 3
+MIN_BALANCE = 25.0
+ADULT_YEARS = 18
+_US_ADDRESS = re.compile(r"\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\s*$")
 
 DELIVERY_FEE: dict[str, dict[str, float]] = {
     "Entry": {"STANDARD": 0.0},
@@ -97,6 +105,62 @@ def _issued(card: dict[str, object]) -> Optional[date]:
             return datetime.strptime(text, fmt).date()
         except ValueError:
             continue
+    return None
+
+
+def _day(text: object) -> Optional[date]:
+    for fmt in ("%m/%d/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(str(text)[:10], fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _business_days(start: date, end: date) -> int:
+    """Whole business days from start up to end, weekends excluded."""
+    days, current = 0, start
+    while current < end:
+        current += timedelta(days=1)
+        if current.weekday() < 5:
+            days += 1
+    return days
+
+
+def _add_business_days(start: date, count: int) -> date:
+    current = start
+    while count > 0:
+        current += timedelta(days=1)
+        if current.weekday() < 5:
+            count -= 1
+    return current
+
+
+def order_blocker(db: Any, account: Mapping[str, Any], user: Mapping[str, Any], address: str, today: date) -> Optional[str]:
+    """Doc 023's eligibility rules the bank's order tool never checks, as a sentence for the customer, or None.
+    ``address`` is the address on file; one the customer gives is shown in the plan and confirmed by them."""
+    opened = _day(account.get("date_opened"))
+    if opened is not None and _business_days(opened, today) < MIN_ACCOUNT_BUSINESS_DAYS:
+        return (
+            f"a card cannot be ordered for your {account.get('level')} until it has been open {MIN_ACCOUNT_BUSINESS_DAYS} "
+            f"business days (from {_add_business_days(opened, MIN_ACCOUNT_BUSINESS_DAYS):%m/%d/%Y})."
+        )
+    try:
+        balance = float(str(account.get("current_holdings") or "0").replace("$", "").replace(",", ""))
+    except ValueError:
+        balance = 0.0
+    if balance < MIN_BALANCE:
+        return f"your {account.get('level')} needs at least ${MIN_BALANCE:.0f} to cover possible fees before a card can be ordered."
+    born = _day(user.get("date_of_birth"))
+    if born is not None and (today.year - born.year - ((today.month, today.day) < (born.month, born.day))) < ADULT_YEARS:
+        return f"the cardholder must be at least {ADULT_YEARS} years old to order a card."
+    if any(
+        c.get("account_id") == account.get("account_id") and c.get("status") == "PENDING"
+        for c in db.debit_cards.data.values()
+    ):
+        return f"your {account.get('level')} already has a card on order."
+    if address and not _US_ADDRESS.search(address.strip()):
+        return "cards can only be mailed to a US address."
     return None
 
 
@@ -172,6 +236,18 @@ class DebitReplacement:
                     )
                 )
                 continue
+            issued = _issued(card)
+            if (
+                item.reason not in URGENT_REASONS
+                and issued is not None
+                and (ctx.today - issued).days < MIN_CARD_AGE_DAYS
+            ):
+                notes.append(
+                    f"{_cap(label)} is under {MIN_CARD_AGE_DAYS} days old, so it cannot be closed for this reason yet. "
+                    f"It can be closed from {issued + timedelta(days=MIN_CARD_AGE_DAYS):%m/%d/%Y}."
+                )
+                held_accounts.add(account_id)
+                continue
             closing_accounts.add(account_id)
             if card.get("status") == "FROZEN":
                 steps.append(Step("unfreeze_debit_card_3893", {"card_id": item.card_id}))
@@ -191,6 +267,13 @@ class DebitReplacement:
             tier = tier_of_level(str(account.get("level")))
             if tier is None:
                 return HandOff(f"the account level {account.get('level')} has no replacement rules on file")
+            address = new.shipping_address or str(user.get("address") or "")
+            if (blocker := order_blocker(db, account, user, str(user.get("address") or "") if not new.shipping_address else "", ctx.today)) is not None and not (
+                new.account_id in closing_accounts
+                and blocker == f"your {account.get('level')} already has a card on order."
+            ):
+                notes.append(f"No new card is ordered: {blocker}")
+                continue
             speed: str = new.delivery_option
             if speed == "FASTEST_FREE":
                 speed = [o for o in SPEED if DELIVERY_FEE[tier].get(o) == 0.0][-1]
@@ -200,7 +283,6 @@ class DebitReplacement:
             if speed not in DELIVERY_FEE[tier]:
                 offered = ", ".join(DELIVERY_FEE[tier])
                 return Refuse(f"the {account.get('level')} offers only these delivery options: {offered}")
-            address = new.shipping_address or str(user.get("address") or "")
             if not address:
                 return NeedInfo((Ask("shipping_address", "Where should the new card be sent?"),))
             excess: Optional[float] = None
