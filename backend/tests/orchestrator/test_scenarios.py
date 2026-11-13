@@ -564,3 +564,13 @@ def test_a_frustrated_customer_who_asks_for_a_person_is_not_kept_talking_to_the_
     r = w.turn("my direct deposit is missing and I want to talk to someone, now")
     assert r.reply.escalated_intent_ids == ("h",)
     assert "talk to a person about the missing deposit" in r.reply.text
+
+
+def test_a_request_held_back_for_verification_is_scored_on_the_message_that_stated_it():
+    """The live demo: 'I lost my wallet...', then 'my phone is ... and my email is ...' in a second message."""
+    freeze = I("f1", K.FREEZE_CARD, {"card_id": "c1"})
+    w = World([interp(freeze), interp(claims=GOOD_CLAIMS)], [[S("f1", 0.97)]])
+    first = w.turn("I lost my card, freeze it please")
+    assert [q.slot for q in first.reply.questions] and not w.orch.verified
+    w.turn("my email is kenji.tanaka@example.com and my phone is 206-555-0293")
+    assert w.orch.verified and w.scorer.messages == ["I lost my card, freeze it please"]

@@ -192,6 +192,7 @@ class Orchestrator:
         self._pending_route_questions: dict[str, tuple[Question, ...]] = {}
         self._prints: dict[str, str] = {}
         self._scores: dict[str, IntentScore] = {}
+        self._said: dict[str, str] = {}
         self._scored_kind: dict[str, IntentKind] = {}
         self._pending_confirm: dict[str, str] = {}
         self._confirmed: dict[str, str] = {}
@@ -764,11 +765,16 @@ class Orchestrator:
             if i.kind is not IntentKind.UNCLEAR_OR_GREETING
             and route_for(i.kind) is not Route.HAND_OFF
         ]
+        for intent_id in touched:
+            self._said.setdefault(intent_id, message)
         to_score = [i for i in scoreable if i.id in touched or i.id not in self._scores]
-        if to_score:
-            for score in await score_intents(
-                self._scorer, message, _view(to_score), timeout=self._scorer_timeout
-            ):
+        # An intent held back (by the identity check, say) is scored on the message that stated it, not on whatever
+        # the customer says later ("my phone is ..." would score a clear request as unclear).
+        by_words: dict[str, list[Intent]] = {}
+        for i in to_score:
+            by_words.setdefault(message if i.id in touched else self._said.get(i.id, message), []).append(i)
+        for words, group in by_words.items():
+            for score in await score_intents(self._scorer, words, _view(group), timeout=self._scorer_timeout):
                 score = self._continued(score)
                 self._scores[score.intent_id] = score
                 events.append(

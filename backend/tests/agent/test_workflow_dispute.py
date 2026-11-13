@@ -145,3 +145,23 @@ def test_an_atm_transaction_type_comes_from_the_record():
     )
     decision = DebitDispute().decide(WorkflowContext(db, "mc47a2b9e1", date(2025, 11, 14)), facts)
     assert isinstance(decision, Plan) and decision.steps[0].args["transaction_type"] == "atm_withdrawal"
+
+
+def test_a_double_charge_is_disputed_once_on_the_row_the_reference_disputes():
+    """Doc 031: dispute the earliest when a charge is duplicated. The two rows of task 084 are identical."""
+    from agent.workflows.base import Plan
+    from banking_tools import BankingSession
+
+    task = next(t for t in load_tasks() if t["id"] == "task_084")
+    db = BankingSession.from_task(task).database
+
+    def dup(txn):
+        return DisputeFacts(
+            transaction_id=txn, category="duplicate_charge", discovery_date="11/10/2025", disputed_amount=47.5,
+            transaction_type="pin_purchase", card_in_possession=True, pin_compromised="no", contacted_merchant=False,
+            police_report_filed=False, written_statement_provided=True, card_closure="not_asked",
+        )
+
+    for listed in ([dup("btxn_d7f2a98c1b34"), dup("btxn_e8c3b09d2c45")], [dup("btxn_d7f2a98c1b34")], [dup("btxn_e8c3b09d2c45")]):
+        decision = DebitDispute().decide(WorkflowContext(db, "a7c2f85d91", date(2025, 11, 14)), DisputeRequest(disputes=listed))
+        assert isinstance(decision, Plan) and [s.args["transaction_id"] for s in decision.steps] == ["btxn_e8c3b09d2c45"]

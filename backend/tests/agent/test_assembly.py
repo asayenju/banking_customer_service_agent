@@ -148,3 +148,23 @@ def test_the_api_runs_a_conversation_through_the_wired_orchestrator_and_remember
     client.post("/conversations/c2/messages", json={"message_id": "m1", "message": "hello"})
     assert len(built) == 2, "one conversation per id, created on its first message"
     assert intent
+
+
+def test_the_demo_page_is_served_and_a_scenario_picks_the_sample_customer():
+    asked = []
+
+    def scenario_factory(task_id):
+        asked.append(task_id)
+        return conversation([], [])
+
+    main.app.state.scenario_factory = scenario_factory
+    main.app.state.conversations = {}
+    client = TestClient(main.app)
+    page = client.get("/demo")
+    assert page.status_code == 200 and "Rho-Bank assistant" in page.text
+    ok = client.post("/conversations/s1/messages", json={"message_id": "m1", "message": "hello", "scenario": "wallet"})
+    assert ok.status_code == 200 and asked == ["task_078"]
+    client.post("/conversations/s1/messages", json={"message_id": "m2", "message": "hello again", "scenario": "dispute"})
+    assert asked == ["task_078"], "the scenario is read only on the first message"
+    bad = client.post("/conversations/s2/messages", json={"message_id": "m1", "message": "hello", "scenario": "nope"})
+    assert bad.status_code == 422

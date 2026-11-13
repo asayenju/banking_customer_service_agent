@@ -62,8 +62,10 @@ class SequenceScorer:
     def __init__(self, *calls):
         self._calls = list(calls)
         self.asked = []
+        self.messages = []
 
     async def score(self, message, decomposition):
+        self.messages.append(message)
         self.asked.append([i.id for i in decomposition.intents])
         if not self._calls:
             raise AssertionError("scorer called more often than scripted")

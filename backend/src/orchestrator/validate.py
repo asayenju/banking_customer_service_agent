@@ -31,10 +31,11 @@ class InvalidDecomposition(ValueError):
 # Cards are not listed. Customers do not know card ids, so the code that handles a card
 # request (``agent.cards``) picks the card itself: one candidate needs no question, several
 # get a list written by code, and "the one ending 4821" is understood. Asking for an
-# internal id up front would make every freeze a puzzle. Disputes and money movement still
-# ask for their ids, because no code picks a transaction or an account for the customer yet.
+# internal id up front would make every freeze a puzzle. Disputes are not listed either: the dispute
+# specialists read the account's transactions and match what the customer described (amount, merchant,
+# date), so a customer is never asked for a transaction id. Money movement still asks for its ids,
+# because no code picks an account for the customer yet.
 REQUIRED_SLOTS: dict[IntentKind, tuple[str, ...]] = {
-    K.DISPUTE_TRANSACTION: ("transaction_id",),
     K.TRANSFER_FUNDS: ("from_account_id", "to_account_id", "amount"),
     K.PAY_CREDIT_CARD: ("account_id", "amount"),
     K.CLOSE_ACCOUNT: ("account_id",),

@@ -358,3 +358,40 @@ def test_a_different_kind_next_to_a_confirmation_is_a_real_second_request() -> N
     other = {**raw("i1", "ACCOUNT_BALANCE_OR_HISTORY", "my balance"), "evidence": "what is my balance"}
     result = interpret(FakeLLMClient([reply(other, confirmed=["t1-i1"])]), "yes, and what is my balance", [_open_report()])
     assert kinds(result) == [K.ACCOUNT_BALANCE_OR_HISTORY] and result.confirmed == ("t1-i1",)
+
+
+# --- contact details given to prove who the customer is are claims, not a profile change ---
+
+
+def test_contact_details_with_no_word_about_changing_them_are_read_as_claims_and_the_profile_request_is_dropped() -> None:
+    message = "My phone is 619-555-0284 and my email is meiling.chen@outlook.com"
+    wrong = raw("i1", "UPDATE_PROFILE", "update phone and email", {"phone_number": "619-555-0284"})
+    wrong["evidence"] = message
+    result = interpret(FakeLLMClient([reply(wrong)]), message)
+    assert result.claims == {"email": "meiling.chen@outlook.com", "phone_number": "619-555-0284"}
+    assert kinds(result) == []
+
+
+def test_a_request_to_change_the_email_stays_a_profile_request_with_no_claims() -> None:
+    message = "Please change my email to new.address@example.com"
+    ask = raw("i1", "UPDATE_PROFILE", "change email", {"email": "new.address@example.com"})
+    ask["evidence"] = message
+    result = interpret(FakeLLMClient([reply(ask)]), message)
+    assert result.claims == {} and kinds(result) == [K.UPDATE_PROFILE]
+
+
+def test_a_message_of_only_contact_details_asks_for_nothing_even_if_the_model_rewrote_an_open_request() -> None:
+    message = "My phone is 312-555-7294 and my email is valeria.montes@finmail.com"
+    open_request = Intent(id="t1-i1", kind=K.DISPUTE_TRANSACTION, summary="dispute a charge")
+    rewritten = raw("t1-i1", "GENERAL_QUESTION", "update my phone and email")
+    rewritten["evidence"] = message
+    result = interpret(FakeLLMClient([reply(rewritten, claims={"email": "valeria.montes@finmail.com"})]), message, [open_request])
+    assert kinds(result) == [] and result.claims["phone_number"] == "312-555-7294"
+
+
+def test_contact_details_inside_a_real_request_keep_the_request() -> None:
+    message = "My email is a@b.com and I want to dispute a charge"
+    ask = raw("i1", "DISPUTE_TRANSACTION", "dispute a charge")
+    ask["evidence"] = "I want to dispute a charge"
+    result = interpret(FakeLLMClient([reply(ask)]), message)
+    assert kinds(result) == [K.DISPUTE_TRANSACTION] and result.claims == {"email": "a@b.com"}
