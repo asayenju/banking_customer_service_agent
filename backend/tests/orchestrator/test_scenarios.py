@@ -527,7 +527,7 @@ def test_a_dispute_collects_what_is_missing_then_a_yes_then_runs():
         [[S("d", 0.96)], [S("d", 0.95)], [S("d", 0.95)]],
     )
     first = w.turn("the hotel gave me a smaller room than I paid for, I want a refund")
-    assert [q.slot for q in first.reply.questions] == ["transaction_id", "reason"]
+    assert [q.slot for q in first.reply.questions] == ["transaction_id"], "one question at a time, not both"
     second = w.turn("it was transaction t7, the room was not as booked")
     assert [q.slot for q in second.reply.questions] == ["confirmation"]
     third = w.turn("yes")

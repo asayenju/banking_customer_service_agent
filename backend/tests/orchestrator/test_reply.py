@@ -79,13 +79,19 @@ def test_an_escalation_says_a_human_is_taking_it_over():
     assert reply.escalated_intent_ids == ("fee",)
 
 
-def test_questions_come_as_one_batch_tied_to_their_intents_with_wording_filled_in():
-    reply = compose_reply(INTENTS, decisions=[ask("frz", "card_id"), ask("fee", CLARIFY_SLOT)])
-    assert [(q.intent_id, q.slot) for q in reply.questions] == [("frz", "card_id"), ("fee", CLARIFY_SLOT)]
-    assert all(q.text for q in reply.questions)
+def test_questions_come_one_at_a_time_tied_to_their_intent_with_wording_filled_in():
+    reply = compose_reply(INTENTS, decisions=[ask("frz", "card_id", "reason"), ask("fee", CLARIFY_SLOT)])
+    assert [(q.intent_id, q.slot) for q in reply.questions] == [("frz", "card_id")]
     assert reply.questions[0].text == "What is the card id for: freeze my card?"
-    assert reply.questions[1].text == "Can you tell me more about: sort out my fees?"
-    assert reply.text.count("I need a little more information") == 1
+    assert reply.text.count("I need a little more information") == 1 and "reason" not in reply.text
+    batch = compose_reply(INTENTS, decisions=[ask("frz", "card_id"), ask("fee", CLARIFY_SLOT)], one_at_a_time=False)
+    assert [(q.intent_id, q.slot) for q in batch.questions] == [("frz", "card_id"), ("fee", CLARIFY_SLOT)]
+    assert batch.questions[1].text == "Can you tell me more about: sort out my fees?"
+
+
+def test_every_yes_to_what_is_about_to_be_done_is_still_asked_together_with_the_next_missing_detail():
+    reply = compose_reply(INTENTS, decisions=[ask("cls", CONFIRM_SLOT), ask("frz", "card_id", "reason"), ask("fee", CONFIRM_SLOT)])
+    assert [(q.intent_id, q.slot) for q in reply.questions] == [("frz", "card_id"), ("cls", CONFIRM_SLOT), ("fee", CONFIRM_SLOT)]
 
 
 def test_a_confirmation_question_says_what_will_happen():

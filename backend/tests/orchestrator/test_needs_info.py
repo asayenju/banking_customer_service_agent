@@ -191,3 +191,36 @@ def test_when_the_asking_intent_is_escalated_the_ones_waiting_on_it_are_not_left
     for n in range(MAX_ASKS):
         w.turn(f"answer {n}")
     assert w.orch.active_ids == (), "neither the asker nor its dependent waits forever"
+
+
+class NeedsThreeThings:
+    """Wants a reason, then a date, then an amount, all missing at first (the route knows the whole list)."""
+
+    ORDER = ("reason", "date", "amount", "merchant", "card")
+
+    def __init__(self):
+        self.calls = []
+
+    async def run(self, intent, ctx):
+        self.calls.append(dict(intent.slots))
+        missing = [s for s in self.ORDER if not intent.slots.get(s)]
+        return done(intent) if not missing else ask(intent, *missing)
+
+
+def test_a_route_that_needs_several_details_is_asked_for_one_at_a_time_and_never_escalates_for_that():
+    route = NeedsThreeThings()
+    script = [interp(general())]
+    given: dict[str, str] = {}
+    for slot in NeedsThreeThings.ORDER:
+        given = {**given, slot: "x"}
+        script.append(interp(general(**given)))
+    w = World(script, [[S("a", 0.99)]] * (len(script)), sub=route)
+    first = w.turn(QUESTION)
+    assert [q.slot for q in first.reply.questions] == ["reason"], "not all five at once"
+    asked = ["reason"]
+    for number, slot in enumerate(NeedsThreeThings.ORDER, start=1):
+        result = w.turn(f"answer {number}")
+        if slot != NeedsThreeThings.ORDER[-1]:
+            assert result.decisions[0].action.value == "ask" and [q.slot for q in result.reply.questions] == [NeedsThreeThings.ORDER[number]]
+            asked.append(NeedsThreeThings.ORDER[number])
+    assert asked == list(NeedsThreeThings.ORDER) and w.orch.done_ids == ("a",), "five questions in turn, then the answer"
