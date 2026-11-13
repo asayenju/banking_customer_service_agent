@@ -523,7 +523,7 @@ def run_live_task(
             talk_client = None
             request = segment_request(task_id, number)
             if context.customer:
-                from agent.customer import SimulatedCustomer
+                from agent.customer import FALLBACK, SimulatedCustomer
                 from knowledge.report import opening_message
                 from agent.tier1 import run_async
 
@@ -539,7 +539,7 @@ def run_live_task(
                     talker._client = talk_client
                 if request is None:
                     request = opening_message(task) if number == 0 else (
-                        run_async(talker.next_request(handled)) or opening_message(task)
+                        run_async(talker.next_request(handled)) or FALLBACK
                     )
                 handled.append(request[:120])
 
