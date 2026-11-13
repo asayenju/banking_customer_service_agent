@@ -2,8 +2,8 @@
 
 Whatever happened to however many intents, the customer gets a single reply:
 what got done, what went wrong (with an offer of a human), what a human is
-taking over, what is waiting on something else, and last, one batched set of
-questions so the thing they have to answer comes at the end.
+taking over, what is waiting on something else, and last, one question (the
+first of whatever is missing) so the thing they have to answer comes at the end.
 
 The wording here is a plain template so tests are exact. An LLM can phrase it
 later behind the same structure. Internal reasons and error strings never reach
@@ -102,6 +102,7 @@ def compose_reply(
     outcomes: Sequence[RouteOutcome] = (),
     decisions: Sequence[IntentDecision] = (),
     waiting: Sequence[Waiting] = (),
+    one_at_a_time: bool = True,
 ) -> Reply:
     lines: list[str] = []
     for outcome in outcomes:
@@ -140,6 +141,12 @@ def compose_reply(
         lines.append(f"Still to do: {_summary(intents, hold.intent_id)} once {blockers} is done.")
 
     questions = _batch(intents, decisions)
+    if one_at_a_time:
+        # Never a list of questions: the first missing detail now. Whatever else is missing is asked again, one at a
+        # time, when the request runs again with this answer (a route recomputes what it still needs each time).
+        # A yes to what is about to be done is not a question to spread out: every one of those stays.
+        details = [q for q in questions if q.slot != CONFIRM_SLOT]
+        questions = (*details[:1], *(q for q in questions if q.slot == CONFIRM_SLOT))
     if questions:
         lines.append("To go on, I need a little more information:")
         lines.extend(f"- {q.text}" for q in questions)

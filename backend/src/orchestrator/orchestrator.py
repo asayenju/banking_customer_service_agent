@@ -187,6 +187,7 @@ class Orchestrator:
         # (the answer to the question) restarts _asks, and must not restart this, or a
         # route that keeps asking would never be stopped.
         self._runner_asks: dict[str, int] = {}
+        self._last_route_slot: dict[str, str] = {}
         # What a route asked and the customer has not answered yet. Slot names and
         # code-built wording only. Re-asked, not re-run, until the customer touches the intent.
         self._pending_route_questions: dict[str, tuple[Question, ...]] = {}
@@ -509,6 +510,10 @@ class Orchestrator:
             Waiting(intent_id=i, blocked_by=blockers) for i, blockers in waiting_on_answer.items()
         )
         reply = compose_reply(view, outcomes=reported, decisions=ordered, waiting=waiting)
+        for on_screen in reply.questions:
+            # The question on screen is the one the customer's next message answers.
+            if on_screen.intent_id in self._pending_route_questions:
+                self._pending_route_questions[on_screen.intent_id] = (on_screen,)
         return TurnResult(
             reply=reply,
             trace=Trace(events=tuple(events)),
@@ -691,6 +696,12 @@ class Orchestrator:
     ) -> None:
         """A route needs an answer. Keep the intent open and ask, up to MAX_ASKS times."""
         intent_id = outcome.intent_id
+        # Asked one at a time, a request may need several questions in turn. The count is of the same question
+        # asked again, so a new question starts it over.
+        first = outcome.questions[0].slot if outcome.questions else ""
+        if self._last_route_slot.get(intent_id) != first:
+            self._runner_asks[intent_id] = 0
+        self._last_route_slot[intent_id] = first
         asked = self._runner_asks.get(intent_id, 0) + 1
         if asked > MAX_ASKS:
             decision = IntentDecision(
