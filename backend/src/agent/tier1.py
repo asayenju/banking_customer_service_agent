@@ -24,7 +24,7 @@ the set of changes the session made against the gold's.
 import asyncio
 import json
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Optional
 
@@ -561,8 +561,17 @@ def run_async(coro: Any) -> Any:
     return _LOOP.run_until_complete(coro) if _LOOP is not None else asyncio.run(coro)
 
 
+MAX_CUSTOMER_ROUNDS = 4
+
+
 def plan_and_execute(
-    specialist: Specialist, intent: Intent, session: BankingSession, user_id: str, *, label: str
+    specialist: Specialist,
+    intent: Intent,
+    session: BankingSession,
+    user_id: str,
+    *,
+    label: str,
+    ask: Optional[Callable[[str], str]] = None,
 ) -> int:
     """Plan, treat the plan as approved, run it. Raises SegmentError with the reason if either fails.
 
@@ -581,6 +590,18 @@ def plan_and_execute(
         )
 
     planned = run_async(specialist.run(intent, context("plan")))
+    rounds = 0
+    while ask is not None and planned.status is OutcomeStatus.NEEDS_INFO and planned.questions and rounds < MAX_CUSTOMER_ROUNDS:
+        # A simulated customer answers the specialist's questions; the answers come back as the customer's own words.
+        rounds += 1
+        slots = dict(intent.slots)
+        talk = [intent.summary]
+        for q in planned.questions:
+            reply = ask(q.text or q.slot)
+            slots[q.slot] = reply
+            talk.append(f"The agent asked: {q.text or q.slot}\nThe customer answered: {reply}")
+        intent = intent.model_copy(update={"slots": slots, "summary": "\n\n".join(talk)})
+        planned = run_async(specialist.run(intent, context("plan")))
     if planned.status is not OutcomeStatus.NEEDS_CONFIRMATION or planned.proposal is None:
         detail = planned.error or " / ".join(q.slot for q in planned.questions) or planned.text[:160]
         raise SegmentError(f"{label} was not planned: {planned.status.value} {detail}".strip())

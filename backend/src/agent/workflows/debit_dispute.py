@@ -110,8 +110,9 @@ class DisputeFacts(BaseModel):
     card_closure: ClosureAnswer = Field(
         description=(
             "Only for a card the bank recommends closing and reissuing after this dispute: 'yes' if the "
-            "customer agreed to close it, 'no' if they want to keep it (even with a new number), 'not_asked' "
-            "if they have not been asked. Report 'not_asked' for every other card."
+            "customer said to close or cancel it, 'no' if they want to keep using it (asking for a new number or a "
+            "reissue is NOT consent to close it: report 'no'), 'not_asked' if neither. Report 'not_asked' for "
+            "every other card."
         )
     )
 

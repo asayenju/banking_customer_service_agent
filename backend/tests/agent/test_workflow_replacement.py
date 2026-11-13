@@ -265,3 +265,18 @@ def test_an_order_the_bank_would_not_allow_is_left_out_with_the_reason(change, w
     decision = DebitReplacement().decide(WorkflowContext(db, "mc78a5b9d2", TODAY), facts)
     assert isinstance(decision, Plan) and all(s.tool != "order_debit_card_5739" for s in decision.steps)
     assert words in decision.steps[0].note
+
+
+def test_an_already_closed_card_is_skipped_with_a_note_and_the_order_is_still_planned():
+    """Task 082: a fraud dispute closed the Blue card; the replacement form still lists it."""
+    db = _task_world("task_078")
+    db.debit_cards.data["dbc_mc78a5b9d2_green"]["status"] = "CLOSED"
+    order = {
+        "account_id": "chk_mc78a5b9d2_2", "delivery_option": "STANDARD", "card_design": "CLASSIC",
+        "shipping_address": None, "accepts_excess_fee": "not_asked",
+    }
+    closing = {"card_id": "dbc_mc78a5b9d2_green", "reason": "lost", "accepts_refund_to_checking": False}
+    facts = ReplacementFacts.model_validate({"closures": [closing], "new_cards": [order]})
+    decision = DebitReplacement().decide(WorkflowContext(db, "mc78a5b9d2", TODAY), facts)
+    assert isinstance(decision, Plan) and [s.tool for s in decision.steps] == ["order_debit_card_5739"]
+    assert "already closed" in decision.steps[0].note
