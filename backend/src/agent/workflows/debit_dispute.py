@@ -7,7 +7,8 @@ and the rules below. After the disputes, one card action per card, the most seve
 """
 
 from collections.abc import Sequence
-from datetime import date, datetime
+import re
+from datetime import date, datetime, timedelta
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -95,6 +96,12 @@ class DisputeFacts(BaseModel):
             "charge on the transaction record; never guess a different year. null if they have not said."
         )
     )
+    noticed_words: Optional[str] = Field(
+        description=(
+            "The customer's own words about WHEN THEY NOTICED the problem (not when the charge happened), copied "
+            "from the conversation, such as 'noticed on the 10th' or 'right away'. null if they have not said."
+        )
+    )
     # What the customer disputes: all of the charge, or only part (an ATM that paid $100 short).
     disputed_amount: float = Field(
         description=(
@@ -159,6 +166,31 @@ def settle_year(noticed: date, happened: date, today: date) -> date:
         if happened <= candidate <= today:
             return candidate
     return noticed
+
+
+_FULL_MONTHS = ("january", "february", "march", "april", "june", "july", "august", "september", "october", "november", "december", "sept")
+_MONTHS = {m: i for i, m in enumerate("jan feb mar apr may jun jul aug sep oct nov dec".split(), start=1)}
+_RIGHT_AWAY = re.compile(r"right away|immediately|same day|that day|straight away|as soon as|when it happened|at once", re.I)
+
+
+def date_matches_words(noticed: date, words: str, happened: date, today: date) -> bool:
+    """Does the date the model wrote agree with the customer's words about when they noticed? The model once wrote
+    the charge's date for "noticed on the 10th". Day, month and relative words in the quote must fit the date."""
+    text = words.lower()
+    if _RIGHT_AWAY.search(text):
+        return noticed == happened
+    if "yesterday" in text:
+        return noticed == today - timedelta(days=1)
+    if re.search(r"\btoday\b|\bthis morning\b|\btonight\b", text):
+        return noticed == today
+    full = re.findall(r"\b(\d{1,2})/(\d{1,2})(?:/\d{2,4})?\b", text)
+    if full:
+        return any((int(m), int(d)) == (noticed.month, noticed.day) for m, d in full)
+    months = {_MONTHS[w[:3]] for w in re.findall(r"[a-z]+", text) if w[:3] in _MONTHS and (len(w) == 3 or w.startswith(tuple(_FULL_MONTHS)))}
+    days = [int(n) for n in re.findall(r"\b(\d{1,2})(?:st|nd|rd|th)?\b", text) if 1 <= int(n) <= 31]
+    if not months and not days:
+        return False
+    return (not months or noticed.month in months) and (not days or noticed.day in days)
 
 
 def liability(transaction_date: date, discovery: date) -> float:
@@ -249,7 +281,7 @@ class DebitDispute:
                     fill["pin_compromised"] = "no"
                 if item.police_report_filed is None:
                     fill["police_report_filed"] = False
-            if item.discovery_date is None:
+            if item.discovery_date is None or not (item.noticed_words or "").strip():
                 need("discovery_date", "When did you first notice this charge?")
             if item.written_statement_provided is None:
                 need(
@@ -290,6 +322,12 @@ class DebitDispute:
             if happened is None or noticed is None:
                 return Refuse("discovery_date must be written MM/DD/YYYY")
             noticed = settle_year(noticed, happened, ctx.today)
+            if not date_matches_words(noticed, str(item.noticed_words), happened, ctx.today):
+                return Refuse(
+                    f"the discovery date {noticed:%m/%d/%Y} does not fit what the customer said about when they noticed "
+                    f"({str(item.noticed_words)!r}). It is the day they noticed the problem, not the day of the charge "
+                    f"({happened:%m/%d/%Y}). Fix the date, or the quote, or ask them"
+                )
             if (from_record := RECORD_TRANSACTION_TYPES.get(str(txn.get("type")))) is not None:
                 item = item.model_copy(update={"transaction_type": from_record})
             if noticed < happened or noticed > ctx.today:

@@ -72,6 +72,7 @@ def facts_from_gold(
                     **{k: d.args[k] for k in keys},
                     "category": d.args["dispute_category"],
                     "card_closure": "yes" if d.args["card_id"] in closed else "no",
+                    "noticed_words": f"noticed on {d.args['discovery_date']}",
                 }
                 for d in disputes
             ]
