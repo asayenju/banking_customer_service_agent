@@ -574,3 +574,42 @@ def test_a_request_held_back_for_verification_is_scored_on_the_message_that_stat
     assert [q.slot for q in first.reply.questions] and not w.orch.verified
     w.turn("my email is kenji.tanaka@example.com and my phone is 206-555-0293")
     assert w.orch.verified and w.scorer.messages == ["I lost my card, freeze it please"]
+
+
+# ---------------------------------------------------------------- the last few turns are shared with the models
+
+def test_the_decomposer_is_shown_the_last_turns_oldest_first_and_never_the_current_message():
+    w = World([interp(I("a", K.GENERAL_QUESTION)), interp(), interp()], [[S("a", 0.99)]])
+    w.turn("what are your fees")
+    w.turn("and for savings?")
+    w.turn("and what about checking accounts?")
+    first, second, third = w.decomposer.histories
+    assert first == ()
+    assert [who for who, _ in second] == ["customer", "agent"] and second[0][1] == "what are your fees"
+    assert [text for who, text in third if who == "customer"] == ["what are your fees", "and for savings?"]
+
+
+def test_only_the_last_eight_messages_are_kept_and_each_is_cut_short():
+    from orchestrator.orchestrator import HISTORY_CHARS, HISTORY_MESSAGES
+
+    w = World([interp()] * 7)
+    for n in range(7):
+        w.turn("tell me about the fees " * 100 + str(n))
+    last = w.decomposer.histories[-1]
+    assert len(last) == HISTORY_MESSAGES and all(len(text) <= HISTORY_CHARS for _, text in last)
+
+
+def test_a_route_is_given_the_recent_conversation():
+    seen = []
+
+    class Spy:
+        async def run(self, intent, ctx):
+            seen.append(ctx.recent)
+            return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text="ok")
+
+    from orchestrator.executor import OutcomeStatus, RouteOutcome
+
+    w = World([interp(I("a", K.GENERAL_QUESTION)), interp(I("b", K.GENERAL_QUESTION))], [[S("a", 0.99)], [S("b", 0.99)]], sub=Spy())
+    w.turn("first question")
+    w.turn("second question")
+    assert seen[0] == () and [who for who, _ in seen[1]] == ["customer", "agent"] and seen[1][0][1] == "first question"

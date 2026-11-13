@@ -67,8 +67,10 @@ class _VerifiedCaller:
         self._inner = inner
         self.intents: tuple[Intent, ...] = ()
 
-    async def interpret(self, message: str, open_intents: Sequence[Intent]) -> Interpretation:
-        result = await self._inner.interpret(message, open_intents)
+    async def interpret(
+        self, message: str, open_intents: Sequence[Intent], history: Sequence[tuple[str, str]] = ()
+    ) -> Interpretation:
+        result = await self._inner.interpret(message, open_intents, history)
         self.intents = result.decomposition.intents
         return result.model_copy(update={"claims": dict(_CLAIMS)})
 
