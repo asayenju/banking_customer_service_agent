@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 
 from agent.tier1 import gold_steps
-from agent.workflows.base import HandOff, NeedInfo, Plan, Refuse
+from agent.workflows.base import HandOff, NeedInfo, Plan, Refuse, Reply
 from agent.workflows.base import WorkflowContext
 from agent.workflows.debit_replacement import DebitReplacement, ReplacementFacts
 from agent.workflows.gold_facts import facts_from_gold
@@ -222,3 +222,46 @@ def test_an_entry_card_past_its_limit_closed_in_the_same_plan_waits_48_hours():
 def test_an_entry_card_past_its_limit_whose_card_is_already_closed_can_be_ordered_with_the_fee():
     decision = _light_blue("yes", closing=False)
     assert isinstance(decision, Plan) and decision.steps[-1].tool == "order_debit_card_5739"
+
+
+# ---------------------------------------------------------------- doc 023 and 025 rules the bank's tools never check
+
+def test_a_card_under_14_days_old_is_not_closed_for_a_non_urgent_reason():
+    db = _task_world("task_078")
+    card = db.debit_cards.data["dbc_mc78a5b9d2_green"]
+    card["issue_date"] = TODAY.strftime("%m/%d/%Y")
+    facts = ReplacementFacts.model_validate(
+        {"closures": [{"card_id": card["card_id"], "reason": "no_longer_needed", "accepts_refund_to_checking": False}], "new_cards": []}
+    )
+    decision = DebitReplacement().decide(WorkflowContext(db, "mc78a5b9d2", TODAY), facts)
+    assert isinstance(decision, Reply) and "under 14 days old" in decision.text
+    urgent = ReplacementFacts.model_validate(
+        {"closures": [{"card_id": card["card_id"], "reason": "lost", "accepts_refund_to_checking": False}], "new_cards": []}
+    )
+    assert isinstance(DebitReplacement().decide(WorkflowContext(db, "mc78a5b9d2", TODAY), urgent), Plan), "lost bypasses the age"
+
+
+@pytest.mark.parametrize(
+    ("change", "words"),
+    [
+        ({"account": {"date_opened": "TODAY"}}, "business days"),
+        ({"account": {"current_holdings": "10.00"}}, "$25"),
+        ({"user": {"date_of_birth": "01/01/2015"}}, "18 years"),
+        ({"user": {"address": "10 Rue de Rivoli, Paris, France"}}, "US address"),
+    ],
+)
+def test_an_order_the_bank_would_not_allow_is_left_out_with_the_reason(change, words):
+    db = _task_world("task_078")
+    account = db.accounts.data["chk_mc78a5b9d2_2"]
+    for key, value in change.get("account", {}).items():
+        account[key] = TODAY.strftime("%m/%d/%Y") if value == "TODAY" else value
+    db.users.data["mc78a5b9d2"].update(change.get("user", {}))
+    closing = {"card_id": "dbc_mc78a5b9d2_green", "reason": "lost", "accepts_refund_to_checking": False}
+    order = {
+        "account_id": "chk_mc78a5b9d2_2", "delivery_option": "STANDARD", "card_design": "CLASSIC",
+        "shipping_address": None, "accepts_excess_fee": "not_asked",
+    }
+    facts = ReplacementFacts.model_validate({"closures": [closing], "new_cards": [order]})
+    decision = DebitReplacement().decide(WorkflowContext(db, "mc78a5b9d2", TODAY), facts)
+    assert isinstance(decision, Plan) and all(s.tool != "order_debit_card_5739" for s in decision.steps)
+    assert words in decision.steps[0].note
