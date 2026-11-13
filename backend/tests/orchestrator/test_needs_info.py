@@ -327,3 +327,33 @@ def test_a_real_unrelated_request_in_the_middle_of_the_wallet_report_is_still_it
     w, _ = wallet_world([I("n2", K.TRANSFER_FUNDS, {"from_account_id": "a", "to_account_id": "b", "amount": "5"})])
     w.turn("also move 5 dollars from a to b")
     assert "n2" in w.orch.active_ids or "n2" in w.orch.done_ids
+
+
+# ---------------------------------------------------------------- the decomposer was told the question and says it was answered
+
+def test_the_decomposer_is_told_the_question_on_screen_and_its_answer_flag_is_enough():
+    from orchestrator.decomposer import Interpretation
+
+    route = AsksAboutTheCreditCard()
+    odd = I("n1", K.ORDER_REPLACEMENT_CARD, summary="order a replacement for the silver card")
+    answered = Interpretation(decomposition=interp(odd).decomposition, answers=("w",))
+    w = World([interp(wallet(), claims=GOOD_CLAIMS), answered], [[S("w", 0.99)], [S("w", 0.99)]], sub=route)
+    w.turn("I think I lost my wallet with my two debit cards")
+    r = w.turn("yes it was in there too, the silver one " + "and I am sure " * 40)  # long and not a plain yes
+    assert w.decomposer.pendings[0] == () and w.decomposer.pendings[1][0][0] == "w"
+    assert "credit cards in the wallet" in w.decomposer.pendings[1][0][1].lower()
+    assert route.calls[-1]["credit_cards_in_the_wallet"].startswith("yes it was in there too")
+    assert w.orch.active_ids == () and r.reply.text and "human agent" not in r.reply.text, "no request was made from the answer"
+
+
+def test_a_real_new_request_the_decomposer_found_beside_an_answer_stays_its_own_request():
+    from orchestrator.decomposer import Interpretation
+
+    route = AsksAboutTheCreditCard()
+    freeze = I("n2", K.TRANSFER_FUNDS, {"from_account_id": "a", "to_account_id": "b", "amount": "5"})
+    answered = Interpretation(decomposition=interp(freeze).decomposition, answers=("w",))
+    w = World([interp(wallet(), claims=GOOD_CLAIMS), answered], [[S("w", 0.99)], [S("w", 0.99), S("n2", 0.99)], [S("n2", 0.99)]], sub=route)
+    w.turn("I think I lost my wallet")
+    w.turn("yes the silver card was in it, and also move 5 dollars from a to b")
+    assert any(c.get("credit_cards_in_the_wallet", "").startswith("yes the silver card") for c in route.calls)
+    assert "n2" in w.orch.active_ids or "n2" in w.orch.done_ids

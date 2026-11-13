@@ -9,6 +9,7 @@ The invariant that must stay at zero: an irreversible write running with no yes.
 """
 
 import asyncio
+import inspect
 from collections.abc import Callable, Sequence
 
 from pydantic import BaseModel, ConfigDict
@@ -68,9 +69,16 @@ class _VerifiedCaller:
         self.intents: tuple[Intent, ...] = ()
 
     async def interpret(
-        self, message: str, open_intents: Sequence[Intent], history: Sequence[tuple[str, str]] = ()
+        self,
+        message: str,
+        open_intents: Sequence[Intent],
+        history: Sequence[tuple[str, str]] = (),
+        pending: Sequence[tuple[str, str]] = (),
     ) -> Interpretation:
-        result = await self._inner.interpret(message, open_intents, history)
+        if "pending" in inspect.signature(self._inner.interpret).parameters:
+            result = await self._inner.interpret(message, open_intents, history, pending)
+        else:
+            result = await self._inner.interpret(message, open_intents, history)
         self.intents = result.decomposition.intents
         return result.model_copy(update={"claims": dict(_CLAIMS)})
 

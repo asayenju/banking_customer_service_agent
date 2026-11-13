@@ -96,7 +96,7 @@ The system has no transcript that every part reads. Each part is given the slice
 
 | Part | It sees |
 |---|---|
-| Decomposer | the message, the open requests, and the last 8 messages, so a short reply is read as an answer to the last question |
+| Decomposer | the message, the open requests, the last 8 messages, and the question currently on screen for each waiting request; it says whether the message answers one, and then makes no new request from it |
 | Jev | the redacted message (for a request held back for verification, the message that stated it), the kind and the summary; never detail values |
 | Specialist | a fresh run each time: the request (kind, summary, details, a note that the customer is verified, the recent conversation), policy search, and the customer's own records through search tools |
 | Route | its request plus the recent conversation; it never sees other requests in the same turn |
