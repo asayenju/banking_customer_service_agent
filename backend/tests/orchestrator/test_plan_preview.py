@@ -250,12 +250,12 @@ def test_a_plan_of_only_undoable_steps_at_high_confidence_asks_nothing():
     assert [o.status for o in r.outcomes] == [OutcomeStatus.DONE] and "Here is exactly" not in r.reply.text
 
 
-def test_the_same_undoable_plan_below_95_percent_still_asks_before_anything_runs():
+def test_the_same_undoable_plan_below_the_proceed_line_still_asks_before_anything_runs():
     shared = BankingSession(fidelity=Fidelity.TAU2)
     planner = Planner((BLOCK_STEP,))
-    w, r = first_turn(planner, shared, confidence=0.94)
+    w, r = first_turn(planner, shared, confidence=0.84)
     assert planner.modes == [] and shared.audit_log == ()
-    assert [d.action.value for d in r.decisions] == ["ask"], "the existing 0.95 write gate still applies first"
+    assert [d.action.value for d in r.decisions] == ["ask"], "the confidence gate still applies first"
 
 
 def test_a_route_that_asks_for_approval_when_it_was_already_given_one_fails():

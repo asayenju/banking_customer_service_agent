@@ -19,7 +19,7 @@ customer message
 
 Each **specialist** is a configuration of one generic class. In plan mode a bounded model loop reads the customer's records (search tools for charges and cards, a records lookup, policy search) and ends by filling in a **workflow form** (what the customer said). Code then decides: validators check every tool call against the bank's written policy (the bank's own tools check very little), a dry run on a copy of the database shows the final state, and the customer sees one preview and gives one yes bound to those exact steps. Execution runs with no model at all and re-checks each step first. Nothing irreversible runs without that yes.
 
-**Jev** (TypeSafe AI) is a hosted decision model that returns yes/no probabilities and no text. It scores how sure the system should be about each intent's kind, independent of the decomposer. A write also needs its kind score at 0.95 or more, or the customer is asked first. It can never authorize an action alone.
+**Jev** (TypeSafe AI) is a hosted decision model that returns yes/no probabilities and no text. It scores how sure the system should be about each intent's kind, independent of the decomposer. A write used to need its kind score at 0.95 or more; that extra bar is now 0.80, below the 0.85 proceed line, so it no longer adds a gate. It can never authorize an action alone.
 
 ## Structure
 
@@ -66,7 +66,7 @@ Offline replay of the benchmark's own reference trajectories through the real sp
 
 Jev (TypeSafe AI) is a hosted decision model that answers yes/no questions with a probability and writes no text. It is a second opinion on the decomposer, which is an LLM. For each intent it is asked whether the *kind* is right and whether the request is something a bank's customer service handles. Whether details are missing is plain code, because Jev is weak at numbers and dates.
 
-- **Confidence is the weakest of three answers** (kind, details, scope). 0.85 or more proceeds, 0.65 to 0.85 asks the customer, below that hands off. A write also needs the kind answer alone at 0.95 or more.
+- **Confidence is the weakest of three answers** (kind, details, scope). 0.85 or more proceeds, 0.65 to 0.85 asks the customer, below that hands off. The extra bar for writes (the kind answer alone) was 0.95 and is now 0.80, below the proceed line, after a hedged but real lost-wallet report scored 0.92 and was asked about in a loop.
 - **It never authorizes anything alone.** An irreversible action still needs the customer's yes to the exact plan, at any confidence.
 - **It sees as little as possible.** Only the redacted message, the kind and a short summary go out, never a detail value. A message flagged as an injection attempt is not sent at all.
 - **Why not just ask an LLM?** Jev returns numbers only, so a customer's words cannot steer it into saying or doing something, and its mistakes are independent of the decomposer's.
@@ -75,7 +75,7 @@ How it helped, measured on 70 labelled intents (40 right, 30 wrong; the wrong on
 
 | Gate | Wrong intents avoided | Right intents blocked | AUROC |
 |---|---|---|---|
-| Jev, kind score at 0.95 (production) | 29 of 30 (97%) | 2 of 40 (5%) | 0.97 |
+| Jev, kind score at 0.95 (the earlier write bar) | 29 of 30 (97%) | 2 of 40 (5%) | 0.97 |
 | Plain gpt-4o-mini yes/no, P(yes) at 0.95 | 28 of 30 (93%) | 9 of 40 (22%) | 0.95 |
 
 Both catch nearly all wrong actions. Jev's edge here is blocking far fewer right requests, which means fewer needless clarifying questions. It is a small sample, so read it as direction rather than a precise gap. The measuring scripts are the `jev` command of `orchestrator.evaluation`.
