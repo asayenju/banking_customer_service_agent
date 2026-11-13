@@ -93,6 +93,26 @@ _LABEL = re.compile(r"\*\*Your (?:character|situation):\*\*\s*")
 _USER_ID = re.compile(r"[^.!?\n]*\buser[ _-]?id\b[^.!?\n]*[.!?]?\s*", re.IGNORECASE)
 
 
+def _card_digits(task: dict[str, Any]) -> list[str]:
+    """The card last-four digits the reference answers use. The records do not hold them for credit cards, so a tester
+    playing the customer needs them to answer "what are the last four digits on the card?"."""
+    import json
+
+    found: list[str] = []
+    for action in (task.get("evaluation_criteria") or {}).get("actions") or []:
+        args = action.get("arguments") or {}
+        if action.get("name") == "call_discoverable_agent_tool":
+            try:
+                args = json.loads(args.get("arguments") or "{}")
+            except (TypeError, ValueError):
+                args = {}
+        for key in ("card_last_4_digits", "last_4_digits"):
+            value = str(args.get(key) or "")
+            if value.isdigit() and len(value) == 4 and value not in found:
+                found.append(value)
+    return found
+
+
 def persona(task_id: str) -> Optional[dict[str, Any]]:
     """One test customer in full: who they are, their situation and the details they verify with. Never the user id."""
     from banking_tools.manifest import load_tasks
@@ -119,6 +139,7 @@ def persona(task_id: str) -> Optional[dict[str, Any]]:
         "born": who.get("date_of_birth"),
         "address": who.get("address"),
         "opening": opening.group(1).strip() if opening else "",
+        "card_digits": _card_digits(task),
     }
 
 
