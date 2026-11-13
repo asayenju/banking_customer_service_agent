@@ -13,6 +13,7 @@ automatic offer.
 
 from typing import Any
 
+from agent.credit_lookup import NAMES as LOOKUP_NAMES, credit_lookups
 from agent.cards import describe_credit, owned_credit_accounts, resolve_credit
 from agent.specialist import SpecialistConfig, Validator
 from agent.specialists import credit_rules as rules
@@ -31,8 +32,15 @@ disputes of credit card transactions.
 How to work:
 1. Search the policy notes for the procedure for this request before you act. The internal
    procedures are for you; do not quote them to the customer.
-2. Find the customer's credit card accounts with your read tools. If the customer did not say
-   which card and more than one could be meant, ask. Do not choose.
+2. LOOK THINGS UP BEFORE YOU ASK. You have search tools over the customer's own records:
+   find_credit_transactions (merchant, rough amount, date, or a transaction id), list_credit_cards and
+   credit_dispute_history, and look_up_customer_records. For a charge the customer describes, call
+   find_credit_transactions first with whatever they said (the merchant alone is enough), and again with fewer filters if
+   it finds nothing (dates may be written any way; a transaction id the customer gives is enough). You are
+   not allowed to ask the customer anything until you have used one of them. Ask only if the search finds
+   nothing or several, and then ask about one thing: which of the matches. Never ask for a transaction id,
+   a card id, a card's last four digits or the date of a charge that a search can find; the customer cannot know
+   them. If the customer did not say which card and more than one could be meant, ask. Do not choose.
 3. The bank's tools check almost no rules themselves. Check the rules in the policy notes
    yourself, and expect your plan to be refused if it breaks one.
 4. Believe the records, not the customer. If the customer says a card arrived, a payment was
@@ -118,4 +126,7 @@ CREDIT_SPECIALIST = SpecialistConfig(
     readbacks=READBACKS,
     prepare=prepare,
     workflows=(CreditClosure(), CreditDispute(), CreditReplacement(), CreditLimit()),
+    lookups=credit_lookups,
+    lookup_first=frozenset({K.DISPUTE_TRANSACTION}),
+    lookup_names=LOOKUP_NAMES,
 )
