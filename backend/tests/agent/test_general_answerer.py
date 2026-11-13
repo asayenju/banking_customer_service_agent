@@ -86,9 +86,9 @@ def test_it_cannot_propose_a_plan():
     assert "propose_plan" not in llm.calls[0]["tools"] and outcome.status is OutcomeStatus.FAILED
 
 
-def test_the_prompt_says_it_changes_nothing_and_has_no_account_access():
+def test_the_prompt_says_it_changes_nothing_and_only_reads_the_verified_customers_own_records():
     prompt = system_prompt(GENERAL_ANSWERER, K.GENERAL_QUESTION)
-    assert "never changes anything" in prompt and "no access to anyone's accounts" in prompt
+    assert "never changes anything" in prompt and "look_up_customer_records" in prompt and "holds nothing" in prompt
     assert "propose_plan" not in prompt
 
 
@@ -292,3 +292,12 @@ def test_an_answer_that_should_have_been_a_hand_off_is_reported_as_not_as_expect
 
     results = spot.run_spot(lambda m: Answers(BLUE), INDEX, cassettes=tmp_path, model="m", price_in=1.0, price_out=1.0, cap=5.0)
     assert not results[-1].ok and "expected a hand-off" in results[-1].note
+
+
+def test_a_verified_customer_gets_the_records_tool_and_an_unverified_one_does_not():
+    spec, llm, shared = answerer([turn(call("escalate", reason="x")), turn(call("escalate", reason="x"))])
+    ask(spec, shared)
+    ask(spec, shared, user="lj82d4f1a9")
+    assert "look_up_customer_records" not in llm.calls[0]["tools"]
+    assert "look_up_customer_records" in llm.calls[1]["tools"]
+    assert not (set(llm.calls[1]["tools"]) & set(__import__("banking_tools").get_registry())), "still no catalog tool"

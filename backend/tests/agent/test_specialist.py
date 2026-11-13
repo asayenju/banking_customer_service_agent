@@ -203,11 +203,11 @@ def test_a_validator_can_refuse_a_step_with_a_reason_written_in_code():
 
 
 def test_asking_the_customer_returns_only_the_names_of_the_details():
-    spec, _, shared = make([turn(call("ask_customer", details=["card_id", "reason", "Not Valid!", "4821"]))])
+    spec, _, shared = make([turn(call("ask_customer", details=["reason", "Not Valid!", "4821"]))])
     intent = closing(card_id="")
     outcome = run(spec, intent, context(shared, intent))
     assert outcome.status is OutcomeStatus.NEEDS_INFO
-    assert [q.slot for q in outcome.questions] == ["card_id", "reason", "not_valid"], "tidied, and the bare number is dropped"
+    assert [q.slot for q in outcome.questions] == ["reason", "not_valid"], "tidied, and the bare number is dropped"
 
 
 def test_a_question_with_nothing_usable_in_it_fails_rather_than_asking_nothing():

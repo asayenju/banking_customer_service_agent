@@ -201,15 +201,39 @@ def test_the_names_the_model_gives_are_tidied_and_anything_that_could_be_a_numbe
 
 
 def test_a_question_with_untidy_names_now_reaches_the_customer():
-    spec, _, shared = make([turn(call("ask_customer", details=["Transaction ID", "Transaction Date"]))])
+    spec, _, shared = make([turn(call("ask_customer", details=["Dispute Reason", "Transaction Date"]))])
     intent = Intent(id="x", kind=K.DISPUTE_TRANSACTION, summary="dispute", slots={"account_id": ACCOUNT})
     outcome = ask(spec, shared, intent)
-    assert outcome.status is OutcomeStatus.NEEDS_INFO and [q.slot for q in outcome.questions] == ["transaction_id", "transaction_date"]
+    assert outcome.status is OutcomeStatus.NEEDS_INFO and [q.slot for q in outcome.questions] == ["dispute_reason", "transaction_date"]
 
 
 def test_a_question_with_no_usable_name_is_sent_back_to_be_rewritten():
-    spec, llm, shared = make([turn(call("ask_customer", details=["4821"])), turn(call("ask_customer", details=["card_id"]))])
+    spec, llm, shared = make([turn(call("ask_customer", details=["4821"])), turn(call("ask_customer", details=["dispute_reason"]))])
     intent = Intent(id="x", kind=K.DISPUTE_TRANSACTION, summary="dispute", slots={"account_id": ACCOUNT})
     outcome = ask(spec, shared, intent)
-    assert outcome.status is OutcomeStatus.NEEDS_INFO and outcome.questions[0].slot == "card_id"
+    assert outcome.status is OutcomeStatus.NEEDS_INFO and outcome.questions[0].slot == "dispute_reason"
     assert "name the details you need" in llm.calls[1]["messages"][-1]["content"]
+
+
+def test_asking_the_customer_for_what_the_records_hold_is_sent_back_with_where_to_look():
+    spec, llm, shared = make([turn(call("ask_customer", details=["transaction_id", "card_last_4_digits"])), turn(call("ask_customer", details=["dispute_reason"]))])
+    intent = Intent(id="x", kind=K.DISPUTE_TRANSACTION, summary="dispute", slots={"account_id": ACCOUNT})
+    outcome = ask(spec, shared, intent)
+    assert outcome.status is OutcomeStatus.NEEDS_INFO and outcome.questions[0].slot == "dispute_reason"
+    told = llm.calls[1]["messages"][-1]["content"]
+    assert "look_up_customer_records" in told and "transaction_id" in told
+
+
+def test_a_pin_reset_may_still_ask_for_the_last_four_digits_because_the_customer_holds_the_card():
+    spec, _, shared = make([turn(call("ask_customer", details=["last_4_digits"]))])
+    intent = Intent(id="x", kind=K.CHANGE_OR_RESET_PIN, summary="reset my pin", slots={"card_id": "dbc_lj82d4f1a9_bluest"})
+    assert ask(spec, shared, intent).status is OutcomeStatus.NEEDS_INFO
+
+
+def test_the_records_tool_is_offered_and_answers_from_the_customers_own_database():
+    spec, llm, shared = make([turn(call("look_up_customer_records", section="debit_cards")), turn(call("ask_customer", details=["dispute_reason"]))])
+    intent = Intent(id="x", kind=K.DISPUTE_TRANSACTION, summary="dispute", slots={"account_id": ACCOUNT})
+    ask(spec, shared, intent)
+    assert "look_up_customer_records" in llm.calls[0]["tools"]
+    result = [m for m in llm.calls[1]["messages"] if m.get("role") == "tool"][-1]["content"]
+    assert "last_4_digits" in result
