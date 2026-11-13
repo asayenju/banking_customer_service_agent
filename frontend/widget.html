@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rho-Bank assistant</title>
+<title>Customer service agent</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Instrument+Serif&display=swap" rel="stylesheet">
@@ -100,24 +100,25 @@
   .tips button { flex:none; border:1px solid var(--line); background:transparent; border-radius:99px; padding:4px 11px; font-size:12.5px; cursor:pointer; color:var(--muted); }
   @media (max-width:1000px) { .tips { display:flex; } }
   form { display:flex; gap:8px; padding:12px 20px 18px; border-top:1px solid var(--line); }
-  input { flex:1; min-width:0; border:1px solid var(--line); border-radius:12px; padding:12px 14px; background:var(--panel); color:var(--ink); font:inherit; }
-  input::placeholder { color:var(--muted); }
-  #send { border:0; border-radius:12px; padding:0 18px; background:var(--accent); color:var(--accent-ink); font-weight:600; cursor:pointer; }
+  textarea { flex:1; min-width:0; resize:none; overflow-y:auto; max-height:9.5em; border:1px solid var(--line); border-radius:12px; padding:11px 14px; background:var(--panel); color:var(--ink); font:inherit; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
+  textarea::placeholder { color:var(--muted); }
+  form { align-items:flex-end; }
+  #send { height:44px; border:0; border-radius:12px; padding:0 18px; background:var(--accent); color:var(--accent-ink); font-weight:600; cursor:pointer; }
   #send:disabled { opacity:.45; cursor:default; }
   @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; scroll-behavior:auto !important; } }
 </style>
 </head>
 <body>
 <div class="stage">
-  <h1>Rho-Bank</h1>
+  <h1>Customer service agent</h1>
   <p>A support assistant that can freeze cards, file disputes and order replacements, and asks before it does anything that cannot be undone.</p>
   <section class="script" id="script" aria-label="Demo script"></section>
 </div>
 
-<aside aria-label="Rho-Bank assistant">
+<aside aria-label="Customer service agent">
   <div class="top">
-    <div class="mark" aria-hidden="true">R</div>
-    <div class="name"><b>Rho-Bank assistant</b><span>Online</span></div>
+    <div class="mark" aria-hidden="true">C</div>
+    <div class="name"><b>Customer service agent</b><span>Online</span></div>
     <button class="icon" id="reset" title="Start a new conversation">New chat</button>
   </div>
   <div class="seg" role="group" aria-label="Sample customer">
@@ -127,7 +128,7 @@
   <div id="log" aria-live="polite"></div>
   <div class="tips" id="tips"></div>
   <form id="form">
-    <input id="text" autocomplete="off" placeholder="Message the assistant" aria-label="Message">
+    <textarea id="text" rows="1" placeholder="Message the agent" aria-label="Message"></textarea>
     <button id="send">Send</button>
   </form>
 </aside>
@@ -164,7 +165,7 @@ function renderScript() {
   for (const [label, text] of s.steps) {
     const li = el("li"), b = el("button"); b.type = "button";
     b.append(el("span", null, label), el("small", null, text.length > 110 ? text.slice(0, 107) + "..." : text));
-    b.onclick = () => { $("text").value = text; $("text").focus(); };
+    b.onclick = () => { $("text").value = text; fit(); $("text").focus(); };
     li.append(b); ol.append(li);
     const chip = el("button", null, label); chip.type = "button"; chip.onclick = b.onclick; $("tips").append(chip);
   }
@@ -250,7 +251,10 @@ async function send(text) {
   }
   busy = false; $("send").disabled = false; bottom(); $("text").focus();
 }
-$("form").onsubmit = e => { e.preventDefault(); const t = $("text").value.trim(); if (t) { $("text").value = ""; send(t); } };
+const fit = () => { const t = $("text"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 152) + "px"; };
+$("text").addEventListener("input", fit);
+$("text").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("form").requestSubmit(); } });
+$("form").onsubmit = e => { e.preventDefault(); const t = $("text").value.trim(); if (t) { $("text").value = ""; fit(); send(t); } };
 $("reset").onclick = reset;
 document.querySelectorAll(".seg button").forEach(b => b.onclick = () => {
   scenario = b.dataset.s; document.querySelectorAll(".seg button").forEach(x => x.setAttribute("aria-pressed", x === b)); reset();

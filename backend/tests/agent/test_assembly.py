@@ -161,7 +161,7 @@ def test_the_demo_page_is_served_and_a_scenario_picks_the_sample_customer():
     main.app.state.conversations = {}
     client = TestClient(main.app)
     page = client.get("/demo")
-    assert page.status_code == 200 and "Rho-Bank assistant" in page.text
+    assert page.status_code == 200 and "Customer service agent" in page.text
     ok = client.post("/conversations/s1/messages", json={"message_id": "m1", "message": "hello", "scenario": "wallet"})
     assert ok.status_code == 200 and asked == ["task_078"]
     client.post("/conversations/s1/messages", json={"message_id": "m2", "message": "hello again", "scenario": "dispute"})
