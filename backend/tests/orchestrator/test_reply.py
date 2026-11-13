@@ -86,7 +86,7 @@ def test_questions_come_one_at_a_time_tied_to_their_intent_with_wording_filled_i
     assert reply.text.count("I need a little more information") == 1 and "reason" not in reply.text
     batch = compose_reply(INTENTS, decisions=[ask("frz", "card_id"), ask("fee", CLARIFY_SLOT)], one_at_a_time=False)
     assert [(q.intent_id, q.slot) for q in batch.questions] == [("frz", "card_id"), ("fee", CLARIFY_SLOT)]
-    assert batch.questions[1].text == "Can you tell me more about: sort out my fees?"
+    assert batch.questions[1].text == "To be sure I have this right: sort out my fees. Is that what you want? If not, tell me more."
 
 
 def test_every_yes_to_what_is_about_to_be_done_is_still_asked_together_with_the_next_missing_detail():

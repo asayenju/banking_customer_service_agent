@@ -415,13 +415,14 @@ def test_greetings_gibberish_and_silence_get_the_menu_and_then_a_human():
 
 @covers("Intent still under 0.85 after 3 asks")
 def test_an_intent_that_never_gets_sure_enough_escalates_after_three_questions():
-    w = World([interp(I("x")), interp(), interp(), interp()], [[S("x", 0.70)]])
+    # Each reply to "tell me more" is read with the whole story, so the request is scored again every time.
+    w = World([interp(I("x")), interp(), interp(), interp()], [[S("x", 0.70)]] * 4)
     assert brief(w.turn("tell me about the thing")) == ["scored:x", "decided:x", "asked:x"]
-    assert brief(w.turn("hmm")) == ["decided:x", "asked:x"]
-    assert brief(w.turn("hmm")) == ["decided:x", "asked:x"]
+    assert brief(w.turn("hmm")) == ["scored:x", "decided:x", "asked:x"]
+    assert brief(w.turn("hmm")) == ["scored:x", "decided:x", "asked:x"]
     assert w.orch.ask_counts == {"x": MAX_ASKS}
-    assert brief(w.turn("hmm")) == ["decided:x", "escalated:x"]
-    assert w.scorer.asked == [["x"]]
+    assert brief(w.turn("hmm")) == ["scored:x", "decided:x", "escalated:x"]
+    assert w.scorer.asked == [["x"]] * 4
 
 
 @covers("Customer answers one intent but not another")
