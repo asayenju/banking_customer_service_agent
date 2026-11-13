@@ -111,15 +111,39 @@ def test_the_fourth_question_from_a_route_escalates_even_when_each_answer_change
     assert T.ESCALATED in trace_kinds(results[-1], "a")
 
 
-def test_a_pending_question_is_asked_again_not_rerun_until_the_customer_touches_the_intent():
-    route = AlwaysAsks()
+def test_a_reply_to_the_one_question_on_screen_is_taken_as_its_answer_even_if_the_decomposer_found_nothing():
+    route = NeedsTopic()
     w = World([interp(general()), interp()], [[S("a", 0.99)]], sub=route)
     w.turn(QUESTION)
-    r = w.turn("hmm, not sure")
-    assert route.calls == 1, "the route is not run again for nothing"
-    assert [q.slot for q in r.reply.questions] == ["topic"]
-    assert w.orch.runner_ask_counts == {"a": 1}
-    assert w.orch.ask_counts == {"a": 1}, "ignoring the question counts like any ignored question"
+    r = w.turn("the Blue Account fees")
+    assert route.calls == [{}, {"topic": "the Blue Account fees"}], "the words became the detail that was asked for"
+    assert [o.status for o in r.outcomes] == [OutcomeStatus.DONE]
+
+
+def test_an_answer_the_decomposer_mistook_for_a_new_read_is_not_made_into_a_request():
+    route = NeedsTopic()
+    spurious = I("t2", K.ACCOUNT_BALANCE_OR_HISTORY, summary="noticed on the 10th")
+    w = World([interp(general()), interp(spurious)], [[S("a", 0.99)]], sub=route)
+    w.turn(QUESTION)
+    r = w.turn("November 6th, noticed on the 10th")
+    assert route.calls[-1] == {"topic": "November 6th, noticed on the 10th"}
+    assert w.orch.active_ids == () and [o.intent_id for o in r.outcomes] == ["a"], "no second intent was made"
+
+
+def test_a_real_new_request_in_the_reply_is_kept_and_the_question_is_not_answered_with_it():
+    route = NeedsTopic()
+    freeze = I("t2", K.FREEZE_CARD, {"card_id": "c1"})
+    w = World([interp(general()), interp(freeze)], [[S("a", 0.99)], [S("t2", 0.99)]], sub=route)
+    w.turn(QUESTION)
+    w.turn("actually freeze card c1 now")
+    assert all("topic" not in call for call in route.calls[1:]), "the reply was a new request, not the topic"
+
+
+def test_a_repeated_non_answer_still_runs_out_of_questions_and_escalates():
+    route = AlwaysAsks()
+    w = World([interp(general())] + [interp()] * MAX_ASKS, [[S("a", 0.99)]] * (MAX_ASKS + 1), sub=route)
+    results = [w.turn(QUESTION)] + [w.turn(f"hmm {n}") for n in range(MAX_ASKS)]
+    assert [r.decisions[0].action.value for r in results] == ["ask"] * MAX_ASKS + ["escalate"]
 
 
 def test_answering_one_intent_leaves_the_other_intents_counters_alone():
