@@ -43,6 +43,9 @@
   .person .tags { font-size:12.5px; color:var(--accent); margin:1px 0 6px; }
   .person .about { font-size:13.5px; color:var(--muted); display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
   .person .id { font-size:12.5px; color:var(--muted); margin-top:8px; overflow-wrap:anywhere; }
+  .more { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); cursor:default; }
+  .blk h3 { margin:0 0 2px; font-size:13px; font-weight:600; }
+  .blk p { margin:0 0 10px; font-size:13.5px; color:var(--muted); overflow-wrap:anywhere; white-space:pre-line; }
   .fill { display:flex; gap:6px; margin-top:10px; }
   .fill span { font-size:12.5px; font-weight:600; border:1px solid var(--line); border-radius:8px; padding:3px 9px; color:var(--ink); }
   .fill span:hover { border-color:var(--accent); color:var(--accent); }
@@ -119,8 +122,8 @@
 <body>
 <div class="stage">
   <h1>Banking customer service agent</h1>
-  <p>Pick a test customer and talk to the agent as them. Each one is a real customer record with their own accounts and cards. The agent asks before it does anything that cannot be undone.</p>
-  <div class="find"><input id="search" type="search" placeholder="Search test customers by name or topic" aria-label="Search test customers"></div>
+  <p>Pick a test customer and talk to the agent as them. Open a customer to see who they are. The agent asks before it does anything that cannot be undone.</p>
+  <div class="find"><input id="search" type="search" placeholder="Search by name or topic" aria-label="Search test customers"></div>
   <div class="areas" id="areas"></div>
   <p class="count" id="count"></p>
   <section class="people" id="people" aria-label="Test customers"></section>
@@ -147,7 +150,8 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 let people = [], current = null, convo = null, busy = false, area = "All";
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()));
 const bottom = () => { $("log").scrollTop = $("log").scrollHeight; };
-const verifyLine = p => "My phone is " + p.phone + " and my email is " + p.email;
+const verifyLine = d => "My phone is " + d.phone + " and my email is " + d.email;
+let detail = null;
 const titleCase = t => t.charAt(0).toUpperCase() + t.slice(1);
 
 function reset() {
@@ -157,23 +161,32 @@ function reset() {
   const hi = el("div", "says"); hi.append(el("p", "hello", "How can I help?"), el("p", null, current ? "You are " + current.name + ". Say what they would say." : "Pick a test customer on the left."));
   $("log").append(hi);
 }
-function choose(p) {
-  current = p; $("pick").value = p.id; reset(); drawPeople();
+async function choose(p) {
+  current = p; detail = null; $("pick").value = p.id; reset(); drawPeople();
+  try { const d = await (await fetch("/personas/" + p.id)).json(); if (current === p) { detail = d; drawPeople(); } } catch (e) { /* the card stays collapsed */ }
 }
 function drawPeople() {
   const q = $("search").value.trim().toLowerCase();
   const shown = people.filter(p => (area === "All" || p.areas.includes(area)) &&
-    (!q || (p.name + " " + p.about + " " + p.areas.join(" ")).toLowerCase().includes(q)));
+    (!q || (p.name + " " + p.areas.join(" ")).toLowerCase().includes(q)));
   $("count").textContent = shown.length + " of " + people.length + " test customers";
   const box = $("people"); box.innerHTML = "";
   for (const p of shown) {
     const b = el("button", "person"); b.type = "button"; b.setAttribute("aria-pressed", current && current.id === p.id);
-    b.append(el("b", null, p.name), el("div", "tags", p.areas.map(titleCase).join(", ")), el("div", "about", p.about || p.opening), el("div", "id", p.phone + "  " + p.email));
+    b.append(el("b", null, p.name), el("div", "tags", p.areas.map(titleCase).join(", ")));
     if (current && current.id === p.id) {
-      const f = el("div", "fill");
-      const say = el("span", null, "Use opening line"), ver = el("span", null, "Use verification line");
-      say.onclick = e => { e.stopPropagation(); fillBox(p.opening); }; ver.onclick = e => { e.stopPropagation(); fillBox(verifyLine(p)); };
-      f.append(say, ver); b.append(f);
+      const d = detail, more = el("div", "more");
+      if (!d) more.append(el("p", "about", "Loading..."));
+      else {
+        const block = (title, text) => { if (!text) return; const w = el("div", "blk"); w.append(el("h3", null, title), el("p", null, text)); more.append(w); };
+        block("Who they are", d.character); block("Their situation", d.situation);
+        block("To verify, they give", "Phone " + d.phone + ", email " + d.email + ", born " + d.born + ", " + d.address);
+        const f = el("div", "fill");
+        if (d.opening) { const say = el("span", null, "Use opening line"); say.onclick = e => { e.stopPropagation(); fillBox(d.opening); }; f.append(say); }
+        const ver = el("span", null, "Use verification line"); ver.onclick = e => { e.stopPropagation(); fillBox(verifyLine(d)); }; f.append(ver);
+        more.append(f);
+      }
+      b.append(more);
     }
     b.onclick = () => { if (!current || current.id !== p.id) choose(p); };
     box.append(b);

@@ -170,17 +170,25 @@ def test_the_demo_page_is_served_and_a_scenario_picks_the_sample_customer():
     assert bad.status_code == 422
 
 
-def test_every_test_customer_is_listed_with_who_they_are_and_what_they_want():
+def test_the_list_of_test_customers_carries_only_names_and_areas():
     page = TestClient(main.app).get("/personas")
     people = page.json()
     assert page.status_code == 200 and len(people) > 60
-    mei = next(p for p in people if p["id"] == "task_078")
-    assert mei["name"] == "Mei-Lin Chen" and mei["phone"] == "619-555-0284" and "debit" in mei["areas"]
-    assert mei["opening"] and mei["about"]
-    assert all(p["name"] and p["phone"] and p["email"] and p["areas"] for p in people)
+    assert all(set(p) == {"id", "name", "areas"} and p["name"] and p["areas"] for p in people)
+    assert next(p for p in people if p["id"] == "task_078") == {"id": "task_078", "name": "Mei-Lin Chen", "areas": ["debit"]}
+
+
+def test_opening_a_test_customer_shows_who_they_are_but_never_a_user_id():
+    client = TestClient(main.app)
+    mei = client.get("/personas/task_078").json()
+    assert mei["phone"] == "619-555-0284" and "lost your wallet" in mei["situation"] and "data analyst" in mei["character"]
+    assert mei["opening"].startswith("Hi, I lost my wallet")
+    for person in client.get("/personas").json():
+        text = str(client.get("/personas/" + person["id"]).json()).lower()
+        assert "user id" not in text and "user_id" not in text, person["id"]
+    assert client.get("/personas/task_999").status_code == 404
 
 
 def test_a_task_that_logs_placeholder_details_is_listed_with_the_customers_real_record():
-    people = {p["id"]: p for p in TestClient(main.app).get("/personas").json()}
-    kenji = people["task_005"]
+    kenji = TestClient(main.app).get("/personas/task_005").json()
     assert kenji["name"] == "Kenji Tanaka" and kenji["phone"] == "206-555-0293"
