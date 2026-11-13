@@ -364,7 +364,11 @@ class LLMDecomposer:
                 decomposition = Decomposition(
                     intents=()
                     if bare
-                    else tuple(i for i in decomposition.intents if i.kind is not IntentKind.UPDATE_PROFILE),
+                    else tuple(
+                        i
+                        for i in decomposition.intents
+                        if i.kind is not IntentKind.UPDATE_PROFILE and not _only_identity(i.summary)
+                    ),
                     conflicts=() if bare else decomposition.conflicts,
                 )
         return Interpretation(

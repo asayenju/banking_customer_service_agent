@@ -105,10 +105,18 @@ def test_a_slot_the_customer_already_gave_is_not_asked_again():
     assert [q.slot for q in reply.questions] == ["reason"]
 
 
-def test_when_every_question_is_already_answered_there_is_no_question_block():
+def test_when_a_route_asks_again_for_a_detail_already_given_the_question_is_not_swallowed():
+    """Saying nothing ("anything I can help with?") would leave the customer stuck; the question is asked again."""
     intents = {"frz": I("frz", "freeze my card", K.FREEZE_CARD, {"card_id": "c1"})}
     reply = compose_reply(intents, decisions=[ask("frz", "card_id")])
-    assert reply.questions == () and "I need a little more information" not in reply.text
+    assert [q.slot for q in reply.questions] == ["card_id"] and "I need a little more information" in reply.text
+
+
+def test_an_answered_question_is_left_out_when_the_reply_has_something_else_to_say():
+    intents = {"frz": I("frz", "freeze my card", K.FREEZE_CARD, {"card_id": "c1"})}
+    done = RouteOutcome(intent_id="frz", status=OutcomeStatus.DONE, text="Done: froze it")
+    reply = compose_reply(intents, outcomes=[done], decisions=[ask("frz", "card_id")])
+    assert reply.questions == () and "Done: froze it" in reply.text
 
 
 def test_the_same_question_twice_is_asked_once():

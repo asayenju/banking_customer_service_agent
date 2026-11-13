@@ -141,6 +141,12 @@ def compose_reply(
         lines.append(f"Still to do: {_summary(intents, hold.intent_id)} once {blockers} is done.")
 
     questions = _batch(intents, decisions)
+    if not questions and not lines:
+        # A route asked again for a detail the customer has already given words for. Saying nothing would leave them
+        # stuck on "anything I can help with?", so the question is asked again as it was.
+        again = next((q for d in decisions if d.action is Action.ASK for q in d.questions if q.slot not in (IDENTITY_SLOT,)), None)
+        if again is not None:
+            questions = (Question(intent_id=again.intent_id, slot=again.slot, text=again.text or _wording(intents, again)),)
     if one_at_a_time:
         # Never a list of questions: the first missing detail now. Whatever else is missing is asked again, one at a
         # time, when the request runs again with this answer (a route recomputes what it still needs each time).

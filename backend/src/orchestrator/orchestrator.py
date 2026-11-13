@@ -333,8 +333,8 @@ class Orchestrator:
 
     def _free_answer(
         self, message: str, asked_before: Mapping[str, tuple[Question, ...]], decomposition: Decomposition
-    ) -> Optional[tuple[str, str]]:
-        """(intent id, detail) when this message is the customer's answer to the one open question a route asked.
+    ) -> Optional[tuple[str, Question]]:
+        """(intent id, the question) when this message is the customer's answer to the one open question a route asked.
 
         Only when exactly one intent waits on one question of its own (not a yes, not identity), the message is short,
         it is not a bare yes or no, the decomposer gave that intent no new details, and nothing it found is a new
@@ -352,7 +352,7 @@ class Orchestrator:
                 return None  # the decomposer already put the details where they belong
             if found.id not in self._active and found.kind not in _ANSWER_NOISE:
                 return None  # a real new request
-        return intent_id, question.slot
+        return intent_id, question
 
     async def _verify(self, claims: Mapping[str, str], events: list[TraceEvent]) -> None:
         try:
@@ -432,10 +432,16 @@ class Orchestrator:
             touched.add(intent.id)
 
         if answering is not None:
-            answered_id, asked_slot = answering
+            answered_id, asked = answering
+            asked_slot = asked.slot
             waiting_intent = self._active[answered_id]
+            said = message.strip()[:500]
+            # The exchange is kept as one detail of the request, in words: the specialist reads it like a conversation
+            # (the summary stays the customer's own short statement of what they want).
+            earlier = waiting_intent.slots.get("conversation_so_far", "")
+            exchange = f"{earlier}\nAsked: {asked.text or asked_slot.replace('_', ' ')}\nCustomer: {said}".strip()
             self._active[answered_id] = waiting_intent.model_copy(
-                update={"slots": {**waiting_intent.slots, asked_slot: message.strip()[:500]}}
+                update={"slots": {**waiting_intent.slots, asked_slot: said, "conversation_so_far": exchange[-1500:]}}
             )
             self._prints[answered_id] = fingerprint(self._active[answered_id])
             self._asks[answered_id] = 0
