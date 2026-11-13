@@ -165,3 +165,49 @@ def test_a_double_charge_is_disputed_once_on_the_row_the_reference_disputes():
     for listed in ([dup("btxn_d7f2a98c1b34"), dup("btxn_e8c3b09d2c45")], [dup("btxn_d7f2a98c1b34")], [dup("btxn_e8c3b09d2c45")]):
         decision = DebitDispute().decide(WorkflowContext(db, "a7c2f85d91", date(2025, 11, 14)), DisputeRequest(disputes=listed))
         assert isinstance(decision, Plan) and [s.args["transaction_id"] for s in decision.steps] == ["btxn_e8c3b09d2c45"]
+
+
+# ---------------------------------------------------------------- only the questions that matter for this kind of dispute
+
+def _ask_about(category, **said):
+    from agent.workflows.base import NeedInfo
+    from banking_tools import BankingSession
+
+    task = next(t for t in load_tasks() if t["id"] == "task_084")
+    db = BankingSession.from_task(task).database
+    base = dict(
+        transaction_id="btxn_e8c3b09d2c45", category=category, discovery_date=None, disputed_amount=47.5,
+        transaction_type="pin_purchase", card_in_possession=None, pin_compromised=None, contacted_merchant=None,
+        police_report_filed=None, written_statement_provided=None, card_closure="not_asked",
+    )
+    decision = DebitDispute().decide(
+        WorkflowContext(db, "a7c2f85d91", date(2025, 11, 14)), DisputeRequest(disputes=[DisputeFacts(**{**base, **said})])
+    )
+    return decision, NeedInfo
+
+
+def test_a_duplicate_charge_asks_three_things_and_not_the_card_or_the_pin():
+    decision, NeedInfo = _ask_about("duplicate_charge")
+    assert isinstance(decision, NeedInfo)
+    assert [a.slot for a in decision.questions] == ["contacted_merchant", "discovery_date", "written_statement_provided"]
+
+
+def test_a_fraud_dispute_asks_about_the_card_and_pin_and_not_the_merchant():
+    decision, NeedInfo = _ask_about("card_present_fraud")
+    assert [a.slot for a in decision.questions] == ["card_in_possession", "pin_compromised", "discovery_date", "written_statement_provided"]
+
+
+def test_everything_the_customer_said_is_not_asked_again_and_the_rest_is_filled_in_by_the_kind_of_dispute():
+    from agent.workflows.base import Plan
+
+    decision, _ = _ask_about("duplicate_charge", contacted_merchant=False, discovery_date="11/10/2025", written_statement_provided=True)
+    assert isinstance(decision, Plan)
+    args = decision.steps[0].args
+    assert args["card_in_possession"] is True and args["pin_compromised"] == "no" and args["police_report_filed"] is False
+
+
+def test_a_police_report_is_asked_for_only_above_500_dollars():
+    from banking_tools import BankingSession
+
+    decision, _ = _ask_about("card_present_fraud", transaction_id="btxn_c2g7f43h6g89", disputed_amount=412.88)
+    assert "police_report_filed" not in [a.slot for a in decision.questions], "412.88 is under 500"
