@@ -1,4 +1,69 @@
-# banking_customer_service_agent
+# Banking customer service agent
+
+A typed multi-agent customer service system for a bank, built on the `banking_knowledge` domain of tau2-bench. A customer writes in plain language; the system works out what they want, checks who they are, asks only what it needs, shows the exact changes it will make, and carries them out after one yes. The model never decides a rule, a fee or a step: it only reports what the customer said, and code does the rest.
+
+## How it works
+
+```
+customer message
+  -> decomposer (LLM, strict JSON)      splits it into typed requests ("intents"); sees the last 8 messages
+  -> Jev scorer + code gates            how sure are we? who is calling (2 of 4 identity fields)? what is missing?
+  -> decision per intent                run / ask one question / show a plan and ask for a yes / hand to a person
+  -> plan (waves)                       urgent first, dependent requests wait, independent ones run together
+  -> route
+       direct recipes                   freeze, balance, referrals: no model
+       specialists (6)                  debit, credit, accounts, fees, fraud composer, general answers
+       hand-off                         a person, with a note written by code
+  -> one reply, one question at a time
+```
+
+Each **specialist** is a configuration of one generic class. In plan mode a bounded model loop reads the customer's records (search tools for charges and cards, a records lookup, policy search) and ends by filling in a **workflow form** (what the customer said). Code then decides: validators check every tool call against the bank's written policy (the bank's own tools check very little), a dry run on a copy of the database shows the final state, and the customer sees one preview and gives one yes bound to those exact steps. Execution runs with no model at all and re-checks each step first. Nothing irreversible runs without that yes.
+
+**Jev** (TypeSafe AI) is a hosted decision model that returns yes/no probabilities and no text. It scores how sure the system should be about each intent's kind, independent of the decomposer. A write also needs its kind score at 0.95 or more, or the customer is asked first. It can never authorize an action alone.
+
+## Structure
+
+| Path | What is there |
+|---|---|
+| `backend/src/banking_tools/` | typed wrapper over 53 tau2 bank tools: kinds, reversibility, audit log, per-session database copy |
+| `backend/src/orchestrator/` | decomposer, Jev scorer, identity gate, decisions, plans, routes, replies, trace; evaluation harness in `evaluation/` |
+| `backend/src/agent/` | specialists (`specialists/`), workflows with the bank's rules (`workflows/`), search tools (`credit_lookup.py`, `debit_lookup.py`, `overview.py`), the wiring (`assembly.py`), offline reports, the live harness (`live.py`), the free preflight (`preflight.py`), the simulated customer (`customer.py`) |
+| `backend/src/main.py` | FastAPI: `POST /conversations/{id}/messages`, the test customers, and the demo page |
+| `frontend/widget.html` | demo chat: pick one of 81 test customers on the left, talk to the agent on the right |
+| `docs/` | PRDs, and one policy-decisions note per area with the document or data behind every rule |
+| `tau2-bench/` | git submodule (the fork `asayenju/tau2-bench`); never edited |
+
+## Run the demo
+
+```bash
+cd backend
+PYTHONPATH=src:../tau2-bench/src uv run uvicorn main:app --port 8765
+# open http://localhost:8765/demo   (needs OPENAI_KEY and JEV_KEY in the repo-root .env)
+```
+
+## Results so far
+
+Offline replay of the benchmark's own reference trajectories through the real specialists, compared with tau2's database state (`uv run python -m agent.pilot`, `agent.credit_report`, `agent.preflight`):
+
+- **60 of 62 gradeable tasks reproduce the reference state exactly**; the other 2 are documented departures where written policy and the reference disagree. 35 more of the 97 are not gradeable (customer-side only, human-transfer only, one broken reference).
+- Debit 12/12, accounts 19/19, lost wallet 5/5, credit 17/18, fees 9/10. 0 writes outside an approved plan in every report.
+- 2,500+ offline tests, `mypy --strict` on the typed packages.
+- Decomposer pass@1 (older measurement, before the latest prompt changes): 0.92 tuning set, 0.97 held-out, 1.00 minimal pairs, 0.83 on the hardest set.
+- Jev gate on 70 labelled intents (30 wrong ones made up by swapping the action): avoided 29 of 30 wrong, blocked 2 of 40 right (AUROC 0.97). A plain gpt-4o-mini yes/no on the same intents avoided 28 of 30 and blocked 9 of 40 (AUROC 0.95).
+
+## Where it is failing so far
+
+Be sceptical of the numbers above: replay shows the code is right when it is given the right facts, not that the model always supplies them.
+
+- **Live pass rate is low.** The last full live run of the 12 debit tasks (gpt-4o, one-shot harness) passed 2. Several failures were the harness (the customer cannot answer a question), but the model also wrote wrong values (a dispute amount, a year, a design nobody asked for). Fixes since then are tested offline only; the live number is out of date.
+- **Most paths have never run live.** Credit, fees, accounts, card activation and the PIN-lock score are covered by offline replay and unit tests only. The PIN-lock fraud score is built but not wired into a workflow. Nothing calls `transfer_to_human_agents` yet, so a hand-off ends the chat but transfers nobody.
+- **Multi-turn conversation is patched, not solved.** The request reader sometimes misreads a short answer as a new request, a yes or a withdrawal; several cases are caught in code, but a question can still be asked twice when answers arrive out of order. Its run-to-run variation can turn a vague request into a hand-off.
+- **Inferred rules.** Where a policy document and the reference answers disagree, the references win and the rule is marked inferred (the Entry-tier reorder wait, provisional credit for a cancelled subscription, the 12-month dispute caps). The debit limit cap is not enforced because the data has no ATM limit field.
+- **The Jev result is thin.** The wrong intents are synthetic, there are only 70 intents, and its 0.95 threshold was set from about 10 wrong examples. It shows Jev blocks fewer right requests than a plain LLM, not that it beats one on accuracy.
+- **Measurement gaps.** 12 live recordings are stale, 42 runnable tasks need three or more customer replies the one-shot harness cannot give (the simulated customer has only been tried on one task), and the decomposer scores predate its latest prompt changes.
+- **Not production.** It runs on a copy of the benchmark data: no real accounts or login, no rate limits, monitoring or audit storage. Every live run costs real money and needs both keys.
+
+---
 
 ## Setup
 
@@ -68,7 +133,7 @@ uv run mypy --strict src/banking_tools src/orchestrator
 
 ## Orchestrator (`backend/src/orchestrator/`)
 
-The central agent's decision layer. It takes what a customer says, decides per intent whether to act, ask, or hand off to a human, runs the work, and answers once. Everything is plain code except two swappable parts: the LLM that splits a message into intents (the decomposer) and the Jev model that says how sure we are (the scorer). Both have scripted versions for tests and real ones (below); the tools and sub-agents are still mocks, so the test suite runs offline with no keys. Specs: [`docs/prd-orchestrator-routing.md`](docs/prd-orchestrator-routing.md) and [`docs/prd-decomposer.md`](docs/prd-decomposer.md).
+The central agent's decision layer. It takes what a customer says, decides per intent whether to act, ask, or hand off to a human, runs the work, and answers once. Everything is plain code except two swappable parts: the LLM that splits a message into intents (the decomposer) and the Jev model that says how sure we are (the scorer). Both have scripted versions for tests and real ones (below); the test suite uses scripted tools and sub-agents, so it runs offline with no keys (the real specialists are in `backend/src/agent/`). Specs: [`docs/prd-orchestrator-routing.md`](docs/prd-orchestrator-routing.md) and [`docs/prd-decomposer.md`](docs/prd-decomposer.md).
 
 ```python
 from orchestrator.orchestrator import Orchestrator
@@ -95,7 +160,7 @@ turn.trace.events    # every choice, in order, with wave numbers
 | Each intent escalates after 3 questions. Changing its details restarts the count; answering a different intent does not reset it. | `orchestrator.py` |
 | Urgent intents (fraud or loss report, freeze) go first. Writes run together only when each names a different resource. Dependents of anything not running wait. A cycle hands off. | `plan.py` |
 | A failed route is reported, its dependents are skipped, independent work carries on, nothing is undone. | `executor.py` |
-| One reply per turn: results, problems with an offer of a human, escalations, and one batched set of questions. | `reply.py` |
+| One reply per turn: results, problems with an offer of a human, escalations, and one question (the first missing detail; every yes to what is about to be done is still asked together). | `reply.py` |
 | A repeated message id returns the stored result and runs nothing twice. | `orchestrator.py` |
 
 Other modules: `types.py` (intents, decomposition, decisions), `taxonomy.py` (which tool serves which intent kind), `routes.py` (direct, sub-agent or hand-off per kind), `trace.py`, `decomposer.py` (the per-turn interface the LLM will fill), `mocks.py` (scripted routes: success, slow, timeout, malformed, partial, raises).
@@ -129,4 +194,4 @@ Keys are read from the repo-root `.env` (git-ignored; see `.env.example`): `OPEN
 
 ### Not built yet
 
-Real sub-agents, LLM phrasing of the reply (a template today), and the opt-in evaluation harness (`docs/prd-decomposer.md` issue 11).
+LLM phrasing of the reply (a template today) and a real transfer to a human agent. The sub-agents and the evaluation harness are built; see "Where it is failing so far" above.

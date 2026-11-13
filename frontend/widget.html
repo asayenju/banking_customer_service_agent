@@ -181,6 +181,7 @@ function drawPeople() {
         const block = (title, text) => { if (!text) return; const w = el("div", "blk"); w.append(el("h3", null, title), el("p", null, text)); more.append(w); };
         block("Who they are", d.character); block("Their situation", d.situation);
         block("To verify, they give", "Phone " + d.phone + ", email " + d.email + ", born " + d.born + ", " + d.address);
+        if (d.card_digits && d.card_digits.length) block("If asked, they read from the card", "Last four digits: " + d.card_digits.join(" or "));
         const f = el("div", "fill");
         if (d.opening) { const say = el("span", null, "Use opening line"); say.onclick = e => { e.stopPropagation(); fillBox(d.opening); }; f.append(say); }
         const ver = el("span", null, "Use verification line"); ver.onclick = e => { e.stopPropagation(); fillBox(verifyLine(d)); }; f.append(ver);

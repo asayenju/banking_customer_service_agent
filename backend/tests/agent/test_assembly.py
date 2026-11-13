@@ -204,3 +204,9 @@ def test_a_charge_named_by_its_merchant_goes_to_the_product_whose_records_hold_i
     assert kinds.products({"transaction_id": "Bella's Bistro"}, "a7c2f85d91") == frozenset({Name.DEBIT})
     assert kinds.products({"transaction_id": "BELLAS BISTRO"}, "a7c2f85d91") == frozenset({Name.DEBIT})
     assert kinds.products({"transaction_id": "no such shop"}, "a7c2f85d91") == frozenset()
+
+
+def test_a_customer_who_has_to_read_digits_off_a_card_has_them_in_their_details():
+    client = TestClient(main.app)
+    assert client.get("/personas/task_031").json()["card_digits"] == ["5320"], "Fatima's Silver card"
+    assert client.get("/personas/task_078").json()["card_digits"] == []
