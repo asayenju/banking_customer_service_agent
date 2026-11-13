@@ -116,7 +116,8 @@ def test_a_reply_to_the_one_question_on_screen_is_taken_as_its_answer_even_if_th
     w = World([interp(general()), interp()], [[S("a", 0.99)]], sub=route)
     w.turn(QUESTION)
     r = w.turn("the Blue Account fees")
-    assert route.calls == [{}, {"topic": "the Blue Account fees"}], "the words became the detail that was asked for"
+    assert route.calls[0] == {} and route.calls[1]["topic"] == "the Blue Account fees", "the words became the detail asked for"
+    assert "Customer: the Blue Account fees" in route.calls[1]["conversation_so_far"], "and the exchange is kept in words"
     assert [o.status for o in r.outcomes] == [OutcomeStatus.DONE]
 
 
@@ -126,7 +127,7 @@ def test_an_answer_the_decomposer_mistook_for_a_new_read_is_not_made_into_a_requ
     w = World([interp(general()), interp(spurious)], [[S("a", 0.99)]], sub=route)
     w.turn(QUESTION)
     r = w.turn("November 6th, noticed on the 10th")
-    assert route.calls[-1] == {"topic": "November 6th, noticed on the 10th"}
+    assert route.calls[-1]["topic"] == "November 6th, noticed on the 10th"
     assert w.orch.active_ids == () and [o.intent_id for o in r.outcomes] == ["a"], "no second intent was made"
 
 
