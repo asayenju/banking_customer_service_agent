@@ -56,6 +56,10 @@ SEVERITY = ("keep_active", "freeze_pending_investigation", "close_and_reissue")
 # Categories where only part of the charge is in question (an ATM that paid $100 of $200, a charge $100 too high).
 # Every other category disputes the whole amount. In every reference answer a partial category is below the charge.
 PARTIAL_AMOUNT_CATEGORIES = frozenset({"atm_cash_discrepancy", "incorrect_amount", "atm_deposit_not_credited"})
+FRAUD_CATEGORIES = frozenset({"card_present_fraud", "card_not_present_fraud", "unauthorized_transaction"})
+POLICE_REPORT_OVER = 500.0
+# What the bank asks, in this order, and only what matters for the kind of dispute (doc 031).
+QUESTION_ORDER = ("card_in_possession", "pin_compromised", "police_report_filed", "contacted_merchant", "discovery_date", "written_statement_provided")
 PROVISIONAL_CATEGORIES = frozenset(
     {
         "unauthorized_transaction",
@@ -85,10 +89,10 @@ class DisputeFacts(BaseModel):
             "when fraud is NOT suspected."
         )
     )
-    discovery_date: str = Field(
+    discovery_date: Optional[str] = Field(
         description=(
             "MM/DD/YYYY: when the customer first noticed. If the customer gave no year, use the year of the "
-            "charge on the transaction record; never guess a different year and do not ask."
+            "charge on the transaction record; never guess a different year. null if they have not said."
         )
     )
     # What the customer disputes: all of the charge, or only part (an ATM that paid $100 short).
@@ -103,11 +107,13 @@ class DisputeFacts(BaseModel):
     transaction_type: TransactionType = Field(
         description="How the charge was paid, as the customer or the transaction record says. Do not guess."
     )
-    card_in_possession: bool
-    pin_compromised: PinCompromised
-    contacted_merchant: bool
-    police_report_filed: bool
-    written_statement_provided: bool
+    # For each of these: null when the customer has not said. Do not ask them yourself and do not guess: the
+    # bank asks only the ones that matter for this kind of dispute.
+    card_in_possession: Optional[bool]
+    pin_compromised: Optional[PinCompromised]
+    contacted_merchant: Optional[bool]
+    police_report_filed: Optional[bool]
+    written_statement_provided: Optional[bool]
     card_closure: ClosureAnswer = Field(
         description=(
             "Only for a card the bank recommends closing and reissuing after this dispute: 'yes' if the "
@@ -167,7 +173,7 @@ def provisional_credit(facts: DisputeFacts) -> bool:
     # Doc 032 says the other categories are "not required but may be offered at discretion". The references offer it
     # only for a cancelled subscription the customer already took to the merchant (task 082); tasks 084 and 086 do
     # not for an incorrect amount or goods not received even after the merchant was contacted. Inferred, one task.
-    return facts.category == "recurring_charge_after_cancellation" and facts.contacted_merchant
+    return facts.category == "recurring_charge_after_cancellation" and bool(facts.contacted_merchant)
 
 
 def tier_of(level: str) -> Optional[str]:
@@ -207,6 +213,52 @@ class DebitDispute:
             chosen.append(item)
         return chosen
 
+    @staticmethod
+    def _complete(db: Any, disputes: Sequence[DisputeFacts]) -> tuple[list[DisputeFacts], list[Ask]]:
+        """Fill in what the kind of dispute makes obvious and list the few things only the customer can say.
+
+        A fraud dispute needs the card and PIN answers (and a police report over $500); any other dispute needs to
+        know whether the merchant was contacted. What does not matter for a kind gets the answer the references use
+        (a card in hand, no PIN trouble, no police report). Every dispute needs the date it was noticed and the
+        customer's yes to using this chat as their written statement."""
+        asks: dict[str, Ask] = {}
+        done: list[DisputeFacts] = []
+
+        def need(slot: str, text: str) -> None:
+            asks.setdefault(slot, Ask(slot, text))
+
+        for item in disputes:
+            txn = db.bank_account_transaction_history.data.get(item.transaction_id)
+            amount = abs(float(txn.get("amount", 0))) if txn else 0.0
+            fraud = item.category in FRAUD_CATEGORIES
+            fill: dict[str, Any] = {}
+            if fraud:
+                if item.card_in_possession is None:
+                    need("card_in_possession", "Do you still have your physical debit card with you? (yes or no)")
+                if item.pin_compromised is None:
+                    need("pin_compromised", "Do you think your PIN may have been seen or shared?")
+                if amount > POLICE_REPORT_OVER and item.police_report_filed is None:
+                    need("police_report_filed", "Have you filed a police report for this charge? (yes or no)")
+                fill.update({k: False for k in ("contacted_merchant", "police_report_filed") if getattr(item, k) is None})
+            else:
+                if item.contacted_merchant is None:
+                    need("contacted_merchant", "Have you already tried to sort this out with the merchant? (yes or no)")
+                if item.card_in_possession is None:
+                    fill["card_in_possession"] = True
+                if item.pin_compromised is None:
+                    fill["pin_compromised"] = "no"
+                if item.police_report_filed is None:
+                    fill["police_report_filed"] = False
+            if item.discovery_date is None:
+                need("discovery_date", "When did you first notice this charge?")
+            if item.written_statement_provided is None:
+                need(
+                    "written_statement_provided",
+                    "Is it all right to use this conversation as your written statement of what happened? (yes or no)",
+                )
+            done.append(item.model_copy(update=fill))
+        return done, sorted(asks.values(), key=lambda a: QUESTION_ORDER.index(a.slot))
+
     def decide(self, ctx: WorkflowContext, facts: DisputeRequest) -> Decision:
         if not facts.disputes:
             return Refuse("list at least one transaction to dispute")
@@ -218,6 +270,12 @@ class DebitDispute:
         new_per_account: dict[str, int] = {}
         disputes = self._settle_duplicates(db, facts.disputes)
         for item in disputes:
+            if db.bank_account_transaction_history.data.get(item.transaction_id) is None:
+                return Refuse(f"{item.transaction_id} is not a transaction on this customer's accounts")
+        disputes, asks = self._complete(db, disputes)
+        if asks:
+            return NeedInfo(tuple(asks))
+        for item in disputes:
             if item.transaction_id in seen:
                 return Refuse(f"{item.transaction_id} is listed twice")
             seen.add(item.transaction_id)
@@ -228,7 +286,7 @@ class DebitDispute:
             if account.get("status") != "OPEN":
                 return Reply_closed(account)
             happened = parse_date(str(txn.get("date")))
-            noticed = parse_date(item.discovery_date)
+            noticed = parse_date(item.discovery_date or "")
             if happened is None or noticed is None:
                 return Refuse("discovery_date must be written MM/DD/YYYY")
             noticed = settle_year(noticed, happened, ctx.today)

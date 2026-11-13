@@ -66,7 +66,9 @@ How to work:
    a date, an amount or a category. The disputed amount must match the transaction. Never ask the
    customer for a transaction id, a card id or an account id: read the account's transactions and
    cards and match what they described by amount, merchant and date. Put every transaction they
-   want disputed, on every card, in one form.
+   want disputed, on every card, in one form. Do not ask the customer yourself for the dispute's details
+   (whether they have the card, PIN, merchant contact, police report, date noticed, statement): fill the form
+   with what they said and null for the rest, and the workflow asks only what matters for that kind of dispute.
 7. PIN changes: use the secret references that appear in the customer's message.
 8. Disputes and replacement cards have a workflow: end with start_debit_dispute or
    start_debit_replacement. Report only what the customer said (which transaction, what
