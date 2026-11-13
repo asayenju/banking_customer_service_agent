@@ -52,6 +52,9 @@ CARD_ACTION: dict[str, str] = {
     "unauthorized_transaction": "freeze_pending_investigation",
 }
 SEVERITY = ("keep_active", "freeze_pending_investigation", "close_and_reissue")
+# Categories where only part of the charge is in question (an ATM that paid $100 of $200, a charge $100 too high).
+# Every other category disputes the whole amount. In every reference answer a partial category is below the charge.
+PARTIAL_AMOUNT_CATEGORIES = frozenset({"atm_cash_discrepancy", "incorrect_amount", "atm_deposit_not_credited"})
 PROVISIONAL_CATEGORIES = frozenset(
     {
         "unauthorized_transaction",
@@ -81,13 +84,19 @@ class DisputeFacts(BaseModel):
             "when fraud is NOT suspected."
         )
     )
-    # MM/DD/YYYY: when the customer first noticed.
-    discovery_date: str
+    discovery_date: str = Field(
+        description=(
+            "MM/DD/YYYY: when the customer first noticed. If the customer gave no year, use the year of the "
+            "charge on the transaction record; never guess a different year and do not ask."
+        )
+    )
     # What the customer disputes: all of the charge, or only part (an ATM that paid $100 short).
     disputed_amount: float = Field(
         description=(
             "The amount in dispute. When the customer disputes the whole charge, use the amount on "
-            "the transaction record even if the customer only gave a rounded figure; do not ask."
+            "the transaction record even if the customer only gave a rounded figure; do not ask. For "
+            "incorrect_amount it is only the overcharge (charged minus what it should have been); for "
+            "atm_cash_discrepancy it is only the cash that was not paid out. Never the whole charge for these."
         )
     )
     transaction_type: TransactionType = Field(
@@ -110,7 +119,9 @@ class DisputeFacts(BaseModel):
 class DisputeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    disputes: list[DisputeFacts]
+    disputes: list[DisputeFacts] = Field(
+        description="One entry for every transaction the customer wants to dispute, on every card. Do not leave any out."
+    )
 
 
 def parse_date(text: str) -> Optional[date]:
@@ -183,6 +194,12 @@ class DebitDispute:
                 return Refuse(
                     f"the disputed amount must be between $1.00 and the transaction's ${amount:.2f}. "
                     f"If the customer is disputing the whole charge, use ${amount:.2f}; do not ask them."
+                )
+            if item.category in PARTIAL_AMOUNT_CATEGORIES and item.disputed_amount >= amount:
+                return Refuse(
+                    f"a {item.category.replace('_', ' ')} dispute covers only part of the ${amount:.2f} charge, not "
+                    "all of it: the overcharge, or the cash that was not paid out. Work it out from what the customer "
+                    "said (what they were charged and what it should have been, or what they received) or ask them"
                 )
             if (ctx.today - happened).days > MAX_AGE_DAYS:
                 return Refuse(f"{item.transaction_id} is more than {MAX_AGE_DAYS} days old")
