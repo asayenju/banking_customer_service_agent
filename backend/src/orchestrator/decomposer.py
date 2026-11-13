@@ -36,7 +36,10 @@ class Interpretation(BaseModel):
 
 class Decomposer(Protocol):
     async def interpret(
-        self, message: str, open_intents: Sequence[Intent]
+        self,
+        message: str,
+        open_intents: Sequence[Intent],
+        history: Sequence[tuple[str, str]] = (),
     ) -> Interpretation: ...
 
 
@@ -46,11 +49,17 @@ class ScriptedDecomposer:
     def __init__(self, script: Sequence[Interpretation | Exception]) -> None:
         self._script = list(script)
         self.calls: list[tuple[str, tuple[str, ...]]] = []
+        # The recent conversation each call was shown: (who, text) pairs, oldest first.
+        self.histories: list[tuple[tuple[str, str], ...]] = []
 
     async def interpret(
-        self, message: str, open_intents: Sequence[Intent]
+        self,
+        message: str,
+        open_intents: Sequence[Intent],
+        history: Sequence[tuple[str, str]] = (),
     ) -> Interpretation:
         self.calls.append((message, tuple(i.id for i in open_intents)))
+        self.histories.append(tuple(history))
         if not self._script:
             raise AssertionError("decomposer called more often than scripted")
         step = self._script.pop(0)

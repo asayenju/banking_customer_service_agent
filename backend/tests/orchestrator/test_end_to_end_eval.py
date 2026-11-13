@@ -30,7 +30,7 @@ def go(cases, scripts, confidence=0.99):
     by_message = {c.message: s for c, s in zip(cases, scripts, strict=True)}
 
     class ByMessage:
-        async def interpret(self, message, open_intents):
+        async def interpret(self, message, open_intents, history=()):
             return await ScriptedDecomposer([by_message[message]]).interpret(message, open_intents)
 
     found, not_found = asyncio.run(

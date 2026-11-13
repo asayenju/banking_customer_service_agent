@@ -72,7 +72,7 @@ class Stub:
         self.script = script
         self.calls = 0
 
-    async def interpret(self, message, open_intents):
+    async def interpret(self, message, open_intents, history=()):
         kinds = self.script[self.calls % len(self.script)]
         self.calls += 1
         intents = tuple(Intent(id=f"i{n}", kind=k, summary="s") for n, k in enumerate(kinds))

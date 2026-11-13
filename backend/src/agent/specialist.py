@@ -117,6 +117,8 @@ has been verified. Follow these rules.
   Never guess an id, an amount or a date. Never ask the customer for something you can look up there or work out
   yourself (a charge's type comes from its record; a detail they already gave in their own words is given): ask
   only for what only they know (what happened, what they want, whether they contacted the merchant).
+- "recent conversation" in the request is the last few turns: read it before you ask anything, and never ask
+  again for something the customer has just said.
 - The customer is asked one question at a time. When you call ask_customer, put the most important missing
   detail first and write one short, friendly question for it.
 - Before you decide anything about eligibility or how to do something, search the policy notes
@@ -250,7 +252,7 @@ class Specialist:
             self._llm,
             box,
             system=system_prompt(self.config, intent.kind),
-            request=self._request(working, verified=ctx.verified_user_id is not None),
+            request=self._request(working, verified=ctx.verified_user_id is not None, recent=ctx.recent),
             terminals=(*self.config.terminals, *workflows),
             budget=self.config.budget,
             deadline=ctx.deadline,
@@ -380,7 +382,7 @@ class Specialist:
             return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text=decision.text)
         return _failed(intent, "the workflow asked for a human agent")
 
-    def _request(self, intent: Intent, verified: bool = False) -> str:
+    def _request(self, intent: Intent, verified: bool = False, recent: Sequence[tuple[str, str]] = ()) -> str:
         details = {k: v for k, v in sorted(intent.slots.items())}
         body: dict[str, Any] = {
             "kind": intent.kind.value,
@@ -389,6 +391,8 @@ class Specialist:
         }
         if verified:
             body["identity"] = "the customer is already verified; never ask them to verify"
+        if recent:
+            body["recent conversation"] = [f"{who}: {said}" for who, said in recent]
         return self._vault.capture(json.dumps(body, ensure_ascii=False))
 
     def _search_tool(self, seen: set[str]) -> ExtraTool:

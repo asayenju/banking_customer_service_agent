@@ -252,3 +252,17 @@ def test_a_question_that_would_carry_a_secret_is_scrubbed():
     intent = Intent(id="x", kind=K.DISPUTE_TRANSACTION, summary="dispute", slots={"account_id": ACCOUNT})
     outcome = ask(spec, shared, intent)
     assert "4821" not in (outcome.questions[0].text or "")
+
+
+def test_the_specialist_is_shown_the_recent_conversation_in_its_request_with_secrets_hidden():
+    spec, llm, shared = make([turn(call("ask_customer", details=["dispute_reason"], question="What happened?"))])
+    intent = Intent(id="x", kind=K.DISPUTE_TRANSACTION, summary="dispute", slots={"account_id": ACCOUNT})
+    spec._vault.hide("my pin is 4821", {"pin_a": "4821"})
+    recent = (("customer", "Bella's Bistro charged me twice, my pin is 4821"), ("agent", "Have you contacted the merchant?"))
+    ctx = RouteContext(
+        intent_id="x", verified_user_id=ME, session=scoped(shared)(SessionRequest("x")), mode="plan", recent=recent
+    )
+    asyncio.run(spec.run(intent, ctx))
+    request = llm.calls[0]["messages"][1]["content"]
+    assert "recent conversation" in request and "Bella's Bistro charged me twice" in request and "Have you contacted the merchant?" in request
+    assert "4821" not in request

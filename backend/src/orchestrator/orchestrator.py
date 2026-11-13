@@ -64,6 +64,9 @@ from orchestrator.types import Decomposition, Intent, IntentKind, Question
 from orchestrator.unclear import HelpState, handle_unclear, offer_help, precheck
 
 MAX_ASKS = 3
+# The recent conversation kept for the models: this many messages (customer and agent alternate), each cut short.
+HISTORY_MESSAGES = 8
+HISTORY_CHARS = 600
 _NO = re.compile(r"^\W*(?:no|nope|nah)\b")
 _WITHDRAWS = re.compile(r"never ?mind|forget it|cancel|stop|no longer|don'?t need|drop it|leave it")
 # What the decomposer makes of an answer it did not recognise as one; never a request to change anything.
@@ -200,6 +203,9 @@ class Orchestrator:
         self._pending_route_questions: dict[str, tuple[Question, ...]] = {}
         self._prints: dict[str, str] = {}
         self._scores: dict[str, IntentScore] = {}
+        self._transcript: list[tuple[str, str]] = []
+        self._history_now: tuple[tuple[str, str], ...] = ()
+        self._latest = ""
         self._said: dict[str, str] = {}
         self._scored_kind: dict[str, IntentKind] = {}
         self._pending_confirm: dict[str, str] = {}
@@ -239,9 +245,17 @@ class Orchestrator:
             cached = self._processed.get(message_id)
             if cached is not None:
                 return cached
+            self._history_now = tuple(self._transcript)
             result = await self._turn(message)
+            self._remember(self._latest or message, result.reply.text)
             self._processed[message_id] = result
             return result
+
+    def _remember(self, said: str, replied: str) -> None:
+        """Keep the last few turns, with the customer's words as they were after secrets were hidden."""
+        self._transcript.append(("customer", said[:HISTORY_CHARS]))
+        self._transcript.append(("agent", replied[:HISTORY_CHARS]))
+        del self._transcript[:-HISTORY_MESSAGES]
 
     def _context_for(self, intent: Intent, timeout: float) -> RouteContext:
         """What a runner is given. The caller's identity comes from AuthState alone."""
@@ -264,6 +278,7 @@ class Orchestrator:
             progress=progress,
             mode=self._mode,
             approved=approved,
+            recent=self._history_now,
         )
 
     def _forget(self, intent_id: str) -> None:
@@ -287,6 +302,7 @@ class Orchestrator:
         if self._capture_secrets is not None:
             # Just asked for a PIN or a security code? Then bare digits in the answer are one.
             message = self._capture_secrets(message, expecting_secret=bool(self._last_asked & SECRET_SLOTS))
+        self._latest = message
         events: list[TraceEvent] = []
         if not self._awaiting:
             unclear = precheck(message)
@@ -294,7 +310,7 @@ class Orchestrator:
                 return await self._unclear_turn(unclear.intents[0], events)
         try:
             interpretation = await self._decomposer.interpret(
-                message, tuple(self._active.values()) + tuple(self._resumable.values())
+                message, tuple(self._active.values()) + tuple(self._resumable.values()), self._history_now
             )
         except Exception as exc:
             return self._failed_turn(f"decomposer failed: {type(exc).__name__}", events)

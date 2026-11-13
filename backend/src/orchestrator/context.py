@@ -66,6 +66,8 @@ class RouteContext:
     # would change). "execute": do what ``approved`` says, nothing else.
     mode: Mode = "execute"
     approved: Optional[PlanPreview] = None
+    # The last few turns of the conversation, (who, text) oldest first, with secrets already hidden.
+    recent: tuple[tuple[str, str], ...] = ()
 
 
 def scoped(session: BankingSession) -> Callable[[SessionRequest], AgentSession]:
