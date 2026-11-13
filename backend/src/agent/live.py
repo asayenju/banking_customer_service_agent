@@ -286,6 +286,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--price-out", type=float, default=None)
     parser.add_argument("--cassettes", type=Path, default=DEFAULT_CASSETTES)
     parser.add_argument("--rerecord", action="store_true", help="pay for a fresh recording of tasks that already have one")
+    parser.add_argument("--customer", action="store_true", help="play the persona as a simulated customer that answers the specialist's questions (more calls)")
     parser.add_argument("--yes", action="store_true", help="spend the estimate")
     parser.add_argument("--out", type=Path, default=None)
     return parser
@@ -332,6 +333,7 @@ class RunContext:
     make_client: ClientFactory
     rerecord: bool
     meter: Optional[MeteredClient] = None
+    customer: bool = False
 
 
 def prepare(
@@ -363,7 +365,7 @@ def prepare(
 def run_plan(plan: Plan, args: argparse.Namespace, make_client: ClientFactory, run_task: TaskRunner) -> LiveReport:
     """Run the chosen tasks one after another, metered, stopping cleanly when the cap is hit."""
     report = LiveReport()
-    context = RunContext(plan=plan, make_client=make_client, rerecord=args.rerecord)
+    context = RunContext(plan=plan, make_client=make_client, rerecord=args.rerecord, customer=args.customer)
     spent = 0.0
     for task_id in plan.task_ids:
         for _ in range(plan.trials):
@@ -504,6 +506,8 @@ def run_live_task(
             session.call(step.name, step.args)
 
     number = 0
+    talker: Optional[Any] = None
+    handled: list[str] = []
     try:
         for item in plan_items(steps, config):
             if isinstance(item, Direct):
@@ -515,22 +519,50 @@ def run_live_task(
                 meter = MeteredClient(context.make_client(plan.model), price_in=plan.price_in, price_out=plan.price_out, cap=plan.max_cost)
             replayed = replayed and not fresh
             client = CassetteClient(meter if fresh else None, path, rerecord=context.rerecord)
+            ask = None
+            talk_client = None
+            request = segment_request(task_id, number)
+            if context.customer:
+                from agent.customer import SimulatedCustomer
+                from knowledge.report import opening_message
+                from agent.tier1 import run_async
+
+                talk_path = cassette_path(cassettes, task_id, 100 + number, plan.model)
+                talk_fresh = context.rerecord or not talk_path.exists()
+                if talk_fresh and meter is None:
+                    meter = MeteredClient(context.make_client(plan.model), price_in=plan.price_in, price_out=plan.price_out, cap=plan.max_cost)
+                replayed = replayed and not talk_fresh
+                talk_client = CassetteClient(meter if talk_fresh else None, talk_path, rerecord=context.rerecord)
+                if talker is None:
+                    talker = SimulatedCustomer(task, talk_client)
+                else:
+                    talker._client = talk_client
+                if request is None:
+                    request = opening_message(task) if number == 0 else (
+                        run_async(talker.next_request(handled)) or opening_message(task)
+                    )
+                handled.append(request[:120])
+
+                def ask(question: str, _t: Any = talker) -> str:
+                    return vault.capture(vault.hide(run_async(_t.answer(question)), gold_secrets(task)))
             specialist = Specialist(config, llm=client, index=index, database=session.database, vault=vault)
             intent = Intent(
                 id=f"{task_id}-{number}",
                 kind=item.kind,
                 summary=vault.capture(
                     vault.hide(
-                        segment_request(task_id, number) or customer_facts(task),
+                        request or customer_facts(task),
                         gold_secrets(task),
                     )
                 ),
                 slots=slots_of(item.writes[0]),
             )
             try:
-                plan_and_execute(specialist, intent, session, user_id, label=f"segment {number} ({item.kind.value})")
+                plan_and_execute(specialist, intent, session, user_id, label=f"segment {number} ({item.kind.value})", ask=ask)
             finally:
                 client.save()  # a failed segment is the one worth reading, and was paid for
+                if talk_client is not None:
+                    talk_client.save()
             number += 1
     except (SegmentError, BudgetExceeded, CassetteMismatch) as exc:
         note = f"{type(exc).__name__}: {exc}"

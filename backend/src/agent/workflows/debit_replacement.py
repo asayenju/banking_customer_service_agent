@@ -209,10 +209,10 @@ class DebitReplacement:
                 return Refuse(f"{item.card_id} is listed twice")
             closing.add(item.card_id)
             if card.get("status") == "CLOSED":
-                return Refuse(
-                    f"{item.card_id} is already closed; leave it out of closures and do not tell the customer "
-                    "that anything will be done for it"
-                )
+                # Already done (a fraud dispute closed it, task 082): say so and carry on, so the order for its
+                # account is still planned.
+                notes.append(f"Your {account.get('level') or 'account'} card is already closed.")
+                continue
             account_id = str(card["account_id"])
             label = f"your {account.get('level') or 'account'} card"
             purchases, refunds = pending_rows(db, account_id)
