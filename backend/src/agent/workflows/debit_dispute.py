@@ -11,6 +11,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agent.cards import describe
 from agent.workflows.base import (
     Ask,
     Decision,
@@ -42,6 +43,7 @@ TransactionType = Literal[
     "recurring_payment",
     "person_to_person",
 ]
+ClosureAnswer = Literal["yes", "no", "not_asked"]
 PinCompromised = Literal["yes_shared", "yes_observed", "no", "unknown"]
 
 CARD_ACTION: dict[str, str] = {
@@ -96,6 +98,13 @@ class DisputeFacts(BaseModel):
     contacted_merchant: bool
     police_report_filed: bool
     written_statement_provided: bool
+    card_closure: ClosureAnswer = Field(
+        description=(
+            "Only for a card the bank recommends closing and reissuing after this dispute: 'yes' if the "
+            "customer agreed to close it, 'no' if they want to keep it (even with a new number), 'not_asked' "
+            "if they have not been asked. Report 'not_asked' for every other card."
+        )
+    )
 
 
 class DisputeRequest(BaseModel):
@@ -118,7 +127,14 @@ def liability(transaction_date: date, discovery: date) -> float:
 
 
 def provisional_credit(facts: DisputeFacts) -> bool:
-    return facts.category in PROVISIONAL_CATEGORIES and facts.pin_compromised != "yes_shared"
+    if facts.pin_compromised == "yes_shared":
+        return False
+    if facts.category in PROVISIONAL_CATEGORIES:
+        return True
+    # Doc 032 says the other categories are "not required but may be offered at discretion". The references offer it
+    # only for a cancelled subscription the customer already took to the merchant (task 082); tasks 084 and 086 do
+    # not for an incorrect amount or goods not received even after the merchant was contacted. Inferred, one task.
+    return facts.category == "recurring_charge_after_cancellation" and facts.contacted_merchant
 
 
 def tier_of(level: str) -> Optional[str]:
@@ -139,6 +155,7 @@ class DebitDispute:
         db = ctx.database
         steps: list[Step] = []
         card_action: dict[str, str] = {}
+        cards_of: dict[str, str] = {}
         seen: set[str] = set()
         new_per_account: dict[str, int] = {}
         for item in facts.disputes:
@@ -193,6 +210,7 @@ class DebitDispute:
                     f"the {account.get('level')} allows {MAX_OPEN_DISPUTES[tier]} open disputes and this would pass that"
                 )
             action = CARD_ACTION.get(item.category, "keep_active")
+            cards_of[item.transaction_id] = str(card["card_id"])
             card_action[str(card["card_id"])] = max(
                 (card_action.get(str(card["card_id"]), "keep_active"), action), key=SEVERITY.index
             )
@@ -221,7 +239,21 @@ class DebitDispute:
             )
         for card_id, action in card_action.items():
             if action == "close_and_reissue":
-                steps.append(Step("close_debit_card_4721", {"card_id": card_id, "reason": "fraud_suspected"}))
+                answers = {i.card_closure for i in facts.disputes if cards_of[i.transaction_id] == card_id}
+                if "yes" in answers and "no" not in answers:
+                    lost = any(not i.card_in_possession for i in facts.disputes if cards_of[i.transaction_id] == card_id)
+                    steps.append(Step("close_debit_card_4721", {"card_id": card_id, "reason": "lost" if lost else "fraud_suspected"}))
+                elif "no" not in answers:
+                    label = describe(db, db.debit_cards.data[card_id])
+                    return NeedInfo(
+                        (
+                            Ask(
+                                "card_closure",
+                                f"For {label}, the bank recommends closing it and issuing a new card. Do you want "
+                                "me to close it, or would you rather keep it?",
+                            ),
+                        )
+                    )
             elif action == "freeze_pending_investigation":
                 steps.append(Step("freeze_debit_card_3892", {"card_id": card_id}))
         return Plan(tuple(steps))

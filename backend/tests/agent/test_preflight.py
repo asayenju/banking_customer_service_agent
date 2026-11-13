@@ -29,10 +29,10 @@ def test_every_task_is_classified_and_the_numbers_add_up():
 
 
 def test_a_task_the_specialist_cannot_reproduce_offline_is_blocked():
-    """Task 082's offline replay differs from the reference (the dispute's card action closes a card the reference
-    leaves open, and its provisional credit differs). It failed before the fraud work as well, so it cannot pass live."""
-    c = everything()["task_082"]
-    assert c.runnable and c.offline is Offline.FAIL and c.blocked
+    """A runnable task whose scripted replay fails offline cannot pass live either (task 082 used to be one)."""
+    failing = Check("task_x", "wholly_one_cluster", ("debit",), True, Offline.FAIL, Cassette.NONE, 0, "")
+    assert failing.blocked
+    assert everything()["task_082"].offline is Offline.PASS
     assert not everything()["task_078"].blocked and not everything()["task_079"].blocked
 
 
@@ -68,4 +68,4 @@ def test_a_stale_recording_blocks_unless_the_run_is_a_rerecord():
 
 def test_the_report_names_the_blocked_tasks_and_the_counts():
     text = render(list(everything().values()), only_problems=True)
-    assert text.startswith("97 tasks: 59 runnable live") and "task_082  BLOCKED" in text and "task_078  warn" in text
+    assert text.startswith("97 tasks: 59 runnable live") and "task_078  warn" in text

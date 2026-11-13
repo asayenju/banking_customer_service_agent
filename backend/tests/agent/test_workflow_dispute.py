@@ -18,12 +18,10 @@ SAID = (
 
 
 # Where the reference answer goes past the written policy. The workflow follows the policy.
-#   082: a recurring-charge dispute gets provisional credit (the guideline calls that optional),
-#        and the card behind a card-not-present fraud dispute is left open (the card-action
-#        table says close and reissue).
+#   082 used to be here; the closure is now the customer's choice and the optional provisional credit follows the
+#        reference for a cancelled subscription the customer took to the merchant.
 #   091: the second closure is the customer's separate lost-card request, not part of a dispute.
 KNOWN = {
-    "082": {"provisional_credit_eligible": {"recurring_charge_after_cancellation"}, "extra_closures": 1},
     "091": {"missing_closures": 1},
 }
 
@@ -55,6 +53,9 @@ def test_workflow_builds_the_reference_dispute_steps(task, steps, disputes):
                 contacted_merchant=d.args["contacted_merchant"],
                 police_report_filed=d.args["police_report_filed"],
                 written_statement_provided=d.args["written_statement_provided"],
+                card_closure="yes"
+                if d.args["card_id"] in {w.args["card_id"] for w in steps if w.name == "close_debit_card_4721"}
+                else "no",
             )
             for d in disputes
         ]

@@ -430,6 +430,7 @@ def run_tier1(
             turns, extra = _run_segment(
                 task, config, session, vault, ids, index, user_id,
                 item.kind, item.reads, item.writes, len(segments),
+                [x for x in steps if x.kind == "write"],
             )
             turns_used += turns
             bypasses += extra
@@ -472,6 +473,7 @@ def _run_segment(
     reads: Sequence[Step],
     writes: Sequence[Step],
     number: int,
+    gold_writes: Sequence[Step] = (),
 ) -> tuple[int, int]:
     if kind is IntentKind.ORDER_REPLACEMENT_CARD:
         # An earlier request may already have done some of this (a fraud dispute closes the card).
@@ -485,7 +487,7 @@ def _run_segment(
         ]
         if not writes:
             return 0, 0
-    script = workflow_turns(config, kind, reads, writes, session.database, user_id, ids) or scripted_turns(
+    script = workflow_turns(config, kind, reads, writes, session.database, user_id, ids, gold_writes) or scripted_turns(
         reads, writes, vault, ids
     )
     llm = FakeToolLLM(script)
@@ -520,6 +522,7 @@ def workflow_turns(
     database: Any,
     user_id: str,
     ids: Calls,
+    gold_writes: Sequence[Step] = (),
 ) -> Optional[list[AssistantTurn]]:
     """For a kind that has a workflow: what a perfect model would say, which is the same reads
     and then the workflow's form filled in from what the gold trajectory says the customer wanted.
@@ -530,7 +533,7 @@ def workflow_turns(
     for workflow in config.workflows:
         if kind not in workflow.kinds:
             continue
-        facts = facts_from_gold(workflow.name, writes, database)
+        facts = facts_from_gold(workflow.name, writes, database, gold_writes)
         if facts is None:
             continue  # another workflow of the same kind may be the one this segment is about (fees has three)
         turns = [AssistantTurn(tool_calls=(ids.make(r.name, r.args),), usage=Usage(input_tokens=1)) for r in reads]

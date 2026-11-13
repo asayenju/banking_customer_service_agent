@@ -28,6 +28,7 @@ ONE = {
     "contacted_merchant": False,
     "police_report_filed": False,
     "written_statement_provided": True,
+    "card_closure": "not_asked",
 }
 
 
@@ -64,13 +65,16 @@ def test_filled_in_form_becomes_a_plan_with_everything_else_worked_out_by_code()
     assert step.args["disputed_amount"] == 47.5 and step.args["transaction_date"] == "11/06/2025"
 
 
-def test_a_fraud_dispute_gets_the_card_closure_added_by_code():
+def test_a_fraud_dispute_closes_the_card_only_when_the_customer_agrees():
     fraud = {**ONE, "transaction_id": "btxn_c2g7f43h6g89", "category": "card_present_fraud",
              "discovery_date": "11/14/2025", "disputed_amount": 412.88, "pin_compromised": "unknown"}
-    outcome, _ = run([turn("start_debit_dispute", disputes=[fraud])])
-    tools = [s.tool for s in outcome.proposal.steps]
-    assert tools == ["file_debit_card_transaction_dispute_6281", "close_debit_card_4721"]
+    outcome, _ = run([turn("start_debit_dispute", disputes=[{**fraud, "card_closure": "yes"}])])
+    assert [s.tool for s in outcome.proposal.steps] == ["file_debit_card_transaction_dispute_6281", "close_debit_card_4721"]
     assert outcome.proposal.steps[0].args["customer_max_liability_amount"] == 500.0
+    kept, _ = run([turn("start_debit_dispute", disputes=[{**fraud, "card_closure": "no"}])])
+    assert [s.tool for s in kept.proposal.steps] == ["file_debit_card_transaction_dispute_6281"]
+    unasked, _ = run([turn("start_debit_dispute", disputes=[{**fraud, "card_closure": "not_asked"}])])
+    assert unasked.status is OutcomeStatus.NEEDS_INFO and "keep it" in unasked.questions[0].text
 
 
 def test_a_refusal_goes_back_to_the_model_in_words_and_the_corrected_form_is_accepted():
