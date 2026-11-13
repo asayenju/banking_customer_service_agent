@@ -116,14 +116,22 @@ TERMINALS: Mapping[str, ToolSchema] = {
     ),
     "ask_customer": _terminal(
         "ask_customer",
-        "End the run to ask the customer for details you still need. Name the details; "
-        "never include a value the customer gave.",
+        "End the run to ask the customer for details you still need. Name the missing details, most "
+        "important first, and write the one question to ask now. The customer is asked one question at "
+        "a time; the rest are asked later. Never include a value the customer gave.",
         {
             "details": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Short names of the missing details, like card_id.",
-            }
+                "description": "Short names of the missing details, like dispute_reason, most important first.",
+            },
+            "question": {
+                "type": "string",
+                "description": (
+                    "The one question to ask the customer now, in plain friendly words, about the first detail "
+                    "only, such as 'What happened with the charge?'. Never several questions in one."
+                ),
+            },
         },
     ),
     "escalate": _terminal(
@@ -290,11 +298,20 @@ def _reviewed(review: Optional[Review], name: str, arguments: Mapping[str, Any])
         return "that could not be checked"
 
 
+OPTIONAL_ARGUMENTS: Mapping[str, frozenset[str]] = {"ask_customer": frozenset({"question"})}
+
+
 def _terminal_arguments(call: ToolCall, schema: ToolSchema) -> Optional[dict[str, Any]]:
     try:
         parsed = json.loads(call.arguments_json or "{}")
     except json.JSONDecodeError:
         return None
-    if not isinstance(parsed, dict) or set(parsed) != set(schema.parameters["properties"]):
+    if not isinstance(parsed, dict):
+        return None
+    # The schema (strict, so every property required) asks for the question too, but an answer without one still
+    # works: the question then gets the standard wording.
+    allowed = set(schema.parameters["properties"])
+    required = allowed - OPTIONAL_ARGUMENTS.get(schema.name, frozenset())
+    if not required <= set(parsed) <= allowed:
         return None
     return parsed
