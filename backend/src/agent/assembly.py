@@ -17,6 +17,7 @@ wiring and differ only in those three. ``live_conversation`` supplies the real o
 The HAND_OFF route has no runner on purpose: a hand-off kind never runs, it escalates (``decision.decide``).
 """
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -35,6 +36,7 @@ from agent.specialists.general import GENERAL_ANSWERER
 from agent.toolbox import SecretVault
 from banking_tools.session import BankingSession
 from knowledge.index import KnowledgeIndex
+from orchestrator.controller import Controller
 from orchestrator.auth import CustomerRecord, Directory, IdentityField, claim_matches
 from orchestrator.context import scoped
 from orchestrator.decomposer import Decomposer
@@ -106,6 +108,7 @@ def build_conversation(
     session: Optional[BankingSession] = None,
     directory: Optional[Directory] = None,
     route_timeouts: Optional[Mapping[Route, float]] = None,
+    controller: Optional[Controller] = None,
 ) -> Conversation:
     shared = session if session is not None else BankingSession()
     vault = SecretVault()
@@ -124,6 +127,7 @@ def build_conversation(
         capture_secrets=vault.capture,
         containment=WalletContainment(shared.database),
         products_for=lambda user: product_summary(shared.database, user),
+        controller=controller,
     )
     return Conversation(orchestrator, shared, vault, dispatcher, specialists)
 
@@ -145,10 +149,15 @@ def live_conversation(session: Optional[BankingSession] = None) -> Conversation:
     from orchestrator.llm import LiteLLMClient
     from orchestrator.llm_decomposer import LLMDecomposer
 
+    from agent.controller import LLMController
+
+    tool_client = LiteLLMToolClient()
     return build_conversation(
         decomposer=LLMDecomposer(LiteLLMClient()),
         scorer=make_jev_scorer(),
-        llm=LiteLLMToolClient(),
+        llm=tool_client,
         index=get_index(),
         session=session,
+        # A model decides what to do next and may ask Jev; CONTROLLER=off brings back the fixed thresholds alone.
+        controller=None if os.environ.get("CONTROLLER", "llm").lower() == "off" else LLMController(tool_client),
     )

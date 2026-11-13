@@ -6,6 +6,7 @@ and account, never an id) and may answer with the last four digits, which code m
 the card. Another customer's card never appears in a list and never resolves.
 """
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any, Optional
 
@@ -33,9 +34,11 @@ def describe(db: Any, card: Card) -> str:
     return f"the card ending {card.get('last_4_digits')} ({str(card.get('status')).lower()}{where})"
 
 
-def which_card(intent: Intent, db: Any, cards: Sequence[Card]) -> RouteOutcome:
+def which_card(intent: Intent, db: Any, cards: Sequence[Card], *, allow_all: bool = False) -> RouteOutcome:
     """The list the customer chooses from."""
     listing = "\n".join(f"- {describe(db, c)}" for c in cards)
+    if allow_all:
+        listing += "\nSay 'all' for every one of them."
     return RouteOutcome(
         intent_id=intent.id,
         status=OutcomeStatus.NEEDS_INFO,
@@ -96,3 +99,43 @@ def resolve_credit(named: str, accounts: Sequence[Card]) -> Optional[Card]:
         return None
     found = [a for a in accounts if wanted <= _words(str(a.get("card_type")))]
     return found[0] if len(found) == 1 else None
+
+
+_EVERY = re.compile(r"\b(?:all|every|each|both|everything|them all|all of them|all of my)\b", re.IGNORECASE)
+_GENERIC = frozenset({"card", "cards", "account", "accounts", "debit", "my", "the", "of", "on", "your", "ending", "active", "frozen", "closed", "pending"})
+
+
+def named_cards(text: str, cards: Sequence[Card], db: Any) -> tuple[list[Card], bool]:
+    """(the cards a customer's words name, whether they said all of them). Words, not a slot value: "all cards", the line
+    "the card ending 3847 (active, on your Evergreen Account)" copied from a list, several last-four numbers, an account
+    name ("my Green Account card", where Light Green is not also Green), or a card id. Only from the cards given."""
+    said = text.lower()
+    if _EVERY.search(said):
+        return list(cards), True
+    found: list[Card] = []
+
+    def add(card: Card) -> None:
+        if card not in found:
+            found.append(card)
+
+    for card in cards:
+        if str(card.get("card_id", "")).lower() in said:
+            add(card)
+    for four in re.findall(r"(?<!\d)\d{4}(?!\d)", said):
+        for card in cards:
+            if card.get("last_4_digits") == four:
+                add(card)
+    if not found:
+        words = set(re.findall(r"[a-z0-9]+", said))
+        best: list[tuple[int, Card]] = []
+        for card in cards:
+            level = str(db.accounts.data.get(str(card.get("account_id")), {}).get("level") or "")
+            distinct = set(re.findall(r"[a-z0-9]+", level.lower())) - _GENERIC
+            if distinct and distinct <= words:
+                best.append((len(distinct), card))
+        if best:
+            top = max(n for n, _ in best)
+            for n, card in best:
+                if n == top:
+                    add(card)
+    return found, False

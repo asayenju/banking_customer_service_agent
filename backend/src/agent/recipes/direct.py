@@ -18,7 +18,7 @@ import re
 from collections.abc import Mapping
 from typing import Any, Optional
 
-from agent.cards import Card, describe, owned_cards, resolve, which_card
+from agent.cards import Card, describe, named_cards, owned_cards, resolve, which_card
 from agent.guard import DbOwnership, Guard, GuardedSession
 from orchestrator.context import RouteContext
 from orchestrator.executor import OutcomeStatus, RouteOutcome
@@ -89,27 +89,40 @@ class DirectRunner:
         )
         everyone = owned_cards(self._db, user)
         candidates = [c for c in everyone if c.get("status") == wanted]
-        named = (intent.slots.get("card_id") or "").strip()
-        card: Optional[Card]
-        if named:
-            card = resolve(named, everyone)
-            if card is None:
-                return which_card(intent, self._db, candidates or everyone) if (candidates or everyone) else _done(intent, "You have no cards on file.")
-        elif len(candidates) == 1:
-            card = candidates[0]
-        elif not candidates:
+        said = " ".join(
+            [intent.summary, *(str(v) for k, v in intent.slots.items() if k in ("card_id", "card_ids", "cards", "card_or_account_id", "account_id", "card"))]
+        )
+        named, every = named_cards(said, everyone, self._db)
+        if named or every:
+            return self._set_each(intent, guarded, named, freeze=freeze, every=every)
+        gave_something = any((intent.slots.get(k) or "").strip() for k in ("card_id", "card_ids", "cards", "card_or_account_id"))
+        if not candidates:
             return _done(intent, f"You have no card that can be {verb} right now.")
-        else:
-            return which_card(intent, self._db, candidates)
-        label = describe(self._db, card)
-        if card.get("status") == ("FROZEN" if freeze else "ACTIVE"):
-            return _done(intent, f"{label[0].upper()}{label[1:]} is already {'frozen' if freeze else 'active'}.")
-        if card.get("status") != wanted:
-            return _done(intent, f"{label[0].upper()}{label[1:]} cannot be {verb}: it is {str(card.get('status')).lower()}.")
-        result = guarded.call(tool, {"card_id": card["card_id"]})
-        if not result.ok:
-            return _failed(intent, f"the bank would not {'freeze' if freeze else 'unfreeze'} the card")
-        return _done(intent, f"{label[0].upper()}{label[1:]} is now {verb}.")
+        if len(candidates) == 1 and not gave_something:
+            return self._set_each(intent, guarded, candidates, freeze=freeze, every=False)
+        # They named something that is not one of their cards, or did not say: never pick one for them.
+        return which_card(intent, self._db, candidates, allow_all=True)
+
+    def _set_each(self, intent: Intent, guarded: GuardedSession, cards: list[Card], *, freeze: bool, every: bool) -> RouteOutcome:
+        """Freeze or unfreeze each named card that can be, and say what happened to every one of them."""
+        verb, tool, wanted = (
+            ("frozen", "freeze_debit_card_3892", "ACTIVE") if freeze else ("unfrozen", "unfreeze_debit_card_3893", "FROZEN")
+        )
+        lines: list[str] = []
+        for card in cards:
+            label = describe(self._db, card)
+            cap = f"{label[0].upper()}{label[1:]}"
+            if card.get("status") == ("FROZEN" if freeze else "ACTIVE"):
+                lines.append(f"{cap} is already {'frozen' if freeze else 'active'}.")
+            elif card.get("status") != wanted:
+                lines.append(f"{cap} cannot be {verb}: it is {str(card.get('status')).lower()}.")
+            elif not guarded.call(tool, {"card_id": card["card_id"]}).ok:
+                return _failed(intent, f"the bank would not {'freeze' if freeze else 'unfreeze'} {label}")
+            else:
+                lines.append(f"{cap} is now {verb}.")
+        if not lines:
+            return _done(intent, f"You have no card that can be {verb} right now.")
+        return _done(intent, "\n".join(lines))
 
     # ------------------------------------------------------------------ the email on file
 

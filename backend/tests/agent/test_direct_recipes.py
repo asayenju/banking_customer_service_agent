@@ -358,3 +358,59 @@ def test_a_name_that_fits_two_products_is_asked_about_and_another_customers_card
 def test_no_card_named_still_gives_the_account_overview():
     out = history(world("fatima"), "what are my balances", FATIMA)
     assert out.text.startswith("Your accounts:")
+
+
+# ------------------------------------------------------------------ "all cards", pasted list lines and account names
+
+CARLOS_CARDS = {"evergreen": "3847", "green": "8165", "light blue": "5291"}
+
+
+def three_cards():
+    shared = BankingSession.from_task({t["id"]: t for t in __import__("banking_tools.manifest", fromlist=["load_tasks"]).load_tasks()}["task_079"], fidelity=Fidelity.TAU2)
+    return shared, "cr89a2b3c4"
+
+
+def freeze_said(shared, user, said, **slots):
+    return run(K.FREEZE_CARD, shared, slots=slots, user=user, summary=said)
+
+
+def active_cards(shared, user):
+    return {c["card_id"] for c in shared.database.debit_cards.data.values() if c["user_id"] == user and c["status"] == "ACTIVE"}
+
+
+def test_all_cards_freezes_every_active_card_and_says_so_for_each():
+    shared, user = three_cards()
+    before = active_cards(shared, user)
+    out = freeze_said(shared, user, "my wallet was stolen, freeze all my debit cards")
+    assert out.status is OutcomeStatus.DONE and out.text.count("is now frozen") == len(before) >= 2
+    assert not active_cards(shared, user)
+
+
+def test_a_reply_that_is_the_pasted_list_line_picks_that_card_only():
+    shared, user = three_cards()
+    card = sorted(active_cards(shared, user))[0]
+    last_four = shared.database.debit_cards.data[card]["last_4_digits"]
+    out = freeze_said(shared, user, "freeze it", card_id=f"the card ending {last_four} (active, on your Evergreen Account)")
+    assert out.text.count("is now frozen") == 1 and card not in active_cards(shared, user) and len(active_cards(shared, user)) >= 1
+
+
+def test_two_last_four_numbers_freeze_those_two_cards():
+    shared, user = three_cards()
+    fours = [shared.database.debit_cards.data[c]["last_4_digits"] for c in sorted(active_cards(shared, user))[:2]]
+    out = freeze_said(shared, user, "freeze it", card_id=f"{fours[0]} and {fours[1]}")
+    assert out.text.count("is now frozen") == 2
+
+
+def test_a_card_named_that_is_not_theirs_is_never_swapped_for_another_and_the_question_offers_all():
+    shared, user = three_cards()
+    out = freeze_said(shared, user, "freeze it", card_id="9999")
+    assert out.status is OutcomeStatus.NEEDS_INFO and "Say 'all'" in out.questions[0].text
+    assert len(active_cards(shared, user)) >= 2, "nothing was frozen"
+
+
+def test_the_account_a_card_is_on_names_it():
+    shared, user = three_cards()
+    levels = {c["card_id"]: shared.database.accounts.data[c["account_id"]]["level"] for c in shared.database.debit_cards.data.values() if c["user_id"] == user}
+    target = next(c for c, level in levels.items() if shared.database.debit_cards.data[c]["status"] == "ACTIVE")
+    out = freeze_said(shared, user, f"freeze my {levels[target]} card")
+    assert out.text.count("is now frozen") >= 1 and target not in active_cards(shared, user)
