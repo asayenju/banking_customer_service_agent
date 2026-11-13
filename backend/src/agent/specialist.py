@@ -107,6 +107,11 @@ class SpecialistConfig:
     # Offer ``look_up_customer_records`` to a verified customer even though no catalog read tool is allowed (the
     # general answerer explains policy using the customer's own referrals, charges and cards, and changes nothing).
     records: bool = False
+    # Search tools built from the database for the verified customer (name, user -> tools), offered with the
+    # records tool. Kinds in ``lookup_first`` may not end by asking the customer anything until one has been used.
+    lookups: Optional[Callable[[Any, str, date], list[ExtraTool]]] = None
+    lookup_first: frozenset[IntentKind] = frozenset()
+    lookup_names: frozenset[str] = frozenset()
 
 
 BASE_RULES = """You are a bank's specialist for one kind of request. You act only for the customer who
@@ -228,12 +233,13 @@ class Specialist:
     ) -> RouteOutcome:
         reads = sorted(shared_reads() if self.config.reads is None else self.config.reads)
         seen: set[str] = set()
+        used: set[str] = set()  # lookup tools this run has called
         box = ScopedToolBox(
             guarded,
             user_id=ctx.verified_user_id,
             allowed_tools=reads,
             vault=self._vault,
-            extra_tools=[self._search_tool(seen), *self._records_tool(ctx)],
+            extra_tools=[self._search_tool(seen), *self._records_tool(ctx, used)],
         )
         refusals: list[str] = []
         workflows = self._workflows_for(intent.kind)
@@ -243,7 +249,7 @@ class Specialist:
             if name in workflows:
                 reason = self._review_workflow(workflows[name], arguments, intent, ctx, decided)
             else:
-                reason = self._review(name, arguments, intent, ctx, seen)
+                reason = self._review(name, arguments, intent, ctx, seen, used)
             if reason:
                 refusals.append(reason)
             return reason
@@ -285,9 +291,26 @@ class Specialist:
         return self._propose(intent, ctx, guarded, result)
 
     def _review(
-        self, name: str, arguments: Mapping[str, Any], intent: Intent, ctx: RouteContext, seen: set[str]
+        self,
+        name: str,
+        arguments: Mapping[str, Any],
+        intent: Intent,
+        ctx: RouteContext,
+        seen: set[str],
+        used: Optional[set[str]] = None,
     ) -> Optional[str]:
         """Why a way of ending is not acceptable yet, in words written here; None if it is."""
+        if (
+            name == "ask_customer"
+            and intent.kind in self.config.lookup_first
+            and self.config.lookup_names
+            and not (used or set()) & self.config.lookup_names
+        ):
+            return (
+                "you may not ask the customer anything yet: look it up first. Call "
+                f"{' or '.join(sorted(self.config.lookup_names))} with whatever they have said, and ask only if it "
+                "finds nothing or several"
+            )
         if name == "propose_plan":
             covered = self._workflows_for(intent.kind)
             if covered:
@@ -306,7 +329,12 @@ class Specialist:
             details = _clean_details(arguments.get("details"))
             if not details:
                 return "name the details you need in a few words, like what_happened"
-            findable = [d for d in details if _FINDABLE.search(d) and not (_CUSTOMER_HOLDS.search(d) and intent.kind in HOLDS_CARD)]
+            findable = [
+                d
+                for d in details
+                if _FINDABLE.search(d)
+                and not (_CUSTOMER_HOLDS.search(d) and (intent.kind in HOLDS_CARD or not self._records_hold_last_four(ctx)))
+            ]
             if findable:
                 return (
                     f"do not ask the customer for {', '.join(findable)}: look it up with look_up_customer_records "
@@ -314,11 +342,35 @@ class Specialist:
                 )
         return None
 
-    def _records_tool(self, ctx: RouteContext) -> list[ExtraTool]:
+    def _records_tool(self, ctx: RouteContext, used: Optional[set[str]] = None) -> list[ExtraTool]:
         """The customer's own records, for a specialist that reads them (not the general answerer, which reads none)."""
         if ctx.verified_user_id is None or (self.config.reads is not None and not self.config.reads and not self.config.records):
             return []
-        return [overview_tool(self._db, str(ctx.verified_user_id))]
+        user = str(ctx.verified_user_id)
+        tools = [overview_tool(self._db, user)]
+        if self.config.lookups is not None:
+            tools += self.config.lookups(self._db, user, self._today())
+        if used is None:
+            return tools
+
+        def noting(tool: ExtraTool) -> ExtraTool:
+            def run(args: Mapping[str, Any]) -> str:
+                used.add(tool.schema.name)
+                return tool.run(args)
+
+            return ExtraTool(schema=tool.schema, run=run)
+
+        return [noting(t) for t in tools]
+
+    def _records_hold_last_four(self, ctx: RouteContext) -> bool:
+        """Do this customer's records hold the card's last four digits? Debit cards do. The credit card accounts of
+        this bank do not (the references have the customer read them off the card), so they are the customer's to give."""
+        user = ctx.verified_user_id
+        if self.config.name == "credit":
+            return any(
+                a.get("user_id") == user and a.get("card_last_4_digits") for a in self._db.credit_card_accounts.data.values()
+            )
+        return any(c.get("user_id") == user and c.get("last_4_digits") for c in self._db.debit_cards.data.values())
 
     def _workflows_for(self, kind: IntentKind) -> dict[str, Workflow]:
         return {terminal_name(w): w for w in self.config.workflows if kind in w.kinds}

@@ -33,8 +33,9 @@ Two edge rules:
   Disputing interest or a fee is FEE_OR_INTEREST_ADJUSTMENT, not DISPUTE_TRANSACTION.
 - Preferences about how an account should work (paper statements, early deposit, no
   overdraft fees) are details of the request, not separate actions.
-- Wanting money back for a charge ("get my money back", "I was charged twice", "refund this charge")
-  with no more detail is a DISPUTE_TRANSACTION whose details are still missing, not OTHER: the
-  bank will ask which charge. Wanting money back for a fee or interest is FEE_OR_INTEREST_ADJUSTMENT.
+- Wanting money back for a charge ("get my money back", "I was charged twice", "refund this charge",
+  "file a dispute", a hotel, shop or service that did not deliver and refuses to refund) is a
+  DISPUTE_TRANSACTION, even with no more detail and even when the customer first tried the merchant:
+  never OTHER. The bank will ask which charge. Wanting money back for a fee or interest is FEE_OR_INTEREST_ADJUSTMENT.
 A lost or stolen card with no requested step is REPORT_FRAUD_OR_LOSS.
 </action_policy>"""
