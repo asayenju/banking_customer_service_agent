@@ -12,8 +12,10 @@ request holds the customer's message.
 """
 
 import asyncio
+import inspect
 from collections.abc import Iterable, Sequence
-from typing import Annotated, Optional, Protocol, Self
+from dataclasses import dataclass
+from typing import Annotated, Any, Optional, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -60,6 +62,15 @@ class IntentScore(BaseModel):
         )
 
 
+@dataclass(frozen=True)
+class ScoreContext:
+    """What a scorer may know besides the message: the last turns of the conversation, and the products the verified
+    customer holds (types only: no ids, balances or amounts). Passed only to scorers that ask for it."""
+
+    recent: tuple[tuple[str, str], ...] = ()
+    products: str = ""
+
+
 class Scorer(Protocol):
     async def score(
         self, message: str, decomposition: Decomposition
@@ -90,12 +101,20 @@ class ScriptedScorer:
         return self._scores
 
 
+def _call(scorer: Scorer, message: str, decomposition: Decomposition, context: Optional[ScoreContext]) -> Any:
+    """Hand the context to a scorer that takes one; every other scorer is called as before."""
+    if context is not None and "context" in inspect.signature(scorer.score).parameters:
+        return scorer.score(message, decomposition, context=context)  # type: ignore[call-arg]
+    return scorer.score(message, decomposition)
+
+
 async def score_intents(
     scorer: Scorer,
     message: str,
     decomposition: Decomposition,
     *,
     timeout: float = SCORER_TIMEOUT_SECONDS,
+    context: Optional[ScoreContext] = None,
 ) -> tuple[IntentScore, ...]:
     """One score per intent, in the decomposition's order, whatever the scorer does."""
     ids = [intent.id for intent in decomposition.intents]
@@ -103,7 +122,7 @@ async def score_intents(
         return ()
     try:
         returned = tuple(
-            await asyncio.wait_for(scorer.score(message, decomposition), timeout)
+            await asyncio.wait_for(_call(scorer, message, decomposition, context), timeout)
         )
         if not all(isinstance(s, IntentScore) for s in returned):
             raise TypeError("scorer returned something other than IntentScore")

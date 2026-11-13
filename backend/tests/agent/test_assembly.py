@@ -210,3 +210,15 @@ def test_a_customer_who_has_to_read_digits_off_a_card_has_them_in_their_details(
     client = TestClient(main.app)
     assert client.get("/personas/task_031").json()["card_digits"] == ["5320"], "Fatima's Silver card"
     assert client.get("/personas/task_078").json()["card_digits"] == []
+
+
+def test_the_products_line_for_jev_has_types_and_levels_and_no_ids_or_numbers():
+    from agent.assembly import product_summary
+    from banking_tools import BankingSession
+    from banking_tools.manifest import load_tasks
+
+    db = BankingSession.from_task({t["id"]: t for t in load_tasks()}["task_031"]).database
+    line = product_summary(db, "890389b165")
+    assert "credit cards:" in line and "Silver Rewards Card" in line
+    assert "890389b165" not in line and "$" not in line and not any(ch.isdigit() for ch in line)
+    assert product_summary(db, "nobody") == ""

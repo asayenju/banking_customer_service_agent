@@ -123,8 +123,18 @@ def build_conversation(
         session_for=scoped(shared),
         capture_secrets=vault.capture,
         containment=WalletContainment(shared.database),
+        products_for=lambda user: product_summary(shared.database, user),
     )
     return Conversation(orchestrator, shared, vault, dispatcher, specialists)
+
+
+def product_summary(db: Any, user_id: str) -> str:
+    """The kinds of product a customer holds, in a line for Jev: types and levels only, never ids, balances or digits."""
+    debit = sorted({str(a.get("level")) for a in db.accounts.data.values() if a.get("user_id") == user_id and a.get("class") == "checking"})
+    savings = sorted({str(a.get("level")) for a in db.accounts.data.values() if a.get("user_id") == user_id and a.get("class") != "checking"})
+    credit = sorted({str(a.get("card_type")) for a in db.credit_card_accounts.data.values() if a.get("user_id") == user_id})
+    parts = [("checking accounts with debit cards", debit), ("savings accounts", savings), ("credit cards", credit)]
+    return "; ".join(f"{label}: {', '.join(names)}" for label, names in parts if names)
 
 
 def live_conversation(session: Optional[BankingSession] = None) -> Conversation:  # pragma: no cover - needs keys
