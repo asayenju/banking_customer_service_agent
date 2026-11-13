@@ -125,9 +125,74 @@ class DirectRunner:
 
     # ------------------------------------------------------------------ balances and history
 
+    def _which_card(self, intent: Intent, user: str) -> tuple[str, Any]:
+        """The card or account a customer's words name: ("credit", card type), ("debit", account id), ("ask", labels)
+        or ("none", None). "Silver card" is the Silver Rewards Card, not also the Business Silver one: of the cards whose
+        distinctive words are all there, the one that matched the most words wins; a tie is a question."""
+        said = " ".join([intent.summary, *(v for v in intent.slots.values() if isinstance(v, str))]).lower()
+        words = set(re.findall(r"[a-z0-9]+", said))
+        generic = {"card", "cards", "rewards", "reward", "account", "back", "cash"}
+        want_credit, want_debit = "credit" in words, "debit" in words
+        found: list[tuple[int, str, Any, str]] = []
+
+        def consider(kind: str, key: Any, label: str) -> None:
+            # "EcoCard" is "eco card" to a customer.
+            parts = [w[:-4] if w.endswith("card") and len(w) > 4 else w for w in re.findall(r"[a-z0-9]+", label.lower())]
+            distinct = set(parts) - generic
+            if distinct and distinct <= words:
+                found.append((len(distinct), kind, key, label))
+
+        if not want_debit:
+            for card_type in sorted({str(c.get("card_type")) for c in self._db.credit_card_accounts.data.values() if c.get("user_id") == user}):
+                consider("credit", card_type, card_type)
+        if not want_credit:
+            for account_id, account in self._db.accounts.data.items():
+                if account.get("user_id") == user and account.get("class") == "checking":
+                    consider("debit", account_id, str(account.get("level")))
+            for card in owned_cards(self._db, user, statuses=None):
+                last_four = str(card.get("last_4_digits") or "")
+                if last_four and last_four in words:
+                    found.append((9, "debit", str(card.get("account_id")), last_four))
+        if not found:
+            return "none", None
+        best = max(f[0] for f in found)
+        top = [f for f in found if f[0] == best]
+        if len({(f[1], f[2]) for f in top}) > 1:
+            return "ask", [f[3] for f in top]
+        return top[0][1], top[0][2]
+
+    def _credit_history(self, intent: Intent, user: str, card_type: str) -> RouteOutcome:
+        rows = sorted(
+            (
+                t
+                for t in self._db.credit_card_transaction_history.data.values()
+                if t.get("user_id") == user and t.get("credit_card_type") == card_type
+            ),
+            key=lambda t: _sort_key(str(t.get("transaction_date"))),
+            reverse=True,
+        )[:HISTORY_ROWS]
+        if not rows:
+            return _done(intent, f"There are no charges on your {card_type}.")
+        lines = [f"Recent charges on your {card_type}:"] + [
+            f"- {str(t.get('transaction_date'))[:10]}  {_money(t.get('transaction_amount'))}  {t.get('merchant_name', '')}"
+            f" ({str(t.get('status', '')).lower()})"
+            for t in rows
+        ]
+        return _done(intent, "\n".join(lines))
+
     def _accounts(self, intent: Intent, guarded: GuardedSession, user: str) -> RouteOutcome:
         mine = {k: v for k, v in self._db.accounts.data.items() if v.get("user_id") == user}
         named = (intent.slots.get("account_id") or "").strip()
+        if named not in mine:
+            kind, picked = self._which_card(intent, user)
+            if kind == "credit":
+                guarded.call("get_credit_card_transactions_by_user", {"user_id": user})
+                return self._credit_history(intent, user, str(picked))
+            if kind == "debit":
+                named = str(picked)
+            elif kind == "ask":
+                listing = "\n".join(f"- {label}" for label in picked)
+                return _ask(intent, "card_or_account_id", f"Which card do you mean?\n{listing}")
         if named:
             if named not in mine:
                 names = ", ".join(a.get("level", "an account") for a in mine.values()) or "none"
