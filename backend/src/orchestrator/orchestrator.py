@@ -68,7 +68,15 @@ MAX_ASKS = 3
 # Kinds a decomposer may call a reply to a clarifying question instead of the kind of the open request.
 _SIBLINGS: dict[IntentKind, frozenset[IntentKind]] = {
     IntentKind.DISPUTE_TRANSACTION: frozenset({IntentKind.REPORT_FRAUD_OR_LOSS}),
-    IntentKind.REPORT_FRAUD_OR_LOSS: frozenset({IntentKind.DISPUTE_TRANSACTION}),
+    IntentKind.REPORT_FRAUD_OR_LOSS: frozenset(
+        {
+            IntentKind.DISPUTE_TRANSACTION,
+            IntentKind.ORDER_REPLACEMENT_CARD,
+            IntentKind.CLOSE_CARD,
+            IntentKind.FREEZE_CARD,
+            IntentKind.UNFREEZE_CARD,
+        }
+    ),
     IntentKind.ACCOUNT_BALANCE_OR_HISTORY: frozenset({IntentKind.LOOKUP_INFO}),
     IntentKind.LOOKUP_INFO: frozenset({IntentKind.ACCOUNT_BALANCE_OR_HISTORY}),
 }
@@ -384,6 +392,11 @@ class Orchestrator:
         text = message.strip().lower()
         return bool(_NO.match(text)) and not _WITHDRAWS.search(text)
 
+    def _waiting_on_one_question(self, asked_before: Mapping[str, tuple[Question, ...]]) -> Optional[str]:
+        """The id of the one open request that a route asked one question about, if there is exactly one."""
+        waiting = [iid for iid, qs in asked_before.items() if iid in self._active and len(qs) == 1]
+        return waiting[0] if len(waiting) == 1 else None
+
     def _free_answer(
         self, message: str, asked_before: Mapping[str, tuple[Question, ...]], decomposition: Decomposition
     ) -> Optional[tuple[str, Question, tuple[Intent, ...]]]:
@@ -404,7 +417,9 @@ class Orchestrator:
         for found in decomposition.intents:
             if found.id == intent_id and found.slots != self._active[intent_id].slots:
                 return None  # the decomposer already put the details where they belong
-            if found.id not in self._active and found.kind is self._active[intent_id].kind:
+            if found.id not in self._active and (
+                found.kind is self._active[intent_id].kind or found.kind in _SIBLINGS.get(self._active[intent_id].kind, frozenset())
+            ):
                 fold.append(found)  # the same request said again with more detail: the answer, not a second request
             elif found.id not in self._active and found.kind not in _ANSWER_NOISE:
                 return None  # a real new request
@@ -496,6 +511,13 @@ class Orchestrator:
                 )
 
         asked_before = dict(self._pending_route_questions)  # what a route was waiting on, before this message
+        waiting_on_yes = self._waiting_on_one_question(asked_before)
+        agreeing = waiting_on_yes is not None and confirms_understanding(message)
+        if agreeing:
+            # A plain yes or no to the question on screen is never a new request, whatever the decomposer made of it.
+            decomposition = decomposition.model_copy(
+                update={"intents": tuple(i for i in decomposition.intents if i.id in self._active)}
+            )
         answering = self._free_answer(message, asked_before, decomposition)
         clarifying = self._clarification(message, decomposition) if answering is None else None
         if clarifying is not None:
@@ -592,7 +614,10 @@ class Orchestrator:
             # or superseded, so it is run again (and scored again) with the new details.
             self._pending_route_questions.pop(intent_id, None)
 
-        for intent_id in interpretation.confirmed:
+        confirmed_now = tuple(interpretation.confirmed)
+        if agreeing and waiting_on_yes is not None and waiting_on_yes not in confirmed_now:
+            confirmed_now = (*confirmed_now, waiting_on_yes)  # the yes was the answer even if the decomposer missed it
+        for intent_id in confirmed_now:
             shown = self._pending_confirm.pop(intent_id, None)
             if shown is not None and intent_id in self._active:
                 self._confirmed[intent_id] = shown

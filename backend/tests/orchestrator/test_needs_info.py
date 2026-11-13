@@ -1,6 +1,6 @@
 import pytest
 from pydantic import ValidationError
-from scenario_kit import I, S, World, interp, trace_kinds
+from scenario_kit import GOOD_CLAIMS, I, S, World, interp, trace_kinds
 
 from orchestrator.executor import OutcomeStatus, RouteOutcome
 from orchestrator.orchestrator import MAX_ASKS
@@ -276,3 +276,54 @@ def test_the_same_request_said_again_with_more_detail_is_the_answer_not_a_second
     r = w.turn("on November 6th")
     assert w.orch.active_ids == () and [o.intent_id for o in r.outcomes] == ["a"], "no second request was made"
     assert route.calls[-1]["date"] == "November 6th" and route.calls[-1]["topic"] == "on November 6th"
+
+
+# ---------------------------------------------------------------- the lost wallet: "was your credit card in it too?" answered in words
+
+class AsksAboutTheCreditCard:
+    """The wallet workflow's question, then done once it has an answer."""
+
+    proposes_plans = True
+
+    def __init__(self):
+        self.calls = []
+
+    async def run(self, intent, ctx):
+        self.calls.append(dict(intent.slots))
+        if intent.slots.get("credit_cards_in_the_wallet"):
+            return done(intent)
+        return ask(intent, "credit_cards_in_the_wallet")
+
+
+def wallet(id="w"):
+    return I(id, K.REPORT_FRAUD_OR_LOSS, {"card_ids": "Bluest, Light Green"})
+
+
+def wallet_world(second):
+    route = AsksAboutTheCreditCard()
+    w = World([interp(wallet(), claims=GOOD_CLAIMS), interp(*second)], [[S("w", 0.99)], [S("w", 0.99), S("n2", 0.99)], [S("n2", 0.99)]], sub=route)
+    w.turn("I think I lost my wallet with my two debit cards")
+    return w, route
+
+
+def test_a_yes_in_words_that_the_decomposer_made_a_replacement_request_of_is_the_answer():
+    replacement = I("n1", K.ORDER_REPLACEMENT_CARD, summary="order a replacement for the Silver Rewards Card")
+    w, route = wallet_world([replacement])
+    r = w.turn("yes the silver rewards card as well")
+    assert "human agent" not in r.reply.text and w.orch.active_ids == () and w.orch.done_ids == ("w",)
+    assert route.calls[-1]["credit_cards_in_the_wallet"] == "yes the silver rewards card as well"
+
+
+@pytest.mark.parametrize("what_the_decomposer_did", ["relisted", "nothing"])
+def test_a_plain_yes_is_the_answer_whatever_the_decomposer_made_of_it(what_the_decomposer_did):
+    relisted = [I("n9", K.REPORT_FRAUD_OR_LOSS, summary="the customer thinks they lost their wallet")] if what_the_decomposer_did == "relisted" else []
+    w, route = wallet_world(relisted)
+    r = w.turn("yes")
+    assert "human agent" not in r.reply.text and w.orch.done_ids == ("w",)
+    assert route.calls[-1]["credit_cards_in_the_wallet"] == "yes"
+
+
+def test_a_real_unrelated_request_in_the_middle_of_the_wallet_report_is_still_its_own_request():
+    w, _ = wallet_world([I("n2", K.TRANSFER_FUNDS, {"from_account_id": "a", "to_account_id": "b", "amount": "5"})])
+    w.turn("also move 5 dollars from a to b")
+    assert "n2" in w.orch.active_ids or "n2" in w.orch.done_ids

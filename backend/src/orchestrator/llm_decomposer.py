@@ -229,20 +229,22 @@ def is_affirmation(text: str) -> bool:
     return bool(_AFFIRMATION.match(text.strip()))
 
 
-_CONTRAST = re.compile(r"\b(?:but|however|actually|except|instead|not|no|also|wait|change|different)\b", re.IGNORECASE)
-_YES_START = re.compile(
-    r"^\W*(?:yes|yeah|yep|yup|correct|right|exactly|sure|ok|okay|that'?s (?:right|correct|it|what i want)|that is (?:right|correct|it|what i want))\b",
-    re.IGNORECASE,
+_AGREEING_WORDS = frozenset(
+    "yes yeah yep yup correct right exactly sure ok okay that thats that's is what i want it please do go ahead thanks "
+    "thank you so indeed absolutely definitely".split()
+)
+
+
+_OPENERS = frozenset(
+    "yes yeah yep yup correct right exactly sure ok okay that thats that's please indeed absolutely definitely".split()
 )
 
 
 def confirms_understanding(text: str) -> bool:
-    """A short agreement, with or without extra words ("yes that is what i want"), that adds nothing and takes nothing back.
-    Used for the customer's reply to "to be sure I have this right: ..."."""
-    cleaned = text.strip()
-    return is_affirmation(cleaned) and not re.match(r"^\W*(?:no|nope|never ?mind)", cleaned, re.IGNORECASE) or (
-        len(cleaned) <= 80 and bool(_YES_START.match(cleaned)) and not _CONTRAST.search(cleaned)
-    )
+    """A plain agreement ("yes", "yes that is what i want", "exactly, that's it") that adds nothing and takes nothing
+    back: every word is an agreeing word. "Yes the silver card as well" is an answer with content, so it is not one."""
+    words = [w.replace("\u2019", "'") for w in re.findall(r"[a-z'\u2019]+", text.lower())]
+    return bool(words) and len(text) <= 80 and words[0] in _OPENERS and all(w in _AGREEING_WORDS for w in words)
 
 
 def _span(start: Optional[int], end: Optional[int]) -> Optional[tuple[int, int]]:
