@@ -237,3 +237,18 @@ def test_the_records_tool_is_offered_and_answers_from_the_customers_own_database
     assert "look_up_customer_records" in llm.calls[0]["tools"]
     result = [m for m in llm.calls[1]["messages"] if m.get("role") == "tool"][-1]["content"]
     assert "last_4_digits" in result
+
+
+def test_the_models_own_plain_question_is_the_one_asked_and_the_other_details_wait():
+    spec, _, shared = make([turn(call("ask_customer", details=["dispute_reason", "discovery_date"], question="What happened with the charge?"))])
+    intent = Intent(id="x", kind=K.DISPUTE_TRANSACTION, summary="dispute", slots={"account_id": ACCOUNT})
+    outcome = ask(spec, shared, intent)
+    assert [(q.slot, q.text) for q in outcome.questions] == [("dispute_reason", "What happened with the charge?"), ("discovery_date", None)]
+
+
+def test_a_question_that_would_carry_a_secret_is_scrubbed():
+    spec, _, shared = make([turn(call("ask_customer", details=["reason"], question="Is the PIN 4821 yours?"))])
+    spec._vault.hide("pin 4821", {"pin_a": "4821"})
+    intent = Intent(id="x", kind=K.DISPUTE_TRANSACTION, summary="dispute", slots={"account_id": ACCOUNT})
+    outcome = ask(spec, shared, intent)
+    assert "4821" not in (outcome.questions[0].text or "")
