@@ -266,3 +266,13 @@ def test_never_mind_still_withdraws_the_request_even_with_a_question_on_screen()
     w.turn(QUESTION)
     w.turn("never mind, forget it")
     assert w.orch.active_ids == ()
+
+
+def test_the_same_request_said_again_with_more_detail_is_the_answer_not_a_second_request():
+    route = NeedsTopic()
+    again = general("b", date="November 6th")
+    w = World([interp(general()), interp(again)], [[S("a", 0.99)]], sub=route)
+    w.turn(QUESTION)
+    r = w.turn("on November 6th")
+    assert w.orch.active_ids == () and [o.intent_id for o in r.outcomes] == ["a"], "no second request was made"
+    assert route.calls[-1]["date"] == "November 6th" and route.calls[-1]["topic"] == "on November 6th"

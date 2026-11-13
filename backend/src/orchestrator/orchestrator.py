@@ -360,8 +360,8 @@ class Orchestrator:
 
     def _free_answer(
         self, message: str, asked_before: Mapping[str, tuple[Question, ...]], decomposition: Decomposition
-    ) -> Optional[tuple[str, Question]]:
-        """(intent id, the question) when this message is the customer's answer to the one open question a route asked.
+    ) -> Optional[tuple[str, Question, tuple[Intent, ...]]]:
+        """(intent id, the question, intents to fold in) when this message is the customer's answer to the one open question a route asked.
 
         Only when exactly one intent waits on one question of its own (not a yes, not identity), the message is short,
         it is not a bare yes or no, the decomposer gave that intent no new details, and nothing it found is a new
@@ -374,12 +374,15 @@ class Orchestrator:
         if len(waiting) != 1 or len(message) > 300 or is_affirmation(message):
             return None
         intent_id, question = waiting[0]
+        fold: list[Intent] = []
         for found in decomposition.intents:
             if found.id == intent_id and found.slots != self._active[intent_id].slots:
                 return None  # the decomposer already put the details where they belong
-            if found.id not in self._active and found.kind not in _ANSWER_NOISE:
+            if found.id not in self._active and found.kind is self._active[intent_id].kind:
+                fold.append(found)  # the same request said again with more detail: the answer, not a second request
+            elif found.id not in self._active and found.kind not in _ANSWER_NOISE:
                 return None  # a real new request
-        return intent_id, question
+        return intent_id, question, tuple(fold)
 
     async def _verify(self, claims: Mapping[str, str], events: list[TraceEvent]) -> None:
         try:
@@ -476,9 +479,11 @@ class Orchestrator:
             touched.add(intent.id)
 
         if answering is not None:
-            answered_id, asked = answering
+            answered_id, asked, folded = answering
             asked_slot = asked.slot
             waiting_intent = self._active[answered_id]
+            for extra in folded:  # details the decomposer put on a second copy of the same request
+                waiting_intent = waiting_intent.model_copy(update={"slots": {**extra.slots, **waiting_intent.slots}})
             said = message.strip()[:500]
             # The exchange is kept as one detail of the request, in words: the specialist reads it like a conversation
             # (the summary stays the customer's own short statement of what they want).
