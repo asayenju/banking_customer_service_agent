@@ -89,10 +89,32 @@ def _row(t: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _card_types(db: Any, user_id: str, card: str) -> Optional[set[str]]:
+    """The card types a customer's words mean: an account id, or part of a card's name ('silver'). None if none match."""
+    accounts = [a for a in db.credit_card_accounts.data.values() if a.get("user_id") == user_id]
+    named = card.strip()
+    by_id = [a for a in accounts if a.get("account_id") == named]
+    if by_id:
+        return {str(by_id[0].get("card_type"))}
+    words = [w for w in re.findall(r"[a-z0-9]+", named.lower()) if w not in ("card", "credit", "my", "the", "rewards")]
+    found = {
+        str(a.get("card_type"))
+        for a in accounts
+        if words and all(w in _plain(a.get("card_type")) for w in words)
+    }
+    return found or None
+
+
 def find_transactions(
-    db: Any, user_id: str, today: date, merchant: str, amount: str, on_or_after: str, on_or_before: str, transaction_id: str
+    db: Any, user_id: str, today: date, merchant: str, amount: str, on_or_after: str, on_or_before: str, transaction_id: str,
+    card: str = "",
 ) -> dict[str, Any]:
     mine = [t for t in db.credit_card_transaction_history.data.values() if t.get("user_id") == user_id]
+    if card.strip():
+        types = _card_types(db, user_id, card)
+        if types is None:
+            return {"matches": [], "tip": "that card is not one of this customer's; use list_credit_cards to see theirs"}
+        mine = [t for t in mine if str(t.get("credit_card_type")) in types]
     if transaction_id.strip():
         exact = [t for t in mine if str(t.get("transaction_id")) == transaction_id.strip()]
         return {"matches": [_row(t) for t in exact]} if exact else {"matches": [], "tip": "no such transaction id on this customer's cards"}
@@ -155,7 +177,7 @@ def credit_lookups(db: Any, user_id: str, today: date) -> list[ExtraTool]:
     def find(args: Mapping[str, Any]) -> str:
         found = find_transactions(
             db, user_id, today, str(args["merchant"]), str(args["amount"]), str(args["on_or_after"]),
-            str(args["on_or_before"]), str(args["transaction_id"]),
+            str(args["on_or_before"]), str(args["transaction_id"]), str(args["card"]),
         )
         return json.dumps(found, ensure_ascii=False, separators=(",", ":"))
 
@@ -164,10 +186,12 @@ def credit_lookups(db: Any, user_id: str, today: date) -> list[ExtraTool]:
             _schema(
                 FIND,
                 "Search the verified customer's credit card transactions. Give whatever the customer said and leave the "
-                "rest as an empty string: the merchant (any part of the name), a rough amount, a date range in any "
-                "ordinary spelling (11/07/25, November 7th), or a transaction id. Use this before you ask the customer "
-                "anything about a charge.",
+                "rest as an empty string: the card (its account id or part of its name, like 'silver'), the merchant "
+                "(any part of the name), a rough amount, a date range in any ordinary spelling (11/07/25, November 7th), "
+                "or a transaction id. Use this before you ask the customer anything about a charge. Rows show which "
+                "card each charge was on.",
                 {
+                    "card": {**_TEXT, "description": "Part of the card's name ('silver'), its account id, or ''."},
                     "merchant": {**_TEXT, "description": "Part of the merchant's name, or ''."},
                     "amount": {**_TEXT, "description": "The amount, rough is fine ('around 160'), or ''."},
                     "on_or_after": {**_TEXT, "description": "Earliest date, or ''."},

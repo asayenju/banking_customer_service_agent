@@ -96,7 +96,7 @@ def test_asking_the_customer_before_any_search_is_refused_and_the_model_is_told_
     outcome, llm = run(
         [
             turn(call("ask_customer", details=["transaction_date"], question="What date was it?")),
-            turn(call("find_credit_transactions", merchant="Marriott", amount="", on_or_after="", on_or_before="", transaction_id="")),
+            turn(call("find_credit_transactions", card="", merchant="Marriott", amount="", on_or_after="", on_or_before="", transaction_id="")),
             turn(call("ask_customer", details=["dispute_reason"], question="What went wrong?")),
         ]
     )
@@ -201,7 +201,7 @@ def test_the_search_works_through_the_tool_the_model_calls_and_returns_json():
     from agent.credit_lookup import FIND, credit_lookups
 
     tool = next(t for t in credit_lookups(world().database, FATIMA, TODAY) if t.schema.name == FIND)
-    text = tool.run({"merchant": "mariot hotel", "amount": "", "on_or_after": "11/07/25", "on_or_before": "11/07/25", "transaction_id": ""})
+    text = tool.run({"card": "", "merchant": "mariot hotel", "amount": "", "on_or_after": "11/07/25", "on_or_before": "11/07/25", "transaction_id": ""})
     assert MARRIOTT in text and json.loads(text)["matches"][0]["amount"] == "$167.34"
     assert set(tool.schema.parameters["required"]) == set(tool.schema.parameters["properties"]), "strict: every argument is given"
 
@@ -230,3 +230,25 @@ def test_merchant_matching_directly(asked, merchant, fits):
     from agent.credit_lookup import merchant_fits
 
     assert merchant_fits(asked, merchant) is fits
+
+
+# ---------------------------------------------------------------- a card's own charges
+
+def test_a_credit_card_can_be_named_by_part_of_its_name_or_its_account_id():
+    db = world().database
+    silver = find(db, card="silver")["matches"]
+    assert silver and {r["card"] for r in silver} == {"Silver Rewards Card"} and MARRIOTT in ids({"matches": silver})
+    assert {r["card"] for r in find(db, card="cc_890389b165_eco")["matches"]} == {"EcoCard"}
+    assert {r["card"] for r in find(db, card="my crypto card")["matches"]} == {"Crypto-Cash Back"}
+
+
+def test_the_card_filter_keeps_other_cards_charges_out_and_a_card_that_is_not_hers_says_so():
+    db = world().database
+    assert MARRIOTT not in ids(find(db, card="EcoCard", merchant="marriott"))
+    nope = find(db, card="platinum elite")
+    assert nope["matches"] == [] and "list_credit_cards" in nope["tip"]
+
+
+def test_the_card_filter_combines_with_the_other_filters():
+    db = world().database
+    assert ids(find(db, card="silver", merchant="mariot", amount="around 160")) == [MARRIOTT]
