@@ -122,7 +122,31 @@ class RecordKinds:
                     row = getattr(self._db, "bank_account_transaction_history").data.get(value)
                     if isinstance(row, Mapping) and self._owned("accounts", str(row.get("account_id")), user_id):
                         found.add(Name.DEBIT)
+                    elif row is None:
+                        found |= self._described(value, user_id)
         return frozenset(found)
+
+    def _described(self, words: str, user_id: str) -> set[Name]:
+        """The customer named a charge in words (a merchant) instead of an id: the product whose own records hold it.
+        Only when it is one product; a merchant on both a card and an account leaves the question to the customer."""
+        def plain(text: Any) -> str:
+            return "".join(c for c in str(text).lower() if c.isalnum())
+
+        needle = plain(words)
+        if len(needle) < 3:
+            return set()
+        mine = {a["account_id"] for a in self._db.accounts.data.values() if a.get("user_id") == user_id}
+        debit = any(
+            needle in plain(t.get("description", ""))
+            for t in self._db.bank_account_transaction_history.data.values()
+            if t.get("account_id") in mine
+        )
+        credit = any(
+            needle in plain(t.get("merchant_name", ""))
+            for t in self._db.credit_card_transaction_history.data.values()
+            if t.get("user_id") == user_id
+        )
+        return {Name.DEBIT} if debit and not credit else {Name.CREDIT} if credit and not debit else set()
 
     def owns(self, user_id: str) -> frozenset[Name]:
         """Which products the customer has at all."""

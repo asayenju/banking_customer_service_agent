@@ -192,3 +192,15 @@ def test_opening_a_test_customer_shows_who_they_are_but_never_a_user_id():
 def test_a_task_that_logs_placeholder_details_is_listed_with_the_customers_real_record():
     kenji = TestClient(main.app).get("/personas/task_005").json()
     assert kenji["name"] == "Kenji Tanaka" and kenji["phone"] == "206-555-0293"
+
+
+def test_a_charge_named_by_its_merchant_goes_to_the_product_whose_records_hold_it():
+    from agent.dispatcher import Name, RecordKinds
+    from banking_tools import BankingSession
+    from banking_tools.manifest import load_tasks
+
+    db = BankingSession.from_task({t["id"]: t for t in load_tasks()}["task_084"]).database
+    kinds = RecordKinds(db)
+    assert kinds.products({"transaction_id": "Bella's Bistro"}, "a7c2f85d91") == frozenset({Name.DEBIT})
+    assert kinds.products({"transaction_id": "BELLAS BISTRO"}, "a7c2f85d91") == frozenset({Name.DEBIT})
+    assert kinds.products({"transaction_id": "no such shop"}, "a7c2f85d91") == frozenset()

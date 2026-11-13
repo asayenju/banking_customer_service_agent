@@ -249,3 +249,20 @@ def test_a_route_that_needs_several_details_is_asked_for_one_at_a_time_and_never
             assert result.decisions[0].action.value == "ask" and [q.slot for q in result.reply.questions] == [NeedsThreeThings.ORDER[number]]
             asked.append(NeedsThreeThings.ORDER[number])
     assert asked == list(NeedsThreeThings.ORDER) and w.orch.done_ids == ("a",), "five questions in turn, then the answer"
+
+
+def test_a_no_to_the_one_question_on_screen_is_its_answer_not_a_withdrawal():
+    route = NeedsTopic()
+    w = World([interp(general()), interp(declined=["a"])], [[S("a", 0.99)]], sub=route)
+    w.turn(QUESTION)
+    r = w.turn("No I haven't contacted them")
+    assert route.calls[-1]["topic"] == "no" and "Customer: No I haven't contacted them" in route.calls[-1]["conversation_so_far"]
+    assert [o.status for o in r.outcomes] == [OutcomeStatus.DONE] and "withdrawn" not in " ".join(e.reason or "" for e in r.trace.events)
+
+
+def test_never_mind_still_withdraws_the_request_even_with_a_question_on_screen():
+    route = AlwaysAsks()
+    w = World([interp(general()), interp(declined=["a"])], [[S("a", 0.99)]], sub=route)
+    w.turn(QUESTION)
+    w.turn("never mind, forget it")
+    assert w.orch.active_ids == ()
