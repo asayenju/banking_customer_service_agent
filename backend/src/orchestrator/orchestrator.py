@@ -26,6 +26,7 @@ Rules this module is responsible for:
 """
 
 import asyncio
+import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Optional
 
@@ -63,6 +64,8 @@ from orchestrator.types import Decomposition, Intent, IntentKind, Question
 from orchestrator.unclear import HelpState, handle_unclear, offer_help, precheck
 
 MAX_ASKS = 3
+_NO = re.compile(r"^\W*(?:no|nope|nah)\b")
+_WITHDRAWS = re.compile(r"never ?mind|forget it|cancel|stop|no longer|don'?t need|drop it|leave it")
 # What the decomposer makes of an answer it did not recognise as one; never a request to change anything.
 _ANSWER_NOISE = READ_ONLY_KINDS | {IntentKind.OTHER, IntentKind.UNCLEAR_OR_GREETING, IntentKind.GENERAL_QUESTION}
 # Details that are secrets: an answer to a question about one is captured even without a cue word.
@@ -331,6 +334,14 @@ class Orchestrator:
             context_for=self._context_for,
         )
 
+    @staticmethod
+    def _is_answer_no(message: str, asked: tuple[Question, ...]) -> bool:
+        """A no that answers the one open question a route asked, rather than withdrawing the request."""
+        if len(asked) != 1 or asked[0].slot in (CONFIRM_SLOT, CLARIFY_SLOT, IDENTITY_SLOT):
+            return False
+        text = message.strip().lower()
+        return bool(_NO.match(text)) and not _WITHDRAWS.search(text)
+
     def _free_answer(
         self, message: str, asked_before: Mapping[str, tuple[Question, ...]], decomposition: Decomposition
     ) -> Optional[tuple[str, Question]]:
@@ -380,7 +391,24 @@ class Orchestrator:
         for flag in decomposition.flags:
             events.append(TraceEvent(kind=TraceKind.FLAGGED, detail=flag.value))
 
+        asked_pending = dict(self._pending_route_questions)
         for intent_id in interpretation.declined:
+            if self._is_answer_no(message, asked_pending.get(intent_id, ())):
+                # "No" to the one question a route asked ("have you contacted the merchant?") is the answer, not the
+                # customer withdrawing the whole request.
+                (asked_no,) = asked_pending[intent_id]
+                intent_now = self._active[intent_id]
+                no_said = message.strip()[:500]
+                talk_so_far = intent_now.slots.get("conversation_so_far", "")
+                exchange = f"{talk_so_far}\nAsked: {asked_no.text or asked_no.slot.replace('_', ' ')}\nCustomer: {no_said}".strip()
+                self._active[intent_id] = intent_now.model_copy(
+                    update={"slots": {**intent_now.slots, asked_no.slot: "no", "conversation_so_far": exchange[-1500:]}}
+                )
+                self._prints[intent_id] = fingerprint(self._active[intent_id])
+                self._asks[intent_id] = 0
+                self._pending_route_questions.pop(intent_id, None)
+                events.append(TraceEvent(kind=TraceKind.DECIDED, intent_id=intent_id, detail="answered no", reason=asked_no.slot))
+                continue
             if self._resumable.pop(intent_id, None) is not None:
                 self._progress.pop(intent_id, None)
                 events.append(
