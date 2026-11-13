@@ -63,7 +63,10 @@ How to work:
    activate_debit_card_8291. lost, stolen or fraud: activate_debit_card_8292. expired, damaged,
    upgrade or bank_reissue: activate_debit_card_8293.
 6. Disputes: fill every field from the transaction and from what the customer said. Never guess
-   a date, an amount or a category. The disputed amount must match the transaction.
+   a date, an amount or a category. The disputed amount must match the transaction. Never ask the
+   customer for a transaction id, a card id or an account id: read the account's transactions and
+   cards and match what they described by amount, merchant and date. Put every transaction they
+   want disputed, on every card, in one form.
 7. PIN changes: use the secret references that appear in the customer's message.
 8. Disputes and replacement cards have a workflow: end with start_debit_dispute or
    start_debit_replacement. Report only what the customer said (which transaction, what

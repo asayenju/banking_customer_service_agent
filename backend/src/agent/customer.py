@@ -25,9 +25,12 @@ RULES = """You play a bank customer in a test. Your persona and the lines you ma
 PERSONA:
 """
 NEXT = (
-    "The agent has finished helping with: {done}. In your own words, in one or two sentences, say the next thing "
-    "you want help with, taken from your persona's remaining topics. If nothing is left, reply exactly: NOTHING LEFT"
+    "The agent has finished helping with: {done}. They now ask whether you need anything else, such as new cards "
+    "to replace ones that were closed. In one or two sentences, say what you want next, from your persona's "
+    "remaining topics and what you said you wanted earlier (for example replacements you asked for). If there is "
+    "truly nothing left, reply exactly: NOTHING LEFT"
 )
+FALLBACK = "Please go ahead with anything else I asked for earlier, such as the replacement cards."
 
 
 class SimulatedCustomer:
