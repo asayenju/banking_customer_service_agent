@@ -65,3 +65,50 @@ def test_a_yes_to_the_question_settles_what_the_request_is_so_it_goes_ahead_to_t
     assert all(e.kind.value != "escalated" for e in second.trace.events)
     assert "human agent" not in second.reply.text
     assert [q.slot for q in second.reply.questions] != [CLARIFY_SLOT], "it moves on instead of asking to be sure again"
+
+
+# ---------------------------------------------------------------- the lost-wallet loop: a yes that is not one bare word
+
+import pytest
+
+from orchestrator.llm_decomposer import confirms_understanding
+
+
+@pytest.mark.parametrize(
+    "text", ["yes", "Yes.", "yes that is what i want", "yeah that's right", "correct", "exactly, that's it", "sure, go ahead", "yes please"]
+)
+def test_an_agreement_counts_as_confirming_what_was_understood(text):
+    assert confirms_understanding(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["no", "no that is not it", "yes but only the green one", "yes, and also freeze my other card", "not exactly", "actually I want to close it", "tell me more about fees", "never mind"],
+)
+def test_an_agreement_with_a_change_or_a_no_does_not(text):
+    assert not confirms_understanding(text)
+
+
+def test_yes_that_is_what_i_want_moves_on_and_does_not_ask_to_be_sure_again():
+    """Jev scored the lost-wallet report 0.92 on the kind, under the 0.95 bar for a write, every time."""
+    w = World([interp(dispute(), claims=GOOD_CLAIMS), interp(dispute())], [[S("d", 0.92)]])
+    first = w.turn(ASK)
+    assert [q.slot for q in first.reply.questions] == [CLARIFY_SLOT]
+    second = w.turn("yes that is what i want")
+    assert [q.slot for q in second.reply.questions] != [CLARIFY_SLOT]
+    assert second.decisions[0].reason != "not sure enough the request is right to act yet"
+    assert w.scorer.asked == [["d"]], "the agreement is not scored alone"
+
+
+def test_after_one_explanation_a_scorer_that_is_reasonably_sure_is_not_asked_about_again():
+    w = World([interp(dispute(), claims=GOOD_CLAIMS), interp(I("n1", K.OTHER, summary="feels wrong"))], [[S("d", 0.90)], [S("d", 0.92)]])
+    w.turn(ASK)
+    second = w.turn(REPLY)
+    assert [q.slot for q in second.reply.questions] != [CLARIFY_SLOT]
+
+
+def test_after_one_explanation_a_scorer_that_is_still_unsure_does_ask_again():
+    w = World([interp(dispute(), claims=GOOD_CLAIMS), interp(I("n1", K.OTHER, summary="feels wrong"))], [[S("d", 0.90)], [S("d", 0.80)]])
+    w.turn(ASK)
+    second = w.turn(REPLY)
+    assert [q.slot for q in second.reply.questions] == [CLARIFY_SLOT]
