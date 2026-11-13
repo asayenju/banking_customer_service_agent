@@ -43,6 +43,36 @@ def _plain(text: Any) -> str:
     return "".join(c for c in str(text).lower() if c.isalnum())
 
 
+# Words that say what kind of place it is, not which one: "a Marriott hotel" is about Marriott.
+_GENERIC = frozenset(
+    "a an the and of for from at my on in to charge charges card credit payment purchase transaction transactions "
+    "hotel hotels store shop inc llc co ads airlines airline market markets foods food farmers group services service "
+    "online corp company bank pay".split()
+)
+SIMILAR = 0.8
+
+
+def merchant_fits(asked: str, merchant: Any) -> bool:
+    """Does the merchant the customer named mean this charge's merchant? Misspellings count ("mariot hotel" for
+    "Marriott Hotels"), and so do extra words ("a Marriott hotel"). An empty ask fits every merchant."""
+    from difflib import SequenceMatcher
+
+    if not asked.strip():
+        return True
+    name = str(merchant)
+    squashed = _plain(name)
+    words = re.findall(r"[a-z0-9]+", name.lower())
+    wanted = re.findall(r"[a-z0-9]+", asked.lower())
+    keep = [w for w in wanted if w not in _GENERIC] or wanted
+    for word in keep:
+        if len(word) < 3:
+            continue
+        if word in squashed or any(SequenceMatcher(None, word, w).ratio() >= SIMILAR for w in words):
+            return True
+    whole = _plain(asked)
+    return bool(whole) and (whole in squashed or squashed in whole)
+
+
 def _money(text: Any) -> Optional[float]:
     found = re.search(r"\d[\d,]*(?:\.\d+)?", str(text))
     return float(found.group(0).replace(",", "")) if found else None
@@ -72,8 +102,7 @@ def find_transactions(
     exact_amount = wanted is not None and "." in amount
 
     def fits_merchant(t: Mapping[str, Any]) -> bool:
-        needle = _plain(merchant)
-        return not needle or needle in _plain(t.get("merchant_name")) or _plain(t.get("merchant_name")) in needle
+        return merchant_fits(merchant, t.get("merchant_name"))
 
     def fits_amount(t: Mapping[str, Any]) -> bool:
         if wanted is None:
