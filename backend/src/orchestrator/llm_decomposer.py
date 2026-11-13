@@ -229,6 +229,22 @@ def is_affirmation(text: str) -> bool:
     return bool(_AFFIRMATION.match(text.strip()))
 
 
+_CONTRAST = re.compile(r"\b(?:but|however|actually|except|instead|not|no|also|wait|change|different)\b", re.IGNORECASE)
+_YES_START = re.compile(
+    r"^\W*(?:yes|yeah|yep|yup|correct|right|exactly|sure|ok|okay|that'?s (?:right|correct|it|what i want)|that is (?:right|correct|it|what i want))\b",
+    re.IGNORECASE,
+)
+
+
+def confirms_understanding(text: str) -> bool:
+    """A short agreement, with or without extra words ("yes that is what i want"), that adds nothing and takes nothing back.
+    Used for the customer's reply to "to be sure I have this right: ..."."""
+    cleaned = text.strip()
+    return is_affirmation(cleaned) and not re.match(r"^\W*(?:no|nope|never ?mind)", cleaned, re.IGNORECASE) or (
+        len(cleaned) <= 80 and bool(_YES_START.match(cleaned)) and not _CONTRAST.search(cleaned)
+    )
+
+
 def _span(start: Optional[int], end: Optional[int]) -> Optional[tuple[int, int]]:
     if start is None or end is None or start < 0 or end < start:
         return None

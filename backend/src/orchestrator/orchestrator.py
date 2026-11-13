@@ -43,7 +43,8 @@ from orchestrator.auth import (
 )
 from orchestrator.containment import Containment
 from orchestrator.context import AgentSession, Mode, RouteContext, SessionRequest
-from orchestrator.llm_decomposer import is_affirmation
+from orchestrator.llm_decomposer import confirms_understanding, is_affirmation
+from orchestrator.bands import PROCEED_AT, WRITE_KIND_ASK_AT
 from orchestrator.decision import CLARIFY_SLOT, CONFIRM_SLOT, HUMAN_AFTER_ASKS, Action, IntentDecision, decide, fingerprint
 from orchestrator.decomposer import Decomposer, Interpretation
 from orchestrator.executor import (
@@ -220,7 +221,8 @@ class Orchestrator:
         self._said: dict[str, str] = {}
         self._clarifying: dict[str, Question] = {}  # intent id -> the 'tell me more' question on screen
         self._clarified: set[str] = set()  # intents whose clarification arrives this turn: scored on the whole story
-        self._understood: set[str] = set()  # intents the customer confirmed we understood
+        self._understood: set[str] = set()  # intents the customer said we understood (kept until the request ends)
+        self._asked_once: set[str] = set()  # intents the customer has already clarified once
         self._scored_kind: dict[str, IntentKind] = {}
         self._pending_confirm: dict[str, str] = {}
         self._confirmed: dict[str, str] = {}
@@ -318,6 +320,9 @@ class Orchestrator:
             self._scored_kind,
         ):
             table.pop(intent_id, None)
+        self._clarifying.pop(intent_id, None)
+        self._understood.discard(intent_id)
+        self._asked_once.discard(intent_id)
 
     async def _turn(self, message: str) -> TurnResult:
         if self._capture_secrets is not None:
@@ -428,7 +433,8 @@ class Orchestrator:
                 fold.append(found)
             else:
                 return None  # a real new request
-        return intent_id, tuple(fold), is_affirmation(message)
+        added = any(f.id == intent_id and f.slots != self._active[intent_id].slots for f in decomposition.intents)
+        return intent_id, tuple(fold), confirms_understanding(message) and not added
 
     async def _verify(self, claims: Mapping[str, str], events: list[TraceEvent]) -> None:
         try:
@@ -493,8 +499,13 @@ class Orchestrator:
         answering = self._free_answer(message, asked_before, decomposition)
         clarifying = self._clarification(message, decomposition) if answering is None else None
         if clarifying is not None:
+            # A plain agreement says nothing new, so a decomposer that lists the request again for it changes nothing.
             decomposition = decomposition.model_copy(
-                update={"intents": tuple(i for i in decomposition.intents if i.id in self._active)}
+                update={
+                    "intents": tuple(
+                        i for i in decomposition.intents if i.id in self._active and not (clarifying[2] and i.id == clarifying[0])
+                    )
+                }
             )
         if answering is not None:
             # The message answers the one question on screen. The decomposer sometimes reads such an answer as a new
@@ -573,6 +584,7 @@ class Orchestrator:
             else:
                 self._said[clarified_id] = f"{self._said.get(clarified_id, '')}\n{said_now}".strip()[-1500:]
                 self._clarified.add(clarified_id)
+                self._asked_once.add(clarified_id)
                 touched.add(clarified_id)
 
         for intent_id in touched:
@@ -981,17 +993,21 @@ class Orchestrator:
                 )
 
         self._clarified.clear()
-        for intent_id in self._understood & set(self._scores):
-            # The customer confirmed we understood the request, which is stronger than any scorer's guess about it.
+        for intent_id in set(self._scores) & (self._understood | self._asked_once):
             earned = self._scores[intent_id]
-            if earned.error is None:
-                self._scores[intent_id] = earned.model_copy(
-                    update={
-                        "kind_confidence": max(earned.kind_confidence, UNDERSTOOD),
-                        "scope_confidence": max(earned.scope_confidence, UNDERSTOOD),
-                    }
-                )
-        self._understood.clear()
+            if earned.error is not None:
+                continue
+            if intent_id in self._understood:
+                # The customer said we understood the request, which is stronger than any scorer's guess about it.
+                kind = max(earned.kind_confidence, UNDERSTOOD)
+                scope = max(earned.scope_confidence, UNDERSTOOD)
+            elif earned.kind_confidence >= PROCEED_AT:
+                # They explained once and the scorer is reasonably sure: do not make them explain again. What is
+                # about to happen is still shown in full and needs their yes.
+                kind, scope = max(earned.kind_confidence, WRITE_KIND_ASK_AT), earned.scope_confidence
+            else:
+                continue
+            self._scores[intent_id] = earned.model_copy(update={"kind_confidence": kind, "scope_confidence": scope})
         decided: dict[str, IntentDecision] = dict(blocked)
         for intent in allowed:
             if intent.kind is IntentKind.UNCLEAR_OR_GREETING:

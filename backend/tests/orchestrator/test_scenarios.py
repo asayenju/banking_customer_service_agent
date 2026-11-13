@@ -139,7 +139,8 @@ def test_a_freeze_the_kind_answer_is_unsure_about_asks_first_and_runs_once_sure(
     assert [q.slot for q in first.reply.questions] == ["clarification"]
     assert w.direct.calls == [] and w.sub.calls == []
     second = w.turn("yes, freeze card c1")
-    assert brief(second) == ["scored:frz", "decided:frz", "routed:frz@1", "started:frz@1", "finished:frz@1"]
+    # The agreement settles what the request is, so it is not scored again; it runs at once.
+    assert brief(second) == ["decided:frz", "routed:frz@1", "started:frz@1", "finished:frz@1"]
     assert w.direct.calls == ["frz"]
 
 
