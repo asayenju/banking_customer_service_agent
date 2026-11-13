@@ -51,19 +51,64 @@ Offline replay of the benchmark's own reference trajectories through the real sp
 - Decomposer pass@1 (older measurement, before the latest prompt changes): 0.92 tuning set, 0.97 held-out, 1.00 minimal pairs, 0.83 on the hardest set.
 - Jev gate on 70 labelled intents (30 wrong ones made up by swapping the action): avoided 29 of 30 wrong, blocked 2 of 40 right (AUROC 0.97). A plain gpt-4o-mini yes/no on the same intents avoided 28 of 30 and blocked 9 of 40 (AUROC 0.95).
 
-## Where it is failing so far
+## System design
 
-Be sceptical of the numbers above: replay shows the code is right when it is given the right facts, not that the model always supplies them.
+- **The model reports, code decides.** A model never sets a fee, a limit, a date rule or a step. It fills in a typed workflow form with what the customer said, and the workflow works out the rest from the bank's written policy (`agent/workflows/`). The bank's own tools check very little, so every write tool also has a validator (`agent/specialists/*.py`, `credit_rules.py`, `accounts_rules.py`, `fees_rules.py`) that runs when the plan is made and again just before each step.
+- **One yes to an exact plan.** The customer sees the steps in plain words, and their yes is bound to a fingerprint of those details. A change after the preview makes the yes stale. Reads and reversible actions such as a freeze need no yes; everything irreversible does.
+- **Plan first, then act with no model.** A plan is dry-run on a deep copy of the database so the customer sees the end state. Execution replays only the approved steps through a guard (the request's allow-list of tools and the customer's ownership of every record), then reads back the result.
+- **One generic specialist.** Debit, credit, accounts, fees, fraud and the general answerer are configurations of one `Specialist` class: instructions, a document scope, validators and workflows. The lost-wallet composer joins the debit and credit workflows into one preview, and freezes the named cards first because a freeze is reversible.
+- **Look first, then ask.** Specialists have search tools over the customer's own records (a charge by merchant, rough amount, date or id; a card by id, last four digits or account). A dispute may not ask the customer anything until a search has been used, and the customer is never asked for an id the records hold.
+- **One question at a time.** The reply shows the first missing detail; the rest are asked as the request re-runs with each answer. The workflows ask only what matters for the kind of dispute.
+- **Failures are values.** Tools return `ok=False` results, a failed route is reported while independent work carries on, and anything unclear or failing ends in a hand-off with a note written by code.
+- **Evidence before spend.** Offline replay of the benchmark's reference answers, a free preflight over all 97 tasks, and a capped live harness with recorded model responses mean live runs are the last step, not the first.
 
-- **Live pass rate is low.** The last full live run of the 12 debit tasks (gpt-4o, one-shot harness) passed 2. Several failures were the harness (the customer cannot answer a question), but the model also wrote wrong values (a dispute amount, a year, a design nobody asked for). Fixes since then are tested offline only; the live number is out of date.
-- **Most paths have never run live.** Credit, fees, accounts, card activation and the PIN-lock score are covered by offline replay and unit tests only. The PIN-lock fraud score is built but not wired into a workflow. Nothing calls `transfer_to_human_agents` yet, so a hand-off ends the chat but transfers nobody.
-- **Multi-turn conversation is patched, not solved.** The request reader sometimes misreads a short answer as a new request, a yes or a withdrawal; several cases are caught in code, but a question can still be asked twice when answers arrive out of order. Its run-to-run variation can turn a vague request into a hand-off.
-- **Inferred rules.** Where a policy document and the reference answers disagree, the references win and the rule is marked inferred (the Entry-tier reorder wait, provisional credit for a cancelled subscription, the 12-month dispute caps). The debit limit cap is not enforced because the data has no ATM limit field.
-- **The Jev result is thin.** The wrong intents are synthetic, there are only 70 intents, and its 0.95 threshold was set from about 10 wrong examples. It shows Jev blocks fewer right requests than a plain LLM, not that it beats one on accuracy.
-- **Measurement gaps.** 12 live recordings are stale, 42 runnable tasks need three or more customer replies the one-shot harness cannot give (the simulated customer has only been tried on one task), and the decomposer scores predate its latest prompt changes.
-- **Not production.** It runs on a copy of the benchmark data: no real accounts or login, no rate limits, monitoring or audit storage. Every live run costs real money and needs both keys.
+## Using Jev, and how it helped
+
+Jev (TypeSafe AI) is a hosted decision model that answers yes/no questions with a probability and writes no text. It is a second opinion on the decomposer, which is an LLM. For each intent it is asked whether the *kind* is right and whether the request is something a bank's customer service handles. Whether details are missing is plain code, because Jev is weak at numbers and dates.
+
+- **Confidence is the weakest of three answers** (kind, details, scope). 0.85 or more proceeds, 0.65 to 0.85 asks the customer, below that hands off. A write also needs the kind answer alone at 0.95 or more.
+- **It never authorizes anything alone.** An irreversible action still needs the customer's yes to the exact plan, at any confidence.
+- **It sees as little as possible.** Only the redacted message, the kind and a short summary go out, never a detail value. A message flagged as an injection attempt is not sent at all.
+- **Why not just ask an LLM?** Jev returns numbers only, so a customer's words cannot steer it into saying or doing something, and its mistakes are independent of the decomposer's.
+
+How it helped, measured on 70 labelled intents (40 right, 30 wrong; the wrong ones are a plausible action swapped in, so this tests obvious mistakes):
+
+| Gate | Wrong intents avoided | Right intents blocked | AUROC |
+|---|---|---|---|
+| Jev, kind score at 0.95 (production) | 29 of 30 (97%) | 2 of 40 (5%) | 0.97 |
+| Plain gpt-4o-mini yes/no, P(yes) at 0.95 | 28 of 30 (93%) | 9 of 40 (22%) | 0.95 |
+
+Both catch nearly all wrong actions. Jev's edge here is blocking far fewer right requests, which means fewer needless clarifying questions. It is a small sample, so read it as direction rather than a precise gap. The measuring scripts are the `jev` command of `orchestrator.evaluation`.
+
+## Context sharing
+
+The system has no transcript that every part reads. Each part is given the slice it needs, and the orchestrator's state is the source of truth.
+
+**What a conversation holds** (one `Conversation` object per id, `agent/assembly.py`):
+- The caller's verification state (2 of 4 identity fields), set by code only.
+- Every open request: its kind, a short summary, and its details (slots). Two details are added by code: `said`, the customer's own words when they reported a loss, and `conversation_so_far`, the questions asked and the answers given.
+- The score each request earned, how many times it has been asked about, and the one question currently on screen.
+- The approved plan and its fingerprint, the steps already done, and the result of every message id (a repeated id returns the stored result).
+- The last 8 messages (customer and agent, each cut to 600 characters), with secrets already hidden.
+- One `BankingSession` (a private copy of the database and an audit log) and one `SecretVault`, shared by everything in the conversation.
+
+**What each part is given:**
+
+| Part | It sees |
+|---|---|
+| Decomposer | the message, the open requests, and the last 8 messages, so a short reply is read as an answer to the last question |
+| Jev | the redacted message (for a request held back for verification, the message that stated it), the kind and the summary; never detail values |
+| Specialist | a fresh run each time: the request (kind, summary, details, a note that the customer is verified, the recent conversation), policy search, and the customer's own records through search tools |
+| Route | its request plus the recent conversation; it never sees other requests in the same turn |
+
+**Between specialists nothing is passed directly.** They share only the database, so a card one specialist closes is already closed when the next reads it. A specialist run keeps no memory, so anything it needs from earlier turns has to be in the request's details or the recent conversation.
+
+**How answers are tied back to questions.** When one question is on screen, the next message is taken as its answer: a reply the decomposer did not recognise is stored as that detail and added to `conversation_so_far`, a "no" is an answer and not a withdrawal (unless it says "never mind" or "cancel"), and the same request said again with more detail is folded into the open one. A yes is bound to the plan it was asked about.
+
+**Secrets never travel as text.** A PIN or security code a customer types is swapped for a reference such as `{secret:pin}` before any model, trace or reply sees it. Only the guarded tool call at the end swaps the real value back in.
 
 ---
+
 
 ## Setup
 
@@ -194,4 +239,4 @@ Keys are read from the repo-root `.env` (git-ignored; see `.env.example`): `OPEN
 
 ### Not built yet
 
-LLM phrasing of the reply (a template today) and a real transfer to a human agent. The sub-agents and the evaluation harness are built; see "Where it is failing so far" above.
+LLM phrasing of the reply (a template today) and a real transfer to a human agent. The sub-agents and the evaluation harness are built.
