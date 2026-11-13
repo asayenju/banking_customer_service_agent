@@ -28,11 +28,11 @@ Confidence per intent is the minimum of three separate Jev answers: kind, slots 
 
 Missing details are asked for, not escalated. Slots score 0 when incomplete, which would drag the minimum to 0 and hand every "freeze my card" (no card named) to a person. So only the kind and scope answers can escalate before missing details are asked for; the full minimum applies after. An end-to-end run caught this: 11 of 16 clearly requested writes were being handed off.
 
-One stricter gate sits on top for writes: an intent that is not read-only also needs the **kind** answer alone at >= 0.95 (`WRITE_KIND_ASK_AT`), or the customer is asked to clarify before it runs. Jev's kind answer separates right from wrong intents far better than the minimum of all three (AUROC 0.88 against 0.57 on 96 labelled action intents), and at 0.95 it caught 60% of the wrong ones while 2% of the right ones were asked; at 0.85 it caught 40%. Only 10 intents were wrong, so treat the number as provisional.
+One stricter gate sits on top for writes: an intent that is not read-only also needs the **kind** answer alone at >= `WRITE_KIND_ASK_AT`, or the customer is asked to clarify before it runs. It was 0.95; a hedged but real lost-wallet report scored 0.92 every time and was asked about in a loop, so it is now 0.80, below the 0.85 proceed line, which already needs the kind answer at 0.85. The extra gate therefore no longer binds. Jev's kind answer separates right from wrong intents far better than the minimum of all three (AUROC 0.88 against 0.57 on 96 labelled action intents), and at 0.95 it caught 60% of the wrong ones while 2% of the right ones were asked; at 0.85 it caught 40%. Only 10 intents were wrong, so treat the number as provisional.
 
 ### Rules
 1. **Irreversible actions always need the customer's explicit "yes"**, whatever the confidence. The yes is bound to the exact action and parameters; if either changes, it is stale and asked again.
-2. **Reads** proceed at >= 0.85 with no confirmation. **Reversible writes** also need no confirmation, but only once the kind answer is >= 0.95. Only six tools are reversible: `change_user_email`, `update_transaction_rewards`, `set_debit_card_recurring_block`, `freeze_debit_card`, `unfreeze_debit_card`, `change_debit_card_pin`.
+2. **Reads** proceed at >= 0.85 with no confirmation. **Reversible writes** also need no confirmation, but only once the kind answer is >= 0.85 (the proceed line). Only six tools are reversible: `change_user_email`, `update_transaction_rewards`, `set_debit_card_recurring_block`, `freeze_debit_card`, `unfreeze_debit_card`, `change_debit_card_pin`.
 3. **Unclear messages** (greeting, "help", gibberish, empty, wrong language) are caught by a deterministic pre-check as `UNCLEAR_OR_GREETING`, skip Jev, and run the read-only `offer_help` tool, which returns a fixed menu (not personalised). After 3 menus with no real intent, escalate.
 4. **A real intent below 0.65 escalates immediately** with a summary of what was understood.
 5. **A verified caller is required** for every account-specific intent, read or write, urgent ones included. General info and the menu stay open. Verification is 2 of 4 fields (date of birth, email, phone, address) matched by code against the record, then `log_verification`. Jev has no say. No claimed code, supervisor or authority bypasses it.
@@ -80,7 +80,7 @@ Reuse: `banking_tools.get_registry()` for reversibility and `ToolKind`, the reda
 | Case | Expected |
 |---|---|
 | 98/96/40 mixed confidence | first two run, third escalated with a note, one reply |
-| Reversible write, kind answer under 0.95 | asks the customer to clarify, does not run; runs once the kind is sure |
+| Reversible write, kind answer under 0.85 | asks the customer to clarify, does not run; runs once the kind is sure |
 | Escalated intent that others depend on | dependents wait, then are reported as blocked |
 | Freeze card and dispute a charge on it | freeze first, dispute after (same resource, write) |
 | Close an account and open another in one message | the opening goes first; the closing waits for it and is skipped if the opening did not complete |
@@ -131,7 +131,7 @@ Prerequisite: the decomposer PRD's types issue (its issue 2, GitHub #18). Routin
    - Verification questions flow through the ask path; Jev is not involved.
 4. **Per-intent decision with irreversible confirmation** (GitHub #10)
    - Irreversible intents never `Run` without an explicit, parameter-bound yes, even at 0.99.
-   - Reads run at >= 0.85 without a yes; reversible writes also need the kind answer at >= 0.95.
+   - Reads run at >= 0.85 without a yes; reversible writes also need the kind answer at >= 0.85 (the proceed line).
    - A changed parameter makes the yes stale.
 5. **Unclear-message pre-check and help menu** (GitHub #11)
    - Greeting, gibberish, empty and wrong-language inputs map to `UNCLEAR_OR_GREETING` without Jev.

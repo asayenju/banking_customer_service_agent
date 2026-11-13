@@ -69,7 +69,7 @@ DISPUTE_TRANSACTION, CLOSE_CARD and ORDER_REPLACEMENT_CARD span debit and credit
 ### Plan preview and consent (`agent/plan_preview.py`, `decision.py`)
 - `PlanStep(tool, args | StepRef, reversibility from the catalog)`, `PlanPreview(intent_fp, steps, plan_fp, rendered)`, new `Action.PREVIEW`.
 - Flow: PREVIEW (plan mode) -> `NEEDS_CONFIRMATION` -> the customer's yes binds `plan_fp` and `intent_fp` -> RUN (execute mode: approved steps in code, guard re-validates against fresh DB state, no LLM).
-- A changed slot makes the proposal stale and re-previews. A plan with only reversible steps at kind confidence >= 0.95 asks nothing. "Needs a yes" becomes a plan-level fact for sub-agent kinds, which fixes `CARD_CONTROLS` mixing a reversible and an irreversible tool. `NO_YES_NEEDED` stays the default for DIRECT kinds.
+- A changed slot makes the proposal stale and re-previews. A plan with only reversible steps at kind confidence >= 0.85 asks nothing. "Needs a yes" becomes a plan-level fact for sub-agent kinds, which fixes `CARD_CONTROLS` mixing a reversible and an irreversible tool. `NO_YES_NEEDED` stays the default for DIRECT kinds.
 - Secrets enter a plan only as `SecretRef`; `plan_fp` contains none.
 - Rolling previews: a plan whose later writes depend on reads the customer has not seen (task 078) gets another preview round.
 
@@ -181,7 +181,7 @@ Known limits: a rolling preview can still surprise the customer between rounds; 
 
 **Issue 1.4: Plan preview consent.**
 - A yes runs only the approved steps; a changed slot makes the proposal stale and re-previews.
-- A reversible-only plan at kind confidence >= 0.95 asks nothing, and at 0.94 asks.
+- A reversible-only plan at kind confidence >= 0.85 asks nothing, and at 0.84 asks.
 - `plan_fp` is stable under argument-key order and contains no secret.
 - A "no" drops the proposal and leaves no write.
 - The `NO_YES_NEEDED` catalog test passes, plus a plan-level check. Depends on: 1.1, 1.2.

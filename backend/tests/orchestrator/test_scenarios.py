@@ -127,20 +127,20 @@ def test_mixed_confidence_runs_two_and_hands_one_to_a_human_in_one_reply():
     assert "handing this to a human agent: summary of fee" in r.reply.text
 
 
-@covers("Reversible write, kind answer under 0.95")
+@covers("Reversible write, kind answer under 0.85")
 def test_a_freeze_the_kind_answer_is_unsure_about_asks_first_and_runs_once_sure():
     freeze = I("frz", K.FREEZE_CARD, {"card_id": "c1"})
     w = World(
         [interp(freeze, claims=GOOD_CLAIMS), interp(I("frz", K.FREEZE_CARD, {"card_id": "c1"}))],
-        [[S("frz", 0.9)], [S("frz", 0.97)]],
+        [[S("frz", 0.8)], [S("frz", 0.97)]],
     )
     first = w.turn("I think I want my card frozen")
     assert brief(first) == ["scored:frz", "decided:frz", "asked:frz"]
     assert [q.slot for q in first.reply.questions] == ["clarification"]
     assert w.direct.calls == [] and w.sub.calls == []
-    second = w.turn("yes, freeze card c1")
-    # The agreement settles what the request is, so it is not scored again; it runs at once.
-    assert brief(second) == ["decided:frz", "routed:frz@1", "started:frz@1", "finished:frz@1"]
+    second = w.turn("yes, freeze card c1 but only that one")
+    # More than an agreement, so the whole story is scored again, and now it is sure.
+    assert brief(second) == ["scored:frz", "decided:frz", "routed:frz@1", "started:frz@1", "finished:frz@1"]
     assert w.direct.calls == ["frz"]
 
 

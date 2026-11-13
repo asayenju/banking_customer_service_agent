@@ -10,10 +10,14 @@ from enum import StrEnum
 
 PROCEED_AT = 0.85
 ASK_AT = 0.65
-# A write whose kind the scorer is not nearly sure of is confirmed with the customer
-# first. On 96 labelled action intents Jev's kind answer at 0.95 caught 60% of the
-# wrong ones while 2% of the right ones were asked; at 0.85 it caught 40%.
-WRITE_KIND_ASK_AT = 0.95
+# A write whose kind the scorer is not sure of is confirmed with the customer first.
+# It was 0.95 (on 96 labelled action intents Jev's kind answer at 0.95 caught 60% of the
+# wrong ones while 2% of the right ones were asked; at 0.85 it caught 40%). A hedged but
+# real report ("I think I might have lost my wallet") scored 0.92 every time and was asked
+# about in a loop, so the bar is 0.80. That is below PROCEED_AT, which already needs the kind
+# answer at 0.85, so the extra gate for writes no longer binds: the plan the customer must
+# say yes to (every irreversible step) is what protects them.
+WRITE_KIND_ASK_AT = 0.80
 
 
 class Band(StrEnum):
