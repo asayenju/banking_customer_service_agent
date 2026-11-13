@@ -26,6 +26,7 @@ from datetime import date, datetime
 from typing import Any, Optional
 
 from agent.cards import owned_cards, which_card
+from agent.debit_lookup import NAMES as LOOKUP_NAMES, debit_lookups
 from agent.workflows.debit_dispute import PARTIAL_AMOUNT_CATEGORIES, DebitDispute
 from agent.workflows.debit_replacement import DebitReplacement
 from agent.specialist import SpecialistConfig, Validator, ValidationContext
@@ -52,7 +53,11 @@ limits and alerts, and debit transaction disputes.
 How to work:
 1. Search the policy notes for the procedure for this request before you act. The internal
    procedures are for you; do not quote them to the customer.
-2. Find the customer's cards and accounts with your read tools. If the customer did not say
+2. LOOK THINGS UP BEFORE YOU ASK. find_debit_transactions searches a card's transactions (name the card by its
+   id, last four digits or account, and give any merchant, rough amount, date or transaction id the customer
+   said); list_debit_cards and look_up_customer_records show their cards and accounts. For a dispute you may not
+   ask the customer anything until you have used one of them; ask only if the search finds nothing or several.
+   Never ask for a transaction id, card id or account id that a search can find. If the customer did not say
    which card or account and more than one could be meant, ask. Do not choose.
 3. A frozen card must be unfrozen before it can be closed. Only one card can be active on a
    checking account, so the old card is closed before a replacement is ordered for it.
@@ -391,4 +396,7 @@ DEBIT_SPECIALIST = SpecialistConfig(
     prepare=prepare,
     workflows=(DebitDispute(), DebitReplacement()),
     answer_check=answer_check,
+    lookups=debit_lookups,
+    lookup_first=frozenset({K.DISPUTE_TRANSACTION}),
+    lookup_names=LOOKUP_NAMES,
 )
