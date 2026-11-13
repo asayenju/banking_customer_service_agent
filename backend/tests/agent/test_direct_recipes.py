@@ -291,3 +291,70 @@ def test_an_ambiguous_freeze_asks_through_the_orchestrator_instead_of_guessing()
     result = asyncio.run(orchestrator(shared, [intent]).handle_turn("m1", "freeze my card"))
     assert "Which card do you mean?" in result.reply.text and result.reply.text.count("the card ending") == 2
     assert shared.audit_log == ()
+
+
+# ------------------------------------------------------------------ the transactions on one card, named in the customer's words
+
+def world(task):
+    from banking_tools.manifest import load_tasks
+
+    return BankingSession.from_task({t["id"]: t for t in load_tasks()}["task_031" if task == "fatima" else "task_078"], fidelity=Fidelity.TAU2)
+
+
+def history(shared, said, user, **slots):
+    return run(K.ACCOUNT_BALANCE_OR_HISTORY, shared, slots=slots, user=user, summary=said)
+
+
+FATIMA, MEI = "890389b165", "mc78a5b9d2"
+
+
+def test_the_charges_on_one_credit_card_are_listed_for_that_card_only():
+    out = history(world("fatima"), "show me the transactions on my Silver card", FATIMA)
+    assert out.status is OutcomeStatus.DONE and out.text.startswith("Recent charges on your Silver Rewards Card:")
+    assert "Marriott Hotels" in out.text and "$167.34" in out.text and "11/07/2025" in out.text
+    assert "EcoCard" not in out.text and len(out.text.splitlines()) <= 11
+
+
+def test_a_more_specific_card_name_wins_over_a_part_of_another():
+    shared = world("fatima")
+    assert "Business Platinum Rewards Card" in history(shared, "what is on my business platinum card", FATIMA).text
+    assert history(shared, "charges on the crypto card", FATIMA).text.startswith("Recent charges on your Crypto-Cash Back:")
+
+
+def test_a_card_with_no_charges_says_so():
+    shared = world("fatima")
+    for t in list(shared.database.credit_card_transaction_history.data.values()):
+        if t["user_id"] == FATIMA and t["credit_card_type"] == "EcoCard":
+            del shared.database.credit_card_transaction_history.data[t["transaction_id"]]
+    assert "no charges on your EcoCard" in history(shared, "transactions on my eco card", FATIMA).text
+
+
+def test_one_debit_account_is_listed_and_not_the_light_green_one_when_green_is_named():
+    shared = world("mei")
+    green = history(shared, "show the transactions on my Green Account card", MEI)
+    assert "Recent activity on your Green Account:" in green.text and "CHEESECAKE" in green.text and "AMAZON" not in green.text
+    light = history(shared, "what happened on my light green card", MEI)
+    assert "Recent activity on your Light Green Account:" in light.text and "AMAZON" in light.text
+
+
+def test_a_debit_card_named_by_its_last_four_digits():
+    out = history(world("mei"), "the card ending 7391", MEI)
+    assert "Recent activity on your Green Account:" in out.text
+
+
+def test_credit_or_debit_in_the_words_picks_the_product():
+    shared = world("fatima")
+    assert "Recent charges on your Silver Rewards Card" in history(shared, "my silver credit card transactions", FATIMA).text
+
+
+def test_a_name_that_fits_two_products_is_asked_about_and_another_customers_card_is_never_shown():
+    shared = world("mei")
+    shared.database.credit_card_accounts.data["cc_mei_x"] = {"account_id": "cc_mei_x", "user_id": MEI, "card_type": "Green Rewards Card", "status": "ACTIVE", "current_balance": "$1.00"}
+    ask = history(shared, "transactions on my green card", MEI)
+    assert ask.status is OutcomeStatus.NEEDS_INFO and "Which card do you mean?" in ask.questions[0].text
+    assert "Silver" not in history(world("mei"), "transactions on my silver card", MEI).text
+
+
+def test_no_card_named_still_gives_the_account_overview():
+    out = history(world("fatima"), "what are my balances", FATIMA)
+    assert out.text.startswith("Your accounts:")
