@@ -145,13 +145,10 @@ def test_a_dispute_that_does_not_match_the_transaction_stops_the_tier_one_run():
     assert result.error and "disputed amount must be between" in result.error and not result.passed
 
 
-def test_task_082_differs_from_the_reference_only_where_the_reference_goes_past_the_written_policy():
+def test_task_082_matches_the_reference_now_that_the_card_closure_is_the_customers_choice():
+    """The reference closes the lost Blue card (reason lost) and leaves the Green card the customer wants to keep."""
     result = run_tier1(TASKS["task_082"], DEBIT_SPECIALIST, index=INDEX)
-    assert result.error is None and not result.strict_equal
-    # Provisional credit on a recurring-charge dispute, the closure reason of the lost card, and
-    # the card left open after a card-not-present fraud dispute: see tests/agent/test_workflow_dispute.py.
-    tables = {m.split(":")[0].split("/")[0] for m in result.mismatches}
-    assert tables <= {"debit_card_disputes", "debit_cards"}
+    assert result.error is None and result.passed and result.strict_equal
 
 
 # ------------------------------------------------------------------ the whole pilot, offline
@@ -176,4 +173,4 @@ def test_every_other_pilot_task_ends_in_taus_exact_database_hash():
     usable = [r for r in report.results if not r.excluded]
     assert len(usable) == 12 and "1 excluded" in text
     failures = [(r.task_id, r.error or r.mismatches) for r in usable if not (r.passed and r.strict_equal)]
-    assert [f[0] for f in failures] == ["task_082"], text
+    assert failures == [], text

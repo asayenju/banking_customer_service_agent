@@ -316,11 +316,13 @@ class GoldModel:
     """Plays the right answer for each segment, one conversation after another."""
 
     def __init__(self, task, usage=Usage(input_tokens=800, output_tokens=60)):
-        items = [i for i in plan_items(gold_steps(task), DEBIT_SPECIALIST) if isinstance(i, Segment)]
+        steps = gold_steps(task)
+        gold_writes = [x for x in steps if x.kind == "write"]
+        items = [i for i in plan_items(steps, DEBIT_SPECIALIST) if isinstance(i, Segment)]
         ids, vault = Calls(), SecretVault()
         database = apply_initial_state(_base_db().model_copy(deep=True), task)
         self.conversations = [
-            workflow_turns(DEBIT_SPECIALIST, i.kind, i.reads, i.writes, database, "", ids)
+            workflow_turns(DEBIT_SPECIALIST, i.kind, i.reads, i.writes, database, "", ids, gold_writes)
             or scripted_turns(i.reads, i.writes, vault, ids)
             for i in items
         ]

@@ -12,7 +12,10 @@ from typing import Any, Optional
 
 
 
-def facts_from_gold(workflow: str, writes: Sequence[Any], database: Any) -> Optional[dict[str, Any]]:
+def facts_from_gold(
+    workflow: str, writes: Sequence[Any], database: Any, gold_writes: Sequence[Any] = ()
+) -> Optional[dict[str, Any]]:
+    """``gold_writes`` is every write of the whole task, for a customer choice that a later segment carries out."""
     if workflow == "close_account":
         from agent.workflows.account_close import CLOSE_TOOL, DEFAULT_REASON, TRANSFER_TOOL
 
@@ -62,8 +65,16 @@ def facts_from_gold(workflow: str, writes: Sequence[Any], database: Any) -> Opti
             "transaction_id discovery_date disputed_amount transaction_type card_in_possession "
             "pin_compromised contacted_merchant police_report_filed written_statement_provided"
         ).split()
+        closed = {w.args["card_id"] for w in (*writes, *gold_writes) if w.name == "close_debit_card_4721"}
         return {
-            "disputes": [{**{k: d.args[k] for k in keys}, "category": d.args["dispute_category"]} for d in disputes]
+            "disputes": [
+                {
+                    **{k: d.args[k] for k in keys},
+                    "category": d.args["dispute_category"],
+                    "card_closure": "yes" if d.args["card_id"] in closed else "no",
+                }
+                for d in disputes
+            ]
         }
     if workflow == "debit_replacement":
         orders = [w for w in writes if w.name == "order_debit_card_5739"]
