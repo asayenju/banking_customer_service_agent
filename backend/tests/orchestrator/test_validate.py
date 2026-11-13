@@ -133,9 +133,13 @@ def test_validate_is_idempotent() -> None:
 
 
 def test_amount_filed_as_an_id_is_dropped_and_reported_missing() -> None:
-    out = run("dispute $200", I("a", K.DISPUTE_TRANSACTION, slots={"transaction_id": "$200", "amount": "200"}))
+    out = run("pay $200", I("a", K.PAY_CREDIT_CARD, slots={"account_id": "$200", "amount": "200"}))
     assert out.intents[0].slots == {"amount": "200"}
-    assert out.intents[0].missing_slots == ("transaction_id",)
+    assert out.intents[0].missing_slots == ("account_id",)
+
+
+def test_a_dispute_never_asks_for_a_transaction_id() -> None:
+    assert run("dispute", I("a", K.DISPUTE_TRANSACTION)).intents[0].missing_slots == ()
 
 
 def test_real_ids_survive() -> None:
@@ -149,7 +153,6 @@ def test_card_requests_do_not_demand_a_card_id_because_code_picks_the_card() -> 
 
 
 def test_requests_no_code_resolves_yet_still_ask_for_their_ids() -> None:
-    assert run("dispute", I("a", K.DISPUTE_TRANSACTION)).intents[0].missing_slots == ("transaction_id",)
     assert run("close", I("a", K.CLOSE_ACCOUNT)).intents[0].missing_slots == ("account_id",)
     assert run("pay", I("a", K.PAY_CREDIT_CARD)).intents[0].missing_slots == ("account_id", "amount")
 

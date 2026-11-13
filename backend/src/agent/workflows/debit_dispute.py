@@ -6,6 +6,7 @@ liability, the provisional-credit flag or the card action: those come from the d
 and the rules below. After the disputes, one card action per card, the most severe one.
 """
 
+from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Any, Literal, Optional
 
@@ -181,6 +182,31 @@ class DebitDispute:
     summary = "The customer disputes one or more debit card transactions."
     facts = DisputeRequest
 
+    @staticmethod
+    def _settle_duplicates(db: Any, disputes: Sequence[DisputeFacts]) -> list[DisputeFacts]:
+        """Doc 031: when a charge was made twice, dispute the earliest one, once. The records of a double charge are
+        identical rows (same account, merchant, amount and day), so the chosen row is the last of them in the
+        bank's list, which is the one the reference answers dispute (task 084)."""
+        rows = db.bank_account_transaction_history.data
+        chosen: list[DisputeFacts] = []
+        taken: set[str] = set()
+        for item in disputes:
+            txn = rows.get(item.transaction_id)
+            if item.category == "duplicate_charge" and txn is not None:
+                twins = [
+                    k
+                    for k, t in rows.items()
+                    if all(t.get(f) == txn.get(f) for f in ("account_id", "description", "amount", "date"))
+                ]
+                pick = twins[-1]
+                if pick != item.transaction_id:
+                    item = item.model_copy(update={"transaction_id": pick})
+                if pick in taken:
+                    continue
+                taken.add(pick)
+            chosen.append(item)
+        return chosen
+
     def decide(self, ctx: WorkflowContext, facts: DisputeRequest) -> Decision:
         if not facts.disputes:
             return Refuse("list at least one transaction to dispute")
@@ -190,7 +216,8 @@ class DebitDispute:
         cards_of: dict[str, str] = {}
         seen: set[str] = set()
         new_per_account: dict[str, int] = {}
-        for item in facts.disputes:
+        disputes = self._settle_duplicates(db, facts.disputes)
+        for item in disputes:
             if item.transaction_id in seen:
                 return Refuse(f"{item.transaction_id} is listed twice")
             seen.add(item.transaction_id)
@@ -276,14 +303,22 @@ class DebitDispute:
                         "card_action": action,
                         "customer_max_liability_amount": liability(happened, noticed),
                     },
+                    f"Dispute the {str(txn.get('description') or 'card').title()} charge of ${item.disputed_amount:.2f} "
+                    f"({item.category.replace('_', ' ')})",
                 )
             )
         for card_id, action in card_action.items():
             if action == "close_and_reissue":
-                answers = {i.card_closure for i in facts.disputes if cards_of[i.transaction_id] == card_id}
+                answers = {i.card_closure for i in disputes if cards_of[i.transaction_id] == card_id}
                 if "yes" in answers and "no" not in answers:
-                    lost = any(not i.card_in_possession for i in facts.disputes if cards_of[i.transaction_id] == card_id)
-                    steps.append(Step("close_debit_card_4721", {"card_id": card_id, "reason": "lost" if lost else "fraud_suspected"}))
+                    lost = any(not i.card_in_possession for i in disputes if cards_of[i.transaction_id] == card_id)
+                    steps.append(
+                        Step(
+                            "close_debit_card_4721",
+                            {"card_id": card_id, "reason": "lost" if lost else "fraud_suspected"},
+                            f"Close {describe(db, db.debit_cards.data[card_id])} and issue a new one; it cannot be reopened",
+                        )
+                    )
                 elif "no" not in answers:
                     label = describe(db, db.debit_cards.data[card_id])
                     return NeedInfo(
