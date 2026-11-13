@@ -46,6 +46,7 @@ def test_workflow_builds_the_reference_dispute_steps(task, steps, disputes):
                 transaction_id=d.args["transaction_id"],
                 category=d.args["dispute_category"],
                 discovery_date=d.args["discovery_date"],
+                noticed_words=f"noticed on {d.args['discovery_date']}",
                 disputed_amount=d.args["disputed_amount"],
                 transaction_type=d.args["transaction_type"],
                 card_in_possession=d.args["card_in_possession"],
@@ -93,7 +94,7 @@ def _dispute_084(amount, category="incorrect_amount"):
     facts = DisputeRequest(
         disputes=[
             DisputeFacts(
-                transaction_id="btxn_f9d4c10e3d56", category=category, discovery_date="11/09/2025",
+                transaction_id="btxn_f9d4c10e3d56", category=category, discovery_date="11/09/2025", noticed_words="noticed on 11/09/2025",
                 disputed_amount=amount, transaction_type="signature_purchase", card_in_possession=True,
                 pin_compromised="no", contacted_merchant=True, police_report_filed=False,
                 written_statement_provided=True, card_closure="not_asked",
@@ -137,7 +138,7 @@ def test_an_atm_transaction_type_comes_from_the_record():
     facts = DisputeRequest(
         disputes=[
             DisputeFacts(
-                transaction_id="btxn_3bd1ba6ad800", category="atm_cash_discrepancy", discovery_date="11/09/2025",
+                transaction_id="btxn_3bd1ba6ad800", category="atm_cash_discrepancy", discovery_date="11/09/2025", noticed_words="noticed on 11/09/2025",
                 disputed_amount=100.0, transaction_type="pin_purchase", card_in_possession=True, pin_compromised="no",
                 contacted_merchant=False, police_report_filed=False, written_statement_provided=True, card_closure="not_asked",
             )
@@ -157,7 +158,7 @@ def test_a_double_charge_is_disputed_once_on_the_row_the_reference_disputes():
 
     def dup(txn):
         return DisputeFacts(
-            transaction_id=txn, category="duplicate_charge", discovery_date="11/10/2025", disputed_amount=47.5,
+            transaction_id=txn, category="duplicate_charge", discovery_date="11/10/2025", noticed_words="noticed on the 10th", disputed_amount=47.5,
             transaction_type="pin_purchase", card_in_possession=True, pin_compromised="no", contacted_merchant=False,
             police_report_filed=False, written_statement_provided=True, card_closure="not_asked",
         )
@@ -176,7 +177,7 @@ def _ask_about(category, **said):
     task = next(t for t in load_tasks() if t["id"] == "task_084")
     db = BankingSession.from_task(task).database
     base = dict(
-        transaction_id="btxn_e8c3b09d2c45", category=category, discovery_date=None, disputed_amount=47.5,
+        transaction_id="btxn_e8c3b09d2c45", category=category, discovery_date=None, noticed_words=None, disputed_amount=47.5,
         transaction_type="pin_purchase", card_in_possession=None, pin_compromised=None, contacted_merchant=None,
         police_report_filed=None, written_statement_provided=None, card_closure="not_asked",
     )
@@ -200,7 +201,7 @@ def test_a_fraud_dispute_asks_about_the_card_and_pin_and_not_the_merchant():
 def test_everything_the_customer_said_is_not_asked_again_and_the_rest_is_filled_in_by_the_kind_of_dispute():
     from agent.workflows.base import Plan
 
-    decision, _ = _ask_about("duplicate_charge", contacted_merchant=False, discovery_date="11/10/2025", written_statement_provided=True)
+    decision, _ = _ask_about("duplicate_charge", contacted_merchant=False, discovery_date="11/10/2025", noticed_words="noticed on the 10th", written_statement_provided=True)
     assert isinstance(decision, Plan)
     args = decision.steps[0].args
     assert args["card_in_possession"] is True and args["pin_compromised"] == "no" and args["police_report_filed"] is False
@@ -211,3 +212,43 @@ def test_a_police_report_is_asked_for_only_above_500_dollars():
 
     decision, _ = _ask_about("card_present_fraud", transaction_id="btxn_c2g7f43h6g89", disputed_amount=412.88)
     assert "police_report_filed" not in [a.slot for a in decision.questions], "412.88 is under 500"
+
+
+# ---------------------------------------------------------------- the date noticed must fit the customer's own words
+
+@pytest.mark.parametrize(
+    ("noticed", "words", "ok"),
+    [
+        (date(2025, 11, 10), "I noticed on the 10th", True),
+        (date(2025, 11, 10), "noticed on November 10th", True),
+        (date(2025, 11, 10), "noticed on 11/10/2025", True),
+        (date(2025, 11, 6), "I noticed on the 10th", False),  # the charge's day, not the day noticed
+        (date(2025, 11, 10), "noticed it on October 10th", False),
+        (date(2025, 11, 6), "right away", True),
+        (date(2025, 11, 10), "right away", False),
+        (date(2025, 11, 14), "today", True),
+        (date(2025, 11, 13), "yesterday", True),
+        (date(2025, 11, 10), "a while ago", False),
+    ],
+)
+def test_the_discovery_date_must_fit_what_the_customer_said(noticed, words, ok):
+    from agent.workflows.debit_dispute import date_matches_words
+
+    assert date_matches_words(noticed, words, date(2025, 11, 6), date(2025, 11, 14)) is ok
+
+
+def test_a_date_that_contradicts_the_customers_words_is_sent_back_to_the_model():
+    from agent.workflows.base import Refuse
+
+    decision, _ = _ask_about(
+        "duplicate_charge", contacted_merchant=False, discovery_date="11/06/2025", noticed_words="I noticed on the 10th",
+        written_statement_provided=True,
+    )
+    assert isinstance(decision, Refuse) and "not the day of the charge" in decision.reason
+
+
+def test_a_date_with_no_words_behind_it_is_asked_about_not_trusted():
+    decision, NeedInfo = _ask_about(
+        "duplicate_charge", contacted_merchant=False, discovery_date="11/10/2025", noticed_words=None, written_statement_provided=True
+    )
+    assert isinstance(decision, NeedInfo) and [a.slot for a in decision.questions] == ["discovery_date"]

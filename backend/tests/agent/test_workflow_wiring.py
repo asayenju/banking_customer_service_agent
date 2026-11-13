@@ -21,6 +21,7 @@ ONE = {
     "transaction_id": "btxn_e8c3b09d2c45",
     "category": "duplicate_charge",
     "discovery_date": "11/10/2025",
+    "noticed_words": "noticed on 11/10/2025",
     "disputed_amount": 47.5,
     "transaction_type": "pin_purchase",
     "card_in_possession": True,
@@ -67,7 +68,7 @@ def test_filled_in_form_becomes_a_plan_with_everything_else_worked_out_by_code()
 
 def test_a_fraud_dispute_closes_the_card_only_when_the_customer_agrees():
     fraud = {**ONE, "transaction_id": "btxn_c2g7f43h6g89", "category": "card_present_fraud",
-             "discovery_date": "11/14/2025", "disputed_amount": 412.88, "pin_compromised": "unknown"}
+             "discovery_date": "11/14/2025", "noticed_words": "noticed today", "disputed_amount": 412.88, "pin_compromised": "unknown"}
     outcome, _ = run([turn("start_debit_dispute", disputes=[{**fraud, "card_closure": "yes"}])])
     assert [s.tool for s in outcome.proposal.steps] == ["file_debit_card_transaction_dispute_6281", "close_debit_card_4721"]
     assert outcome.proposal.steps[0].args["customer_max_liability_amount"] == 500.0
