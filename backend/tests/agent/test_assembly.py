@@ -161,10 +161,26 @@ def test_the_demo_page_is_served_and_a_scenario_picks_the_sample_customer():
     main.app.state.conversations = {}
     client = TestClient(main.app)
     page = client.get("/demo")
-    assert page.status_code == 200 and "Customer service agent" in page.text
-    ok = client.post("/conversations/s1/messages", json={"message_id": "m1", "message": "hello", "scenario": "wallet"})
+    assert page.status_code == 200 and "Banking customer service agent" in page.text
+    ok = client.post("/conversations/s1/messages", json={"message_id": "m1", "message": "hello", "scenario": "task_078"})
     assert ok.status_code == 200 and asked == ["task_078"]
-    client.post("/conversations/s1/messages", json={"message_id": "m2", "message": "hello again", "scenario": "dispute"})
+    client.post("/conversations/s1/messages", json={"message_id": "m2", "message": "hello again", "scenario": "task_084"})
     assert asked == ["task_078"], "the scenario is read only on the first message"
     bad = client.post("/conversations/s2/messages", json={"message_id": "m1", "message": "hello", "scenario": "nope"})
     assert bad.status_code == 422
+
+
+def test_every_test_customer_is_listed_with_who_they_are_and_what_they_want():
+    page = TestClient(main.app).get("/personas")
+    people = page.json()
+    assert page.status_code == 200 and len(people) > 60
+    mei = next(p for p in people if p["id"] == "task_078")
+    assert mei["name"] == "Mei-Lin Chen" and mei["phone"] == "619-555-0284" and "debit" in mei["areas"]
+    assert mei["opening"] and mei["about"]
+    assert all(p["name"] and p["phone"] and p["email"] and p["areas"] for p in people)
+
+
+def test_a_task_that_logs_placeholder_details_is_listed_with_the_customers_real_record():
+    people = {p["id"]: p for p in TestClient(main.app).get("/personas").json()}
+    kenji = people["task_005"]
+    assert kenji["name"] == "Kenji Tanaka" and kenji["phone"] == "206-555-0293"
