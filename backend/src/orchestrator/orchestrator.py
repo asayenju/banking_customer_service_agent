@@ -58,7 +58,7 @@ from orchestrator.plan import READ_ONLY_KINDS, Plan, PlanRejected, Waiting, clos
 from orchestrator.plan_preview import PlanPreview
 from orchestrator.reply import Reply, compose_reply
 from orchestrator.routes import Route, route_for
-from orchestrator.scoring import SCORER_TIMEOUT_SECONDS, IntentScore, Scorer, score_intents
+from orchestrator.scoring import ScoreContext, SCORER_TIMEOUT_SECONDS, IntentScore, Scorer, score_intents
 from orchestrator.trace import Trace, TraceEvent, TraceKind
 from orchestrator.types import Decomposition, Intent, IntentKind, Question
 from orchestrator.unclear import HelpState, handle_unclear, offer_help, precheck
@@ -152,6 +152,7 @@ class Orchestrator:
         capture_secrets: Optional[Callable[..., str]] = None,
         scorer_timeout: float = SCORER_TIMEOUT_SECONDS,
         containment: Optional[Containment] = None,
+        products_for: Optional[Callable[[str], str]] = None,
     ) -> None:
         self._decomposer = decomposer
         self._scorer = scorer
@@ -183,6 +184,7 @@ class Orchestrator:
         self._scorer_timeout = scorer_timeout
         # Freezes made before a lost-wallet plan is worked out: (the freeze intent, what happened), this turn only.
         self._containment = containment
+        self._products_for = products_for
         self._contained: list[tuple[Intent, RouteOutcome]] = []
         # What the customer wrote while a lost-wallet report was open: containment reads the cards named in it.
         self._report_text: dict[str, str] = {}
@@ -250,6 +252,13 @@ class Orchestrator:
             self._remember(self._latest or message, result.reply.text)
             self._processed[message_id] = result
             return result
+
+    def _score_context(self) -> ScoreContext:
+        """What the scorer may be told besides the message: the last turns, and the kinds of product the verified
+        customer holds (never ids, balances or amounts)."""
+        user = self._auth.verified_user_id
+        products = self._products_for(user) if self._products_for is not None and user else ""
+        return ScoreContext(recent=self._history_now, products=products)
 
     def _remember(self, said: str, replied: str) -> None:
         """Keep the last few turns, with the customer's words as they were after secrets were hidden."""
@@ -889,7 +898,9 @@ class Orchestrator:
         for i in to_score:
             by_words.setdefault(message if i.id in touched else self._said.get(i.id, message), []).append(i)
         for words, group in by_words.items():
-            for score in await score_intents(self._scorer, words, _view(group), timeout=self._scorer_timeout):
+            for score in await score_intents(
+                self._scorer, words, _view(group), timeout=self._scorer_timeout, context=self._score_context()
+            ):
                 score = self._continued(score)
                 self._scores[score.intent_id] = score
                 events.append(

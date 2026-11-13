@@ -23,7 +23,8 @@ from typing import Any, Protocol
 
 from orchestrator.config import JEV_KEY_VAR, require
 from orchestrator.sanitize import redact
-from orchestrator.scoring import IntentScore
+from orchestrator.capabilities import capability
+from orchestrator.scoring import IntentScore, ScoreContext
 from orchestrator.types import Decomposition, Flag, Intent
 
 JEV_MODEL = "jev-1.13.0"
@@ -60,12 +61,29 @@ def _words(intent: Intent) -> str:
     return intent.kind.value.lower().replace("_", " ")
 
 
-def _state(message: str, intent: Intent) -> dict[str, str]:
-    return {
+def _state(message: str, intent: Intent, context: ScoreContext | None = None) -> dict[str, str]:
+    """Everything Jev is shown. The decomposer's finding (the kind, what it understood, the words it pointed to, and
+    which details it has or lacks) and what the assistant can really do for that kind, so Jev judges the request against
+    what is on offer. Never a detail's value (Jev is weak at numbers and dates, and the values are private)."""
+    state = {
         "customer_message": redact(message),
         "request_kind": _words(intent),
         "request_summary": redact(intent.summary),
+        "what_the_assistant_can_do_for_this_kind": capability(intent.kind),
     }
+    if intent.source_span is not None:
+        start, end = intent.source_span
+        if 0 <= start < end <= len(message):
+            state["customer_words_it_points_to"] = redact(message[start:end])
+    if intent.slots or intent.missing_slots:
+        state["details_found"] = ", ".join(sorted(intent.slots)) or "none"
+        state["details_missing"] = ", ".join(intent.missing_slots) or "none"
+    if context is not None:
+        if context.recent:
+            state["recent_conversation"] = " | ".join(f"{who}: {redact(said)[:300]}" for who, said in context.recent[-4:])
+        if context.products:
+            state["products_the_customer_holds"] = context.products
+    return state
 
 
 def _questions(intent: Intent) -> dict[str, dict[str, str]]:
@@ -73,8 +91,9 @@ def _questions(intent: Intent) -> dict[str, dict[str, str]]:
         KIND_QUESTION: {
             "type": "noul",
             "instructions": (
-                f"Does the customer's message contain a request that fits the category "
-                f"'{_words(intent)}' ({redact(intent.summary)})?"
+                f"The assistant read the customer's message (with the recent conversation, if any) as the category "
+                f"'{_words(intent)}': {redact(intent.summary)}. Given what the assistant can do for that category, "
+                f"is that what the customer is asking for?"
             ),
         },
         SCOPE_QUESTION: {
@@ -100,7 +119,7 @@ class JevScorer:
         self._timeout = timeout
 
     async def score(
-        self, message: str, decomposition: Decomposition
+        self, message: str, decomposition: Decomposition, context: ScoreContext | None = None
     ) -> Sequence[IntentScore]:
         if Flag.INJECTION_SUSPECTED in decomposition.flags:
             return tuple(
@@ -108,7 +127,7 @@ class JevScorer:
                 for i in decomposition.intents
             )
         results = await asyncio.gather(
-            *(self._score_one(message, i) for i in decomposition.intents),
+            *(self._score_one(message, i, context) for i in decomposition.intents),
             return_exceptions=True,
         )
         scores: list[IntentScore] = []
@@ -120,9 +139,9 @@ class JevScorer:
                 scores.append(result)
         return tuple(scores)
 
-    async def _score_one(self, message: str, intent: Intent) -> IntentScore:
+    async def _score_one(self, message: str, intent: Intent, context: ScoreContext | None = None) -> IntentScore:
         response = await self._client.system_one(
-            _state(message, intent),
+            _state(message, intent, context),
             _questions(intent),
             model=self._model,
             timeout=self._timeout,

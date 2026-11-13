@@ -110,3 +110,74 @@ def test_live_jev_scores_a_clear_request_high_and_nonsense_low() -> None:
     (good,) = asyncio.run(scorer.score("please freeze my debit card", clear))
     (bad,) = asyncio.run(scorer.score("what a lovely day for a picnic", odd))
     assert good.kind_confidence > bad.kind_confidence
+
+
+# ---------------------------------------------------------------- Jev is told what the assistant found and what it can do
+
+def score_with(context, message, *intents):
+    d = Decomposition(intents=tuple(intents), flags=())
+    fake = FakeJev()
+    asyncio.run(JevScorer(fake).score(message, d, context))
+    return fake.calls[0]
+
+
+def test_every_kind_has_a_plain_sentence_about_what_the_assistant_can_do_for_it() -> None:
+    from orchestrator.capabilities import CAPABILITY
+
+    assert set(CAPABILITY) == set(IntentKind) and all(len(text) > 20 for text in CAPABILITY.values())
+
+
+def test_jev_is_told_what_the_assistant_can_do_for_the_kind_and_what_words_the_decomposer_pointed_to() -> None:
+    message = "I want to see my silver reward card"
+    intent = Intent(id="a", kind=K.ACCOUNT_BALANCE_OR_HISTORY, summary="see my silver reward card", source_span=(10, 35))
+    call = score_with(None, message, intent)
+    state = call["state"]
+    assert "Read only" in state["what_the_assistant_can_do_for_this_kind"] and "transactions" in state["what_the_assistant_can_do_for_this_kind"]
+    assert state["customer_words_it_points_to"] == message[10:35]
+    assert "what the assistant can do" in call["questions"][KIND_QUESTION]["instructions"]
+
+
+def test_jev_is_told_which_details_were_found_by_name_but_never_their_values() -> None:
+    intent = Intent(id="a", kind=K.DISPUTE_TRANSACTION, summary="dispute a charge", slots={"card_id": "Silver Rewards Card", "amount": "47.50"}, missing_slots=("reason",))
+    state = score_with(None, "dispute the 47.50 charge on my silver card", intent)["state"]
+    assert state["details_found"] == "amount, card_id" and state["details_missing"] == "reason"
+    assert "47.50" not in str({k: v for k, v in state.items() if k != "customer_message"}) and "Silver Rewards Card" not in str(
+        {k: v for k, v in state.items() if k not in ("customer_message", "request_summary")}
+    )
+
+
+def test_the_recent_conversation_and_the_products_held_reach_jev_with_secrets_hidden() -> None:
+    from orchestrator.scoring import ScoreContext
+
+    context = ScoreContext(
+        recent=(("customer", "my card ending 4111111111111111 was declined"), ("agent", "Which card do you mean?")),
+        products="credit cards: Silver Rewards Card",
+    )
+    state = score_with(context, "the silver one", I("a", K.ACCOUNT_BALANCE_OR_HISTORY))["state"]
+    assert "Which card do you mean?" in state["recent_conversation"] and "4111111111111111" not in state["recent_conversation"]
+    assert state["products_the_customer_holds"] == "credit cards: Silver Rewards Card"
+
+
+def test_without_a_context_the_state_has_no_conversation_or_products() -> None:
+    state = score_with(None, "hello", I("a"))["state"]
+    assert "recent_conversation" not in state and "products_the_customer_holds" not in state
+
+
+def test_the_orchestrator_hands_the_context_only_to_a_scorer_that_asks_for_it() -> None:
+    from orchestrator.scoring import IntentScore, ScoreContext
+
+    seen = []
+
+    class WantsContext:
+        async def score(self, message, decomposition, context=None):
+            seen.append(context)
+            return [IntentScore.flat(i.id, 0.9) for i in decomposition.intents]
+
+    class Plain:
+        async def score(self, message, decomposition):
+            return [IntentScore.flat(i.id, 0.9) for i in decomposition.intents]
+
+    d = Decomposition(intents=(I("a"),), flags=())
+    ctx = ScoreContext(recent=(("customer", "hi"),), products="x")
+    assert asyncio.run(score_intents(WantsContext(), "m", d, context=ctx))[0].confidence == 0.9 and seen == [ctx]
+    assert asyncio.run(score_intents(Plain(), "m", d, context=ctx))[0].confidence == 0.9
