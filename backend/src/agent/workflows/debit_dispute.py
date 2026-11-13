@@ -134,6 +134,26 @@ def parse_date(text: str) -> Optional[date]:
     return None
 
 
+# A cash machine record says how it was paid; a purchase record does not say PIN, signature or online, so only these
+# are taken from the record rather than from what the customer said.
+RECORD_TRANSACTION_TYPES = {"atm_withdrawal": "atm_withdrawal", "atm_deposit": "atm_deposit"}
+
+
+def settle_year(noticed: date, happened: date, today: date) -> date:
+    """The customer says a month and day; the model may add the wrong year. A date before the charge is the same
+    day in the charge's year, or the year after it, whichever is not before the charge and not after today."""
+    if noticed >= happened:
+        return noticed
+    for year in (happened.year, happened.year + 1):
+        try:
+            candidate = noticed.replace(year=year)
+        except ValueError:
+            continue
+        if happened <= candidate <= today:
+            return candidate
+    return noticed
+
+
 def liability(transaction_date: date, discovery: date) -> float:
     return 500.0 if (discovery - transaction_date).days > LATE_AFTER_DAYS else 50.0
 
@@ -184,6 +204,9 @@ class DebitDispute:
             noticed = parse_date(item.discovery_date)
             if happened is None or noticed is None:
                 return Refuse("discovery_date must be written MM/DD/YYYY")
+            noticed = settle_year(noticed, happened, ctx.today)
+            if (from_record := RECORD_TRANSACTION_TYPES.get(str(txn.get("type")))) is not None:
+                item = item.model_copy(update={"transaction_type": from_record})
             if noticed < happened or noticed > ctx.today:
                 return Refuse(
                     f"discovery_date {item.discovery_date} cannot be before the charge on "

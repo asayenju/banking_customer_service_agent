@@ -112,3 +112,36 @@ def test_an_incorrect_amount_dispute_for_the_whole_charge_is_refused_with_what_t
 
 def test_an_incorrect_amount_dispute_for_the_overcharge_is_planned():
     assert isinstance(_dispute_084(100.0), Plan)
+
+
+# ---------------------------------------------------------------- details taken from the records, not the model
+
+def test_a_wrong_year_on_the_discovery_date_is_settled_from_the_charge():
+    from agent.workflows.debit_dispute import settle_year
+
+    charge, today = date(2025, 10, 4), date(2025, 11, 14)
+    assert settle_year(date(2025, 10, 9), charge, today) == date(2025, 10, 9), "a valid date is left alone"
+    assert settle_year(date(2024, 10, 9), charge, today) == date(2025, 10, 9), "the year before the charge becomes its year"
+    assert settle_year(date(2025, 1, 12), charge, today) == date(2025, 1, 12), "no year fits, so the date is refused as before"
+    assert settle_year(date(2025, 1, 12), date(2024, 12, 20), today) == date(2025, 1, 12)
+    assert settle_year(date(2024, 1, 12), date(2024, 12, 20), today) == date(2025, 1, 12), "the year after the charge"
+
+
+def test_an_atm_transaction_type_comes_from_the_record():
+    from agent.workflows.base import Plan
+
+    task = next(t for t in load_tasks() if t["id"] == "task_082")
+    from banking_tools import BankingSession
+
+    db = BankingSession.from_task(task).database
+    facts = DisputeRequest(
+        disputes=[
+            DisputeFacts(
+                transaction_id="btxn_3bd1ba6ad800", category="atm_cash_discrepancy", discovery_date="11/09/2025",
+                disputed_amount=100.0, transaction_type="pin_purchase", card_in_possession=True, pin_compromised="no",
+                contacted_merchant=False, police_report_filed=False, written_statement_provided=True, card_closure="not_asked",
+            )
+        ]
+    )
+    decision = DebitDispute().decide(WorkflowContext(db, "mc47a2b9e1", date(2025, 11, 14)), facts)
+    assert isinstance(decision, Plan) and decision.steps[0].args["transaction_type"] == "atm_withdrawal"
