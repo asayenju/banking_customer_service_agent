@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from datetime import date, datetime, timedelta
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from agent.workflows.base import (
     Ask,
@@ -71,7 +71,9 @@ class NewCard(BaseModel):
 
     account_id: str
     delivery_option: Delivery
-    card_design: Design
+    card_design: Design = Field(
+        description="The design the customer asked for. If they did not mention a design, CLASSIC. BEST_FREE only if they ask for the best free one."
+    )
     # The address the customer gave, or null for the one on file.
     shipping_address: Optional[str]
     # The customer's answer to the excess replacement fee: "yes" they pay it, "no" they decline it, or

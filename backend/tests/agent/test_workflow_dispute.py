@@ -81,3 +81,34 @@ def test_workflow_builds_the_reference_dispute_steps(task, steps, disputes):
     wanted = {(t, a["card_id"]) for t, a in gold if not t.startswith("file")}
     assert len(acts - wanted) == known.get("extra_closures", 0)
     assert len(wanted - acts) == known.get("missing_closures", 0)
+
+
+# ---------------------------------------------------------------- a partial category never disputes the whole charge (084)
+
+def _dispute_084(amount, category="incorrect_amount"):
+    from banking_tools import BankingSession
+
+    task = next(t for t in load_tasks() if t["id"] == "task_084")
+    db = BankingSession.from_task(task).database
+    facts = DisputeRequest(
+        disputes=[
+            DisputeFacts(
+                transaction_id="btxn_f9d4c10e3d56", category=category, discovery_date="11/09/2025",
+                disputed_amount=amount, transaction_type="signature_purchase", card_in_possession=True,
+                pin_compromised="no", contacted_merchant=True, police_report_filed=False,
+                written_statement_provided=True, card_closure="not_asked",
+            )
+        ]
+    )
+    return DebitDispute().decide(WorkflowContext(db, "a7c2f85d91", date(2025, 11, 14)), facts)
+
+
+def test_an_incorrect_amount_dispute_for_the_whole_charge_is_refused_with_what_to_do():
+    from agent.workflows.base import Refuse
+
+    decision = _dispute_084(189.23)
+    assert isinstance(decision, Refuse) and "only part of the $189.23 charge" in decision.reason
+
+
+def test_an_incorrect_amount_dispute_for_the_overcharge_is_planned():
+    assert isinstance(_dispute_084(100.0), Plan)

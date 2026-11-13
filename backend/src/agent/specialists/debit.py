@@ -20,12 +20,13 @@ checked; which of them applies to a given account tier is left to the policy not
 model reads, because the tier is not a field in the database.
 """
 
+import re
 from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Any, Optional
 
 from agent.cards import owned_cards, which_card
-from agent.workflows.debit_dispute import DebitDispute
+from agent.workflows.debit_dispute import PARTIAL_AMOUNT_CATEGORIES, DebitDispute
 from agent.workflows.debit_replacement import DebitReplacement
 from agent.specialist import SpecialistConfig, Validator, ValidationContext
 from tau2.domains.banking_knowledge.tools import _validate_pin
@@ -92,6 +93,27 @@ DESIGN_FEES: Mapping[str, frozenset[float]] = {
     "CUSTOM": frozenset({0.0, 15.0, 25.0}),
 }
 EXCESS_REPLACEMENT_FEES = frozenset({0.0, 15.0, 25.0})
+
+
+# A plain answer changes nothing: only a plan the customer approves does. So an answer that says a card has been or
+# will be closed, ordered or issued, with no plan behind it, is a false claim (task 082: "new cards will be issued"
+# after the replacement workflow refused).
+_CLAIMS_AN_ACTION = re.compile(
+    r"\b(?:new\s+)?(?:debit\s+)?cards?\b[^.?!]{0,60}\b(?:will\s+be|has\s+been|have\s+been|is\s+being|are\s+being)\s+"
+    r"(?:issued|ordered|sent|shipped|closed|replaced|mailed)\b"
+    r"|\b(?:I|we)(?:'ve|\s+have)\s+(?:closed|ordered|issued|sent|replaced|shipped|mailed|filed)\b"
+    r"|\b(?:I|we)(?:'ll|\s+will)\s+(?:close|order|issue|send|replace|ship|mail|file)\b",
+    re.IGNORECASE,
+)
+
+
+def answer_check(answer: str) -> Optional[str]:
+    if _CLAIMS_AN_ACTION.search(answer):
+        return (
+            "a plain answer closes, orders and issues nothing, so do not say a card was or will be closed, ordered "
+            "or issued: say only what is true, or fix the form and propose the plan"
+        )
+    return None
 
 
 def _row(v: ValidationContext, table: str, key: Any) -> Optional[Mapping[str, Any]]:
@@ -256,12 +278,6 @@ def temporary_limit(v: ValidationContext, args: Mapping[str, Any]) -> Optional[s
     return None
 
 
-# Dispute categories where only part of the transaction may be in question. Every other
-# category (fraud, a duplicate, goods not received, a charge after cancelling) disputes the
-# whole amount.
-PARTIAL_AMOUNT_CATEGORIES = frozenset({"atm_cash_discrepancy", "incorrect_amount", "atm_deposit_not_credited"})
-
-
 def _day(text: Any) -> Optional[date]:
     """A date from MM/DD/YYYY, with or without a time after it."""
     try:
@@ -342,4 +358,5 @@ DEBIT_SPECIALIST = SpecialistConfig(
     validators=VALIDATORS,
     prepare=prepare,
     workflows=(DebitDispute(), DebitReplacement()),
+    answer_check=answer_check,
 )

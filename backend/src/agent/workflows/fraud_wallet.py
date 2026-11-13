@@ -22,7 +22,7 @@ from collections.abc import Mapping, Sequence
 from datetime import timedelta
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from agent.cards import describe, describe_credit, owned_credit_accounts
 from agent.workflows.base import Ask, Decision, HandOff, NeedInfo, Plan, Refuse, Reply, Step, WorkflowContext
@@ -47,7 +47,9 @@ class Replacement(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     delivery_option: Literal["STANDARD", "EXPEDITED", "RUSH", "FASTEST_FREE"]
-    card_design: Literal["CLASSIC", "PREMIUM", "CUSTOM", "BEST_FREE"]
+    card_design: Literal["CLASSIC", "PREMIUM", "CUSTOM", "BEST_FREE"] = Field(
+        description="What the customer asked for; CLASSIC if they did not mention a design; BEST_FREE only if they ask for the best free one."
+    )
     # The address the customer gave, or null for the one on file.
     shipping_address: Optional[str]
     # "yes" they pay an excess replacement fee, "no" they decline it, "not_asked" if not asked or it does not apply.
