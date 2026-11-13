@@ -46,7 +46,9 @@ from orchestrator.containment import Containment
 from orchestrator.context import AgentSession, Mode, RouteContext, SessionRequest
 from orchestrator.llm_decomposer import confirms_understanding, is_affirmation
 from orchestrator.bands import PROCEED_AT, WRITE_KIND_ASK_AT
-from orchestrator.decision import CLARIFY_SLOT, CONFIRM_SLOT, HUMAN_AFTER_ASKS, Action, IntentDecision, decide, fingerprint
+from orchestrator.capabilities import capability
+from orchestrator.controller import Choice, ControlCase, Controller
+from orchestrator.decision import CLARIFY_SLOT, CONFIRM_SLOT, HUMAN_AFTER_ASKS, NO_YES_NEEDED, Action, IntentDecision, decide, fingerprint
 from orchestrator.decomposer import Decomposer, Interpretation
 from orchestrator.executor import (
     ROUTE_TIMEOUTS,
@@ -56,6 +58,7 @@ from orchestrator.executor import (
     RouteRunner,
     execute_plan,
 )
+from orchestrator.sanitize import redact
 from orchestrator.plan import READ_ONLY_KINDS, Plan, PlanRejected, Waiting, closes_wait_for_openings, plan
 from orchestrator.plan_preview import PlanPreview
 from orchestrator.reply import Reply, compose_reply
@@ -66,6 +69,7 @@ from orchestrator.types import Decomposition, Intent, IntentKind, Question
 from orchestrator.unclear import HelpState, handle_unclear, offer_help, precheck
 
 MAX_ASKS = 3
+CONTROLLER_TIMEOUT_SECONDS = 20.0
 # Kinds a decomposer may call a reply to a clarifying question instead of the kind of the open request.
 _SIBLINGS: dict[IntentKind, frozenset[IntentKind]] = {
     IntentKind.DISPUTE_TRANSACTION: frozenset({IntentKind.REPORT_FRAUD_OR_LOSS}),
@@ -172,6 +176,8 @@ class Orchestrator:
         scorer_timeout: float = SCORER_TIMEOUT_SECONDS,
         containment: Optional[Containment] = None,
         products_for: Optional[Callable[[str], str]] = None,
+        controller: Optional[Controller] = None,
+        controller_timeout: float = CONTROLLER_TIMEOUT_SECONDS,
     ) -> None:
         self._decomposer = decomposer
         self._scorer = scorer
@@ -204,6 +210,10 @@ class Orchestrator:
         # Freezes made before a lost-wallet plan is worked out: (the freeze intent, what happened), this turn only.
         self._containment = containment
         self._products_for = products_for
+        self._controller = controller
+        self._controller_timeout = controller_timeout
+        self._asked_log: dict[str, list[str]] = {}
+        self._control_memo: dict[str, tuple[str, IntentDecision]] = {}
         self._contained: list[tuple[Intent, RouteOutcome]] = []
         # What the customer wrote while a lost-wallet report was open: containment reads the cards named in it.
         self._report_text: dict[str, str] = {}
@@ -301,6 +311,123 @@ class Orchestrator:
         products = self._products_for(user) if self._products_for is not None and user else ""
         return ScoreContext(recent=self._history_now, products=products)
 
+    def _by_score(self, intent: Intent) -> IntentDecision:
+        """The threshold decision for a request that has a score (the original gate)."""
+        previewing = self._previews(intent)
+        # A route that proposes plans gets its yes from the plan, not the intent.
+        already = {intent.id: fingerprint(intent)} if previewing else self._confirmed
+        decision = decide(intent, self._scores[intent.id], already)
+        if previewing and decision.action is Action.RUN:
+            decision = self._plan_decision(intent)
+        return decision
+
+    async def _score_one(self, intent: Intent, message: str, touched: set[str], events: list[TraceEvent]) -> IntentScore:
+        """Ask the scorer about one request now, on the message that stated it (or the whole story after a clarification)."""
+        words = message if intent.id in touched and intent.id not in self._clarified else self._said.get(intent.id, message)
+        (score,) = await score_intents(
+            self._scorer, words, _view([intent]), timeout=self._scorer_timeout, context=self._score_context()
+        )
+        score = self._continued(score)
+        self._scores[intent.id] = score
+        events.append(TraceEvent(kind=TraceKind.SCORED, intent_id=score.intent_id, detail=score.error or f"{score.confidence:.2f}"))
+        return score
+
+    async def _by_threshold(self, intent: Intent, message: str, touched: set[str], events: list[TraceEvent]) -> IntentDecision:
+        if intent.id not in self._scores or intent.id in touched:
+            await self._score_one(intent, message, touched, events)
+        return self._by_score(intent)
+
+    def _case_for(self, intent: Intent, message: str, touched: set[str], events: list[TraceEvent]) -> ControlCase:
+        user = self._auth.verified_user_id
+        products = self._products_for(user) if self._products_for is not None and user else ""
+        asked = self._pending_route_questions.get(intent.id)
+        on_screen = (asked[0].text or asked[0].slot.replace("_", " ")) if asked else (self._clarifying[intent.id].text or "") if intent.id in self._clarifying else ""
+        if intent.kind in READ_ONLY_KINDS:
+            safety = "read only"
+        elif intent.kind in NO_YES_NEEDED:
+            safety = "reversible change (it runs without a yes and can be undone)"
+        else:
+            safety = "irreversible change (the customer must say yes to an exact plan first)"
+
+        async def consult() -> str:
+            s = await self._score_one(intent, message, touched, events)
+            if s.error is not None:
+                return "Jev could not score this request."
+            return (
+                f"Jev says: the kind '{intent.kind.value.lower().replace('_', ' ')}' is right with confidence {s.kind_confidence:.2f}; "
+                f"it is a bank customer service request with confidence {s.scope_confidence:.2f}; details are "
+                f"{'missing' if intent.missing_slots else 'complete'}. About 0.85 or more means quite sure; under 0.65 means it doubts the kind. "
+                "It only read a short summary, so a brief or hedged message scores low even when the meaning is clear."
+            )
+
+        return ControlCase(
+            request_kind=intent.kind.value,
+            request_summary=redact(intent.summary),
+            details={k: redact(str(v))[:200] for k, v in intent.slots.items()},
+            missing=tuple(intent.missing_slots),
+            message=redact(message)[:600],
+            recent=tuple((who, redact(said)[:300]) for who, said in self._history_now[-6:]),
+            on_screen=redact(on_screen)[:300],
+            already_asked=tuple(redact(q)[:300] for q in self._asked_log.get(intent.id, [])),
+            asks_so_far=self._asks.get(intent.id, 0),
+            what_it_can_do=capability(intent.kind),
+            safety=safety,
+            products=products,
+            consult_jev=consult,
+        )
+
+    async def _controlled(self, intent: Intent, message: str, touched: set[str], events: list[TraceEvent]) -> IntentDecision:
+        """What to do with a request, chosen by the controller; the threshold gate when it fails or breaks a rail."""
+        assert self._controller is not None
+        earlier = self._control_memo.get(intent.id)
+        if intent.id not in touched and earlier is not None and earlier[0] == fingerprint(intent):
+            # Nothing was said about it this turn, so the model is not asked again. A question or a hand-off it chose
+            # stands; for a request it let through, the rails (details, the yes) are looked at again.
+            prior = earlier[1]
+            if prior.reason == "the controller asked" or prior.action is Action.ESCALATE:
+                return prior
+            if intent.id in self._scores:
+                return self._by_score(intent)
+        decision = await self._controlled_now(intent, message, touched, events)
+        self._control_memo[intent.id] = (fingerprint(intent), decision)
+        return decision
+
+    async def _controlled_now(self, intent: Intent, message: str, touched: set[str], events: list[TraceEvent]) -> IntentDecision:
+        assert self._controller is not None
+        case = self._case_for(intent, message, touched, events)
+        try:
+            choice = await asyncio.wait_for(self._controller.decide(case), self._controller_timeout)
+        except Exception:
+            choice = None
+        if choice is None:
+            events.append(TraceEvent(kind=TraceKind.FAILED, intent_id=intent.id, reason="controller failed: threshold decision used"))
+            return await self._by_threshold(intent, message, touched, events)
+        events.append(TraceEvent(kind=TraceKind.DECIDED, intent_id=intent.id, detail="controller", reason=f"{choice.action.value}: {choice.reason}"[:160]))
+        asked_before = {_plain_question(q) for q in self._asked_log.get(intent.id, [])}
+
+        def ask(text: str) -> Optional[IntentDecision]:
+            if text.strip() and _plain_question(text) not in asked_before:
+                return IntentDecision(
+                    intent_id=intent.id,
+                    action=Action.ASK,
+                    reason="the controller asked",
+                    questions=(Question(intent_id=intent.id, slot=CLARIFY_SLOT, text=text.strip()),),
+                )
+            return None
+
+        if choice.action is Choice.ASK:
+            return ask(choice.question) or await self._by_threshold(intent, message, touched, events)  # never the same question twice
+        if choice.action is Choice.ESCALATE:
+            if self._asks.get(intent.id, 0) < 1 and intent.kind is not IntentKind.REQUEST_HUMAN:
+                # A person is not the first answer to a request nobody has tried to clear up yet.
+                return ask(choice.question) or await self._by_threshold(intent, message, touched, events)
+            return IntentDecision(intent_id=intent.id, action=Action.ESCALATE, reason=choice.reason or "the controller handed over")
+        # run: the rails (missing details, the customer's yes to an irreversible change) still apply
+        self._scores[intent.id] = IntentScore(
+            intent_id=intent.id, kind_confidence=1.0, slots_confidence=0.0 if intent.missing_slots else 1.0, scope_confidence=1.0
+        )
+        return self._by_score(intent)
+
     def _remember(self, said: str, replied: str) -> None:
         """Keep the last few turns, with the customer's words as they were after secrets were hidden."""
         self._transcript.append(("customer", said[:HISTORY_CHARS]))
@@ -348,6 +475,8 @@ class Orchestrator:
         ):
             table.pop(intent_id, None)
         self._clarifying.pop(intent_id, None)
+        self._asked_log.pop(intent_id, None)
+        self._control_memo.pop(intent_id, None)
         self._understood.discard(intent_id)
         self._asked_once.discard(intent_id)
 
@@ -771,6 +900,10 @@ class Orchestrator:
         )
         reply = compose_reply(view, outcomes=reported, decisions=ordered, waiting=waiting)
         self._clarifying = {q.intent_id: q for q in reply.questions if q.slot == CLARIFY_SLOT and q.intent_id in self._active}
+        for shown_q in reply.questions:
+            log = self._asked_log.setdefault(shown_q.intent_id, [])
+            if shown_q.text and (not log or log[-1] != shown_q.text):
+                log.append(shown_q.text)
         for on_screen in reply.questions:
             # The question on screen is the one the customer's next message answers.
             if on_screen.intent_id in self._pending_route_questions:
@@ -1039,7 +1172,7 @@ class Orchestrator:
         ]
         for intent_id in touched:
             self._said.setdefault(intent_id, message)
-        to_score = [i for i in scoreable if i.id in touched or i.id not in self._scores]
+        to_score = [] if self._controller is not None else [i for i in scoreable if i.id in touched or i.id not in self._scores]
         # An intent held back (by the identity check, say) is scored on the message that stated it, not on whatever
         # the customer says later ("my phone is ..." would score a clear request as unclear).
         by_words: dict[str, list[Intent]] = {}
@@ -1091,13 +1224,10 @@ class Orchestrator:
                     reason="still waiting for an answer",
                     questions=self._pending_route_questions[intent.id],
                 )
+            elif self._controller is not None:
+                decision = await self._controlled(intent, message, touched, events)
             else:
-                previewing = self._previews(intent)
-                # A route that proposes plans gets its yes from the plan, not the intent.
-                already = {intent.id: fingerprint(intent)} if previewing else self._confirmed
-                decision = decide(intent, self._scores[intent.id], already)
-                if previewing and decision.action is Action.RUN:
-                    decision = self._plan_decision(intent)
+                decision = self._by_score(intent)
             decided[intent.id] = decision
 
         result: dict[str, IntentDecision] = {}
@@ -1116,3 +1246,8 @@ class Orchestrator:
                         self._pending_confirm[intent.id] = decision.fingerprint
             result[intent.id] = decision
         return result
+
+
+def _plain_question(text: str) -> str:
+    """A question without its punctuation, case or spacing, so a rewording of a little is still the same question."""
+    return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
