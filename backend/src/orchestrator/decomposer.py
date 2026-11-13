@@ -31,6 +31,8 @@ class Interpretation(BaseModel):
     confirmed: tuple[str, ...] = ()
     # Ids the customer withdrew.
     declined: tuple[str, ...] = ()
+    # Ids of open requests whose pending question this message answers. The message is then the answer, not a new request.
+    answers: tuple[str, ...] = ()
     claims: dict[str, str] = Field(default_factory=dict)
 
 
@@ -40,6 +42,7 @@ class Decomposer(Protocol):
         message: str,
         open_intents: Sequence[Intent],
         history: Sequence[tuple[str, str]] = (),
+        pending: Sequence[tuple[str, str]] = (),
     ) -> Interpretation: ...
 
 
@@ -51,15 +54,19 @@ class ScriptedDecomposer:
         self.calls: list[tuple[str, tuple[str, ...]]] = []
         # The recent conversation each call was shown: (who, text) pairs, oldest first.
         self.histories: list[tuple[tuple[str, str], ...]] = []
+        # The (intent id, question) pairs on screen each call was told about.
+        self.pendings: list[tuple[tuple[str, str], ...]] = []
 
     async def interpret(
         self,
         message: str,
         open_intents: Sequence[Intent],
         history: Sequence[tuple[str, str]] = (),
+        pending: Sequence[tuple[str, str]] = (),
     ) -> Interpretation:
         self.calls.append((message, tuple(i.id for i in open_intents)))
         self.histories.append(tuple(history))
+        self.pendings.append(tuple(pending))
         if not self._script:
             raise AssertionError("decomposer called more often than scripted")
         step = self._script.pop(0)

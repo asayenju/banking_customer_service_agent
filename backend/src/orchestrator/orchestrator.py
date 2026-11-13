@@ -26,6 +26,7 @@ Rules this module is responsible for:
 """
 
 import asyncio
+import inspect
 import re
 from collections.abc import Callable, Mapping, Sequence
 from typing import Optional
@@ -275,6 +276,24 @@ class Orchestrator:
             self._processed[message_id] = result
             return result
 
+    def _pending_questions(self) -> tuple[tuple[str, str], ...]:
+        """(request id, the question on screen) for every open request that is waiting for an answer."""
+        shown: dict[str, str] = {}
+        for iid, qs in self._pending_route_questions.items():
+            if iid in self._active and qs:
+                shown[iid] = qs[0].text or qs[0].slot.replace("_", " ")
+        for iid, q in self._clarifying.items():
+            if iid in self._active:
+                shown[iid] = q.text or "to be sure I have this right"
+        return tuple(shown.items())
+
+    async def _interpret(self, message: str) -> Interpretation:
+        """Ask the decomposer what the message means, telling it which questions are waiting (when it can take them)."""
+        intents = tuple(self._active.values()) + tuple(self._resumable.values())
+        if "pending" in inspect.signature(self._decomposer.interpret).parameters:
+            return await self._decomposer.interpret(message, intents, self._history_now, self._pending_questions())
+        return await self._decomposer.interpret(message, intents, self._history_now)
+
     def _score_context(self) -> ScoreContext:
         """What the scorer may be told besides the message: the last turns, and the kinds of product the verified
         customer holds (never ids, balances or amounts)."""
@@ -343,9 +362,7 @@ class Orchestrator:
             if unclear is not None:
                 return await self._unclear_turn(unclear.intents[0], events)
         try:
-            interpretation = await self._decomposer.interpret(
-                message, tuple(self._active.values()) + tuple(self._resumable.values()), self._history_now
-            )
+            interpretation = await self._interpret(message)
         except Exception as exc:
             return self._failed_turn(f"decomposer failed: {type(exc).__name__}", events)
         return await self._real_turn(message, interpretation, events)
@@ -398,7 +415,11 @@ class Orchestrator:
         return waiting[0] if len(waiting) == 1 else None
 
     def _free_answer(
-        self, message: str, asked_before: Mapping[str, tuple[Question, ...]], decomposition: Decomposition
+        self,
+        message: str,
+        asked_before: Mapping[str, tuple[Question, ...]],
+        decomposition: Decomposition,
+        told: frozenset[str] = frozenset(),
     ) -> Optional[tuple[str, Question, tuple[Intent, ...]]]:
         """(intent id, the question, intents to fold in) when this message is the customer's answer to the one open question a route asked.
 
@@ -410,9 +431,21 @@ class Orchestrator:
             for iid, qs in asked_before.items()
             if iid in self._active and len(qs) == 1 and qs[0].slot not in (CONFIRM_SLOT, CLARIFY_SLOT, IDENTITY_SLOT)
         ]
-        if len(waiting) != 1 or len(message) > 300 or is_affirmation(message):
+        if len(waiting) != 1:
             return None
         intent_id, question = waiting[0]
+        if intent_id in told and not is_affirmation(message):
+            # The decomposer was shown the question and said this answers it. A new request it also found stays its own
+            # request; a copy of the open one (the same kind or a sibling) is folded in.
+            same = tuple(
+                f
+                for f in decomposition.intents
+                if f.id not in self._active
+                and (f.kind is self._active[intent_id].kind or f.kind in _SIBLINGS.get(self._active[intent_id].kind, frozenset()))
+            )
+            return intent_id, question, same
+        if len(message) > 300 or is_affirmation(message):
+            return None
         fold: list[Intent] = []
         for found in decomposition.intents:
             if found.id == intent_id and found.slots != self._active[intent_id].slots:
@@ -426,7 +459,7 @@ class Orchestrator:
         return intent_id, question, tuple(fold)
 
     def _clarification(
-        self, message: str, decomposition: Decomposition
+        self, message: str, decomposition: Decomposition, told: frozenset[str] = frozenset()
     ) -> Optional[tuple[str, tuple[Intent, ...], bool]]:
         """(intent id, intents to fold in, only a yes) when this message answers the one "tell me more" question on screen.
 
@@ -434,7 +467,7 @@ class Orchestrator:
         a fraud report for a dispute, or something it could not place) would have that scored alone and escalated for
         sounding vague, so those are folded into the open request, which is then scored on the whole story."""
         waiting = [iid for iid in self._clarifying if iid in self._active]
-        if len(waiting) != 1 or len(message) > 600:
+        if len(waiting) != 1 or (len(message) > 600 and waiting[0] not in told):
             return None
         intent_id = waiting[0]
         kind = self._active[intent_id].kind
@@ -446,7 +479,7 @@ class Orchestrator:
                 continue
             if found.kind is kind or found.kind in _SIBLINGS.get(kind, frozenset()) or found.kind in _ANSWER_NOISE:
                 fold.append(found)
-            else:
+            elif intent_id not in told:
                 return None  # a real new request
         added = any(f.id == intent_id and f.slots != self._active[intent_id].slots for f in decomposition.intents)
         return intent_id, tuple(fold), confirms_understanding(message) and not added
@@ -518,22 +551,34 @@ class Orchestrator:
             decomposition = decomposition.model_copy(
                 update={"intents": tuple(i for i in decomposition.intents if i.id in self._active)}
             )
-        answering = self._free_answer(message, asked_before, decomposition)
-        clarifying = self._clarification(message, decomposition) if answering is None else None
+        told = frozenset(interpretation.answers) & (set(asked_before) | set(self._clarifying))
+        answering = self._free_answer(message, asked_before, decomposition, told)
+        clarifying = self._clarification(message, decomposition, told) if answering is None else None
         if clarifying is not None:
             # A plain agreement says nothing new, so a decomposer that lists the request again for it changes nothing.
+            kept_ids = {f.id for f in clarifying[1]}
             decomposition = decomposition.model_copy(
                 update={
                     "intents": tuple(
-                        i for i in decomposition.intents if i.id in self._active and not (clarifying[2] and i.id == clarifying[0])
+                        i
+                        for i in decomposition.intents
+                        if not (clarifying[2] and i.id == clarifying[0])
+                        and (i.id not in kept_ids if clarifying[0] in told else i.id in self._active)
                     )
                 }
             )
         if answering is not None:
             # The message answers the one question on screen. The decomposer sometimes reads such an answer as a new
             # request or as a yes; the answer is kept as the detail that was asked for, and nothing new is made of it.
+            folded_ids = {f.id for f in answering[2]}
             decomposition = decomposition.model_copy(
-                update={"intents": tuple(i for i in decomposition.intents if i.id in self._active)}
+                update={
+                    "intents": tuple(
+                        i
+                        for i in decomposition.intents
+                        if (i.id not in folded_ids if answering[0] in told else i.id in self._active)
+                    )
+                }
             )
         touched: set[str] = set()
         for intent in decomposition.intents:

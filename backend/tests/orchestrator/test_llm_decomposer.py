@@ -26,13 +26,14 @@ def raw(id, kind, summary="s", slots=None, depends_on=(), span=None):
     }
 
 
-def reply(*intents, conflicts=(), confirmed=(), declined=(), claims=None):
+def reply(*intents, conflicts=(), confirmed=(), declined=(), claims=None, answers=()):
     return json.dumps(
         {
             "intents": list(intents),
             "conflicts": list(conflicts),
             "confirmed": list(confirmed),
             "declined": list(declined),
+            "answers": list(answers),
             "claims": [{"name": k, "value": v} for k, v in (claims or {}).items()],
         }
     )
@@ -395,3 +396,35 @@ def test_contact_details_inside_a_real_request_keep_the_request() -> None:
     ask["evidence"] = "I want to dispute a charge"
     result = interpret(FakeLLMClient([reply(ask)]), message)
     assert kinds(result) == [K.DISPUTE_TRANSACTION] and result.claims == {"email": "a@b.com"}
+
+
+# --- the decomposer is told which question is on screen, and says whether the message answers it
+
+
+def test_the_questions_on_screen_are_part_of_what_the_decomposer_is_shown() -> None:
+    fake = FakeLLMClient([reply()])
+    open_request = Intent(id="t1-i1", kind=K.REPORT_FRAUD_OR_LOSS, summary="lost wallet")
+    asyncio.run(
+        LLMDecomposer(fake).interpret(
+            "yes the silver card as well", [open_request], (), (("t1-i1", "Was your Silver Rewards Card in the wallet too?"),)
+        )
+    )
+    shown = json.loads(fake.calls[0]["messages"][-1]["content"])
+    assert shown["pending_questions"] == [{"id": "t1-i1", "question": "Was your Silver Rewards Card in the wallet too?"}]
+
+
+def test_a_message_that_answers_the_question_comes_back_as_an_answer_with_no_new_request() -> None:
+    open_request = Intent(id="t1-i1", kind=K.REPORT_FRAUD_OR_LOSS, summary="lost wallet")
+    result = interpret(FakeLLMClient([reply(answers=["t1-i1"])]), "yes the silver card as well", [open_request])
+    assert result.answers == ("t1-i1",) and kinds(result) == []
+
+
+def test_an_answer_that_names_a_request_that_is_not_open_is_ignored() -> None:
+    result = interpret(FakeLLMClient([reply(answers=["made-up"])]), "yes", [Intent(id="t1-i1", kind=K.FREEZE_CARD, summary="s")])
+    assert result.answers == ()
+
+
+def test_the_prompt_tells_the_model_what_to_do_with_a_pending_question() -> None:
+    from orchestrator.llm_decomposer import SYSTEM_PROMPT
+
+    assert "pending_questions" in SYSTEM_PROMPT and "answers" in SYSTEM_PROMPT and "do NOT" in SYSTEM_PROMPT
