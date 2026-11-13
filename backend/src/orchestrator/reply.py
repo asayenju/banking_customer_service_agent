@@ -56,7 +56,7 @@ def _wording(intents: Mapping[str, Intent], question: Question) -> str:
     if question.slot == CONFIRM_SLOT:
         return f"Please confirm: {what} (yes or no)?"
     if question.slot == CLARIFY_SLOT:
-        return f"Can you tell me more about: {what}?"
+        return f"To be sure I have this right: {what}. Is that what you want? If not, tell me more."
     return f"What is the {question.slot.replace('_', ' ')} for: {what}?"
 
 

@@ -64,6 +64,15 @@ from orchestrator.types import Decomposition, Intent, IntentKind, Question
 from orchestrator.unclear import HelpState, handle_unclear, offer_help, precheck
 
 MAX_ASKS = 3
+# Kinds a decomposer may call a reply to a clarifying question instead of the kind of the open request.
+_SIBLINGS: dict[IntentKind, frozenset[IntentKind]] = {
+    IntentKind.DISPUTE_TRANSACTION: frozenset({IntentKind.REPORT_FRAUD_OR_LOSS}),
+    IntentKind.REPORT_FRAUD_OR_LOSS: frozenset({IntentKind.DISPUTE_TRANSACTION}),
+    IntentKind.ACCOUNT_BALANCE_OR_HISTORY: frozenset({IntentKind.LOOKUP_INFO}),
+    IntentKind.LOOKUP_INFO: frozenset({IntentKind.ACCOUNT_BALANCE_OR_HISTORY}),
+}
+# The kind and scope confidence given to a request the customer confirmed we understood.
+UNDERSTOOD = 0.96
 # The recent conversation kept for the models: this many messages (customer and agent alternate), each cut short.
 HISTORY_MESSAGES = 8
 HISTORY_CHARS = 600
@@ -209,6 +218,9 @@ class Orchestrator:
         self._history_now: tuple[tuple[str, str], ...] = ()
         self._latest = ""
         self._said: dict[str, str] = {}
+        self._clarifying: dict[str, Question] = {}  # intent id -> the 'tell me more' question on screen
+        self._clarified: set[str] = set()  # intents whose clarification arrives this turn: scored on the whole story
+        self._understood: set[str] = set()  # intents the customer confirmed we understood
         self._scored_kind: dict[str, IntentKind] = {}
         self._pending_confirm: dict[str, str] = {}
         self._confirmed: dict[str, str] = {}
@@ -393,6 +405,31 @@ class Orchestrator:
                 return None  # a real new request
         return intent_id, question, tuple(fold)
 
+    def _clarification(
+        self, message: str, decomposition: Decomposition
+    ) -> Optional[tuple[str, tuple[Intent, ...], bool]]:
+        """(intent id, intents to fold in, only a yes) when this message answers the one "tell me more" question on screen.
+
+        The reply is more of the same request. A decomposer that makes a new intent of it (the same kind, a sibling such as
+        a fraud report for a dispute, or something it could not place) would have that scored alone and escalated for
+        sounding vague, so those are folded into the open request, which is then scored on the whole story."""
+        waiting = [iid for iid in self._clarifying if iid in self._active]
+        if len(waiting) != 1 or len(message) > 600:
+            return None
+        intent_id = waiting[0]
+        kind = self._active[intent_id].kind
+        fold: list[Intent] = []
+        for found in decomposition.intents:
+            if found.id in self._active and found.id != intent_id:
+                return None  # it touches another open request: not a plain answer
+            if found.id in self._active:
+                continue
+            if found.kind is kind or found.kind in _SIBLINGS.get(kind, frozenset()) or found.kind in _ANSWER_NOISE:
+                fold.append(found)
+            else:
+                return None  # a real new request
+        return intent_id, tuple(fold), is_affirmation(message)
+
     async def _verify(self, claims: Mapping[str, str], events: list[TraceEvent]) -> None:
         try:
             record = await self._directory.find(claims)
@@ -454,6 +491,11 @@ class Orchestrator:
 
         asked_before = dict(self._pending_route_questions)  # what a route was waiting on, before this message
         answering = self._free_answer(message, asked_before, decomposition)
+        clarifying = self._clarification(message, decomposition) if answering is None else None
+        if clarifying is not None:
+            decomposition = decomposition.model_copy(
+                update={"intents": tuple(i for i in decomposition.intents if i.id in self._active)}
+            )
         if answering is not None:
             # The message answers the one question on screen. The decomposer sometimes reads such an answer as a new
             # request or as a yes; the answer is kept as the detail that was asked for, and nothing new is made of it.
@@ -509,6 +551,29 @@ class Orchestrator:
             events.append(
                 TraceEvent(kind=TraceKind.DECIDED, intent_id=answered_id, detail="answered", reason=asked_slot)
             )
+
+        if clarifying is not None:
+            clarified_id, folded_in, only_yes = clarifying
+            current_intent = self._active[clarified_id]
+            question_shown = self._clarifying.pop(clarified_id)
+            said_now = message.strip()[:600]
+            for extra in folded_in:
+                # The decomposer's fresh reading of the reply (which charge, why) joins the request.
+                current_intent = current_intent.model_copy(
+                    update={"slots": {**extra.slots, **current_intent.slots}, "summary": extra.summary or current_intent.summary}
+                )
+            talk = current_intent.slots.get("conversation_so_far", "")
+            exchange = f"{talk}\nAsked: {question_shown.text or 'tell me more'}\nCustomer: {said_now}".strip()
+            self._active[clarified_id] = current_intent.model_copy(
+                update={"slots": {**current_intent.slots, "conversation_so_far": exchange[-1500:]}}
+            )
+            self._prints[clarified_id] = fingerprint(self._active[clarified_id])
+            if only_yes:
+                self._understood.add(clarified_id)  # "yes, that is what I want": the kind is settled
+            else:
+                self._said[clarified_id] = f"{self._said.get(clarified_id, '')}\n{said_now}".strip()[-1500:]
+                self._clarified.add(clarified_id)
+                touched.add(clarified_id)
 
         for intent_id in touched:
             # The customer said something about it: whatever the route asked is answered
@@ -623,6 +688,7 @@ class Orchestrator:
             Waiting(intent_id=i, blocked_by=blockers) for i, blockers in waiting_on_answer.items()
         )
         reply = compose_reply(view, outcomes=reported, decisions=ordered, waiting=waiting)
+        self._clarifying = {q.intent_id: q for q in reply.questions if q.slot == CLARIFY_SLOT and q.intent_id in self._active}
         for on_screen in reply.questions:
             # The question on screen is the one the customer's next message answers.
             if on_screen.intent_id in self._pending_route_questions:
@@ -896,7 +962,10 @@ class Orchestrator:
         # the customer says later ("my phone is ..." would score a clear request as unclear).
         by_words: dict[str, list[Intent]] = {}
         for i in to_score:
-            by_words.setdefault(message if i.id in touched else self._said.get(i.id, message), []).append(i)
+            whole_story = i.id in self._clarified
+            by_words.setdefault(
+                message if i.id in touched and not whole_story else self._said.get(i.id, message), []
+            ).append(i)
         for words, group in by_words.items():
             for score in await score_intents(
                 self._scorer, words, _view(group), timeout=self._scorer_timeout, context=self._score_context()
@@ -911,6 +980,18 @@ class Orchestrator:
                     )
                 )
 
+        self._clarified.clear()
+        for intent_id in self._understood & set(self._scores):
+            # The customer confirmed we understood the request, which is stronger than any scorer's guess about it.
+            earned = self._scores[intent_id]
+            if earned.error is None:
+                self._scores[intent_id] = earned.model_copy(
+                    update={
+                        "kind_confidence": max(earned.kind_confidence, UNDERSTOOD),
+                        "scope_confidence": max(earned.scope_confidence, UNDERSTOOD),
+                    }
+                )
+        self._understood.clear()
         decided: dict[str, IntentDecision] = dict(blocked)
         for intent in allowed:
             if intent.kind is IntentKind.UNCLEAR_OR_GREETING:
