@@ -70,7 +70,7 @@ def test_a_requested_write_is_counted_apart_and_a_missed_one_is_reported():
 
 def test_a_write_below_the_proceed_line_asks_before_it_runs():
     cases = [case("unsure", [K.FREEZE_CARD])]
-    _, _, s = go(cases, [interp(intent("a", K.FREEZE_CARD))], confidence=0.8)
+    _, _, s = go(cases, [interp(intent("a", K.FREEZE_CARD))], confidence=0.75)
     assert s.requested_asked == 1 and s.requested_ran == 0
 
 

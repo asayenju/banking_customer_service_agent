@@ -34,15 +34,15 @@ def describe(db: Any, card: Card) -> str:
     return f"the card ending {card.get('last_4_digits')} ({str(card.get('status')).lower()}{where})"
 
 
-def which_card(intent: Intent, db: Any, cards: Sequence[Card], *, allow_all: bool = False) -> RouteOutcome:
-    """The list the customer chooses from."""
+def which_card(intent: Intent, db: Any, cards: Sequence[Card], *, allow_all: bool = False, note: str = "") -> RouteOutcome:
+    """The list the customer chooses from. ``note`` says first what could not be placed ("I don't see a card ending 9999")."""
     listing = "\n".join(f"- {describe(db, c)}" for c in cards)
     if allow_all:
         listing += "\nSay 'all' for every one of them."
     return RouteOutcome(
         intent_id=intent.id,
         status=OutcomeStatus.NEEDS_INFO,
-        questions=(Question(intent_id=intent.id, slot="card_id", text=f"Which card do you mean?\n{listing}"),),
+        questions=(Question(intent_id=intent.id, slot="card_id", text=f"{note}Which card do you mean?\n{listing}"),),
     )
 
 

@@ -40,8 +40,8 @@ def world(capture, route):
     from orchestrator.routes import Route
     from scenario_kit import RECORD, SequenceScorer
 
-    # UPDATE_PROFILE needs no yes, so the route runs at once and its question is the pending one.
-    script = [interp(I("p", K.UPDATE_PROFILE, {"card_id": "c1"}), claims=GOOD_CLAIMS), interp(I("p", K.UPDATE_PROFILE, {"card_id": "c1", "new_pin": "{{secret:pin}}"}))]
+    # A freeze needs no yes, so the route runs at once and its question is the pending one.
+    script = [interp(I("p", K.FREEZE_CARD, {"card_id": "c1"}), claims=GOOD_CLAIMS), interp(I("p", K.FREEZE_CARD, {"card_id": "c1", "new_pin": "{{secret:pin}}"}))]
     decomposer = ScriptedDecomposer(script)
     orch = Orchestrator(
         decomposer=decomposer,

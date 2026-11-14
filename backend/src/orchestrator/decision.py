@@ -23,7 +23,8 @@ from typing import Annotated, Optional, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from orchestrator.bands import WRITE_KIND_ASK_AT, Band, band
+from orchestrator.capabilities import LABEL
+from orchestrator.bands import WRITE_KIND_ASK_AT, Band, Risk, band
 from orchestrator.plan import READ_ONLY_KINDS
 from orchestrator.routes import Route, route_for
 from orchestrator.scoring import IntentScore
@@ -40,7 +41,6 @@ NO_YES_NEEDED = frozenset(
     {
         IntentKind.FREEZE_CARD,
         IntentKind.UNFREEZE_CARD,
-        IntentKind.UPDATE_PROFILE,
         IntentKind.ACCOUNT_BALANCE_OR_HISTORY,
         IntentKind.LOOKUP_INFO,
         IntentKind.GENERAL_QUESTION,
@@ -79,6 +79,19 @@ class IntentDecision(BaseModel):
         return self
 
 
+_REVERSIBLE_KINDS = frozenset({IntentKind.FREEZE_CARD, IntentKind.UNFREEZE_CARD})
+
+
+def risk_of(kind: IntentKind) -> Risk:
+    if kind in READ_ONLY_KINDS:
+        return Risk.READ
+    if kind is IntentKind.REPORT_FRAUD_OR_LOSS:
+        return Risk.URGENT
+    if kind in _REVERSIBLE_KINDS:
+        return Risk.REVERSIBLE
+    return Risk.IRREVERSIBLE
+
+
 def needs_confirmation(kind: IntentKind) -> bool:
     return kind not in NO_YES_NEEDED
 
@@ -98,14 +111,29 @@ def _escalate(intent: Intent, reason: str) -> IntentDecision:
     return IntentDecision(intent_id=intent.id, action=Action.ESCALATE, reason=reason)
 
 
-def _ask_for_details(intent: Intent, reason: str) -> IntentDecision:
+def _ask_for_details(intent: Intent, reason: str, alternative: Optional[str] = None) -> IntentDecision:
     slots = intent.missing_slots or (CLARIFY_SLOT,)
+    text = _either(intent, alternative) if slots == (CLARIFY_SLOT,) else None
     return IntentDecision(
         intent_id=intent.id,
         action=Action.ASK,
         reason=reason,
-        questions=tuple(Question(intent_id=intent.id, slot=s) for s in slots),
+        questions=tuple(Question(intent_id=intent.id, slot=s, text=text if s == CLARIFY_SLOT else None) for s in slots),
     )
+
+
+def _either(intent: Intent, alternative: Optional[str]) -> Optional[str]:
+    """"Do you want me to X, or Y?" from the two readings the scorer found most likely, in words written here."""
+    if not alternative:
+        return None
+    try:
+        other = IntentKind(alternative)
+    except ValueError:
+        return None
+    if other is intent.kind:
+        return None
+    return f"Do you want me to {LABEL[intent.kind]}, or {LABEL[other]}? If it is neither, tell me more."
+
 
 
 def decide(
@@ -115,20 +143,24 @@ def decide(
     if route_for(intent.kind) is Route.HAND_OFF:
         return _escalate(intent, "this kind hands off to a human")
     if score.error is not None:
-        return _escalate(intent, f"could not be scored: {score.error}")
+        # The scorer being down says nothing about the customer: ask what they mean, never hand over for it.
+        return _ask_for_details(intent.model_copy(update={"missing_slots": ()}), f"could not be scored: {score.error}")
     # Missing details score slots at 0, which drags the minimum to 0. That is a reason
     # to ask for them, not to give up on the request, so only how well the request is
     # understood (kind and scope) can escalate before the missing details are asked for.
     understood = min(score.kind_confidence, score.scope_confidence)
-    if band(understood) is Band.ESCALATE:
-        return _escalate(intent, "confidence below the escalation threshold")
+    risk = risk_of(intent.kind)
+    if band(understood, risk) is Band.ESCALATE:
+        # A first look that is not understood is asked about, with the customer's own words repeated back. A person
+        # comes only after the repairs fail (the ask limit), when they ask for one, or for kinds that always hand off.
+        return _ask_for_details(intent.model_copy(update={"missing_slots": ()}), "not understood well enough: asking what they mean", score.alternative)
     if intent.missing_slots:
         return _ask_for_details(intent, "details are missing")
-    confidence_band = band(score.confidence)
+    confidence_band = band(score.confidence, risk)
     if confidence_band is Band.ESCALATE:
-        return _escalate(intent, "confidence below the escalation threshold")
+        return _ask_for_details(intent.model_copy(update={"missing_slots": ()}), "not understood well enough: asking what they mean", score.alternative)
     if confidence_band is Band.ASK:
-        return _ask_for_details(intent, "not sure enough to act yet")
+        return _ask_for_details(intent, "not sure enough to act yet", score.alternative)
     if intent.kind not in READ_ONLY_KINDS and score.kind_confidence < WRITE_KIND_ASK_AT:
         return _ask_for_details(intent, "not sure enough the request is right to act yet")
     if not needs_confirmation(intent.kind):

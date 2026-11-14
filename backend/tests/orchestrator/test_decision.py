@@ -28,7 +28,6 @@ IRREVERSIBLE_KINDS = [
 NO_YES_KINDS = [
     IntentKind.FREEZE_CARD,
     IntentKind.UNFREEZE_CARD,
-    IntentKind.UPDATE_PROFILE,
     IntentKind.ACCOUNT_BALANCE_OR_HISTORY,
     IntentKind.LOOKUP_INFO,
     IntentKind.GENERAL_QUESTION,
@@ -87,10 +86,11 @@ def test_a_yes_never_rescues_low_confidence():
     i = intent()
     yes = {"a": fingerprint(i)}
     assert run(i, 0.7, yes).action is Action.ASK
-    assert run(i, 0.5, yes).action is Action.ESCALATE
+    low = run(i, 0.5, yes)
+    assert low.action is Action.ASK and [q.slot for q in low.questions] == [CLARIFY_SLOT], "asked what they mean, not handed over"
 
 
-READ_KINDS = [k for k in NO_YES_KINDS if k not in (IntentKind.FREEZE_CARD, IntentKind.UNFREEZE_CARD, IntentKind.UPDATE_PROFILE)]
+READ_KINDS = [k for k in NO_YES_KINDS if k not in (IntentKind.FREEZE_CARD, IntentKind.UNFREEZE_CARD)]
 REVERSIBLE_WRITE_KINDS = [k for k in NO_YES_KINDS if k not in READ_KINDS]
 
 
@@ -107,8 +107,11 @@ def test_reversible_writes_run_with_no_yes_once_the_kind_is_85_percent_sure(kind
 
 
 @pytest.mark.parametrize("kind", REVERSIBLE_WRITE_KINDS + IRREVERSIBLE_KINDS)
-def test_a_write_whose_kind_is_under_the_proceed_line_asks_instead_of_running(kind):
-    d = run(intent(kind), confidence=0.8499)
+def test_a_write_whose_kind_is_under_its_proceed_line_asks_instead_of_running(kind):
+    from orchestrator.bands import BANDS
+    from orchestrator.decision import risk_of
+
+    d = run(intent(kind), confidence=BANDS[risk_of(kind)][0] - 0.0001)
     assert d.action is Action.ASK
     assert [q.slot for q in d.questions] == [CLARIFY_SLOT]
 
@@ -119,7 +122,7 @@ def test_only_the_kind_answer_gates_a_write_not_the_other_two():
         intent_id=i.id, kind_confidence=0.97, slots_confidence=0.9, scope_confidence=0.9
     )
     unsure_of_kind = IntentScore(
-        intent_id=i.id, kind_confidence=0.8, slots_confidence=1.0, scope_confidence=1.0
+        intent_id=i.id, kind_confidence=0.79, slots_confidence=1.0, scope_confidence=1.0
     )
     assert decide(i, sure_of_kind, {}).action is Action.RUN
     assert decide(i, unsure_of_kind, {}).action is Action.ASK
@@ -130,10 +133,11 @@ def test_only_the_kind_answer_gates_a_write_not_the_other_two():
     [
         (0.99, Action.RUN),
         (0.85, Action.RUN),
-        (0.8499, Action.ASK),
-        (0.65, Action.ASK),
-        (0.6499, Action.ESCALATE),
-        (0.0, Action.ESCALATE),
+        (0.70, Action.RUN),
+        (0.6999, Action.ASK),
+        (0.40, Action.ASK),
+        (0.3999, Action.ASK),
+        (0.0, Action.ASK),
     ],
 )
 def test_bands_decide_for_a_read(confidence, action):
@@ -149,7 +153,7 @@ def test_missing_slots_are_asked_for_and_nothing_runs(kind):
 
 
 def test_a_middling_score_with_no_named_gap_asks_a_general_question():
-    d = run(intent(IntentKind.LOOKUP_INFO), confidence=0.7)
+    d = run(intent(IntentKind.LOOKUP_INFO), confidence=0.6)
     assert [(q.intent_id, q.slot) for q in d.questions] == [("a", CLARIFY_SLOT)]
 
 
@@ -158,15 +162,15 @@ def test_a_middling_score_asks_for_the_missing_slots_when_it_knows_them():
     assert [q.slot for q in d.questions] == ["card_id"]
 
 
-def test_an_unscored_intent_escalates_and_says_why():
+def test_an_unscored_intent_asks_what_they_mean_and_says_why():
     i = intent(IntentKind.LOOKUP_INFO)
     d = decide(i, IntentScore.unscored("a", "scorer timed out after 5.0s"), {})
-    assert d.action is Action.ESCALATE
+    assert d.action is Action.ASK and [q.slot for q in d.questions] == [CLARIFY_SLOT]
     assert d.reason == "could not be scored: scorer timed out after 5.0s"
 
 
-def test_low_confidence_escalates_with_a_reason():
-    assert run(intent(), 0.5).reason == "confidence below the escalation threshold"
+def test_low_confidence_asks_with_a_reason():
+    assert run(intent(), 0.5).reason.startswith("not understood well enough")
 
 
 @pytest.mark.parametrize("kind", [IntentKind.REQUEST_HUMAN, IntentKind.OTHER])
@@ -236,8 +240,8 @@ def test_missing_details_do_not_rescue_a_request_the_scorer_does_not_understand(
     i = intent(IntentKind.FREEZE_CARD, slots={}, missing=("card_id",))
     unsure_kind = IntentScore(intent_id=i.id, kind_confidence=0.5, slots_confidence=0.0, scope_confidence=0.99)
     unsure_scope = IntentScore(intent_id=i.id, kind_confidence=0.99, slots_confidence=0.0, scope_confidence=0.4)
-    assert decide(i, unsure_kind, {}).action is Action.ESCALATE
-    assert decide(i, unsure_scope, {}).action is Action.ESCALATE
+    assert decide(i, unsure_kind, {}).action is Action.ASK
+    assert decide(i, unsure_scope, {}).action is Action.ASK
 
 
 def test_the_write_kind_bar_is_below_the_proceed_line_so_it_no_longer_adds_a_gate_of_its_own():
@@ -247,3 +251,13 @@ def test_the_write_kind_bar_is_below_the_proceed_line_so_it_no_longer_adds_a_gat
     assert WRITE_KIND_ASK_AT == 0.80 < PROCEED_AT
     d = run(intent(IntentKind.REPORT_FRAUD_OR_LOSS), confidence=0.92)
     assert d.action is not Action.ASK or d.questions[0].slot != CLARIFY_SLOT
+
+
+def test_a_close_second_reading_is_asked_as_either_or_in_fixed_words():
+    i = intent(IntentKind.ACCOUNT_BALANCE_OR_HISTORY)
+    unsure = IntentScore(intent_id=i.id, kind_confidence=0.6, slots_confidence=1.0, scope_confidence=0.9, alternative="DISPUTE_TRANSACTION")
+    d = decide(i, unsure, {})
+    assert d.action is Action.ASK
+    assert d.questions[0].text == "Do you want me to see your balances or recent transactions, or dispute a charge? If it is neither, tell me more."
+    plain = IntentScore(intent_id=i.id, kind_confidence=0.6, slots_confidence=1.0, scope_confidence=0.9)
+    assert decide(i, plain, {}).questions[0].text is None

@@ -49,7 +49,7 @@ def _already_answered(intents: Mapping[str, Intent], question: Question) -> bool
     return intent is not None and bool(intent.slots.get(question.slot, "").strip())
 
 
-def _wording(intents: Mapping[str, Intent], question: Question) -> str:
+def wording(intents: Mapping[str, Intent], question: Question) -> str:
     what = _summary(intents, question.intent_id).strip().rstrip(".?! ")
     if question.slot == IDENTITY_SLOT:
         return IDENTITY_PROMPT
@@ -81,7 +81,7 @@ def _batch(
                     intent_id=question.intent_id,
                     slot=question.slot,
                     # Text a route or the plan preview built is the exact wording to show.
-                    text=question.text or _wording(intents, question),
+                    text=question.text or wording(intents, question),
                 )
             )
     return tuple(batch)
@@ -146,7 +146,7 @@ def compose_reply(
         # stuck on "anything I can help with?", so the question is asked again as it was.
         again = next((q for d in decisions if d.action is Action.ASK for q in d.questions if q.slot not in (IDENTITY_SLOT,)), None)
         if again is not None:
-            questions = (Question(intent_id=again.intent_id, slot=again.slot, text=again.text or _wording(intents, again)),)
+            questions = (Question(intent_id=again.intent_id, slot=again.slot, text=again.text or wording(intents, again)),)
     if one_at_a_time:
         # Never a list of questions: the first missing detail now. Whatever else is missing is asked again, one at a
         # time, when the request runs again with this answer (a route recomputes what it still needs each time).

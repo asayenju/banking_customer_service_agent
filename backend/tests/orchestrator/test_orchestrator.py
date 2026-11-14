@@ -80,7 +80,7 @@ def test_three_wrong_answers_lock_the_caller_out_for_good():
     assert fourth.reply.escalated_intent_ids == ("f2",)
 
 
-def test_mixed_confidence_runs_what_it_can_and_hands_the_rest_to_a_human_in_one_reply():
+def test_mixed_confidence_runs_what_it_can_and_asks_about_the_rest_in_one_reply():
     w = World(
         [
             interp(
@@ -94,10 +94,10 @@ def test_mixed_confidence_runs_what_it_can_and_hands_the_rest_to_a_human_in_one_
     )
     result = w.turn()
     assert w.direct.calls == ["frz", "bal"] and w.sub.calls == []
-    assert result.reply.escalated_intent_ids == ("fee",)
+    assert result.reply.escalated_intent_ids == ()
     assert "Done: summary of bal" in result.reply.text
-    assert "handing this to a human agent: summary of fee" in result.reply.text
-    assert decisions(result)["fee"].action is Action.ESCALATE
+    assert "To be sure I have this right: summary of fee" in result.reply.text
+    assert decisions(result)["fee"].action is Action.ASK
 
 
 def test_an_irreversible_intent_asks_for_a_yes_first_and_runs_only_after_it():

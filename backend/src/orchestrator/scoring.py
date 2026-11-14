@@ -35,6 +35,11 @@ class IntentScore(BaseModel):
     scope_confidence: Probability
     # Set when the intent could not be scored; the confidence is then zero.
     error: Optional[str] = None
+    # The kind the scorer found next most likely (a Choice answer) when it is a different reading, not a sibling that
+    # routes the same way. Used to ask "X or Y?" instead of a vague "tell me more".
+    alternative: Optional[str] = None
+    # Extra signals asked beside the kind (name, probability or score). Logged, never used to decide.
+    signals: tuple[tuple[str, float], ...] = ()
 
     @property
     def confidence(self) -> float:
@@ -69,6 +74,8 @@ class ScoreContext:
 
     recent: tuple[tuple[str, str], ...] = ()
     products: str = ""
+    # Facts from application state, as types and flags only ("verified": "yes"), never a value, id, amount or digit.
+    facts: tuple[tuple[str, str], ...] = ()
 
 
 class Scorer(Protocol):
