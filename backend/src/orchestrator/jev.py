@@ -24,12 +24,15 @@ from typing import Any, Protocol
 from orchestrator.config import JEV_KEY_VAR, require
 from orchestrator.sanitize import redact
 from orchestrator.capabilities import capability
+from orchestrator import jev_state
 from orchestrator.scoring import IntentScore, ScoreContext
 from orchestrator.types import Decomposition, Flag, Intent
 
 JEV_MODEL = "jev-1.13.0"
 JEV_TIMEOUT_SECONDS = 4.0
 
+# How likely a different reading must be before it is offered as "X or Y?".
+ALTERNATIVE_AT = 0.15
 KIND_QUESTION = "kind"
 SCOPE_QUESTION = "scope"
 
@@ -83,6 +86,8 @@ def _state(message: str, intent: Intent, context: ScoreContext | None = None) ->
             state["recent_conversation"] = " | ".join(f"{who}: {redact(said)[:300]}" for who, said in context.recent[-4:])
         if context.products:
             state["products_the_customer_holds"] = context.products
+        if context.facts:
+            state["situation"] = "; ".join(f"{name.replace('_', ' ')}: {value}" for name, value in context.facts)
     return state
 
 
@@ -113,10 +118,14 @@ class JevScorer:
         *,
         model: str = JEV_MODEL,
         timeout: float = JEV_TIMEOUT_SECONDS,
+        choice: bool | None = None,
+        signals: bool | None = None,
     ) -> None:
         self._client = client
         self._model = model
         self._timeout = timeout
+        self._choice = jev_state.choice_enabled() if choice is None else choice
+        self._signals = jev_state.signals_enabled() if signals is None else signals
 
     async def score(
         self, message: str, decomposition: Decomposition, context: ScoreContext | None = None
@@ -140,19 +149,53 @@ class JevScorer:
         return tuple(scores)
 
     async def _score_one(self, message: str, intent: Intent, context: ScoreContext | None = None) -> IntentScore:
+        questions: dict[str, Any] = dict(_questions(intent))
+        if self._choice:
+            questions[jev_state.READING] = jev_state.choice_question()
+        if self._signals:
+            questions.update(jev_state.signal_questions())
         response = await self._client.system_one(
             _state(message, intent, context),
-            _questions(intent),
+            questions,
             model=self._model,
             timeout=self._timeout,
         )
         answers = response.nouls
+        kind = answers[KIND_QUESTION].noul
+        alternative: str | None = None
+        if self._choice:
+            kind, alternative = self._reading(response, intent, kind)
         return IntentScore(
             intent_id=intent.id,
-            kind_confidence=answers[KIND_QUESTION].noul,
+            kind_confidence=kind,
             slots_confidence=0.0 if intent.missing_slots else 1.0,
             scope_confidence=answers[SCOPE_QUESTION].noul,
+            alternative=alternative,
+            signals=self._signal_values(response) if self._signals else (),
         )
+
+    @staticmethod
+    def _reading(response: Any, intent: Intent, kind: float) -> tuple[float, str | None]:
+        """The kind answer, raised to the weight of kinds that run the same way, and the next different reading.
+        Any trouble with the extra answer leaves the plain kind answer as it was."""
+        try:
+            probabilities = dict(response.choices[jev_state.READING].probabilities)
+            mass, other = jev_state.runner_up(intent.kind, probabilities)
+        except Exception:
+            return kind, None
+        weight = probabilities.get(other, 0.0) if other else 0.0
+        return max(kind, mass), (other if other and weight >= ALTERNATIVE_AT else None)
+
+    @staticmethod
+    def _signal_values(response: Any) -> tuple[tuple[str, float], ...]:
+        found: list[tuple[str, float]] = []
+        try:
+            found.append((jev_state.SIGNAL_HUMAN, float(response.nouls[jev_state.SIGNAL_HUMAN].noul)))
+            found.append((jev_state.SIGNAL_ANSWER, float(response.nouls[jev_state.SIGNAL_ANSWER].noul)))
+            found.append((jev_state.SIGNAL_FRUSTRATION, float(response.scores[jev_state.SIGNAL_FRUSTRATION].score)))
+        except Exception:
+            pass
+        return tuple(found)
 
 
 def make_jev_scorer(*, model: str = JEV_MODEL) -> JevScorer:

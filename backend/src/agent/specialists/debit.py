@@ -21,11 +21,12 @@ model reads, because the tier is not a field in the database.
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from typing import Any, Optional
 
 from agent.cards import owned_cards, which_card
+from agent.entities import Resolution, resolve_cards
 from agent.debit_lookup import NAMES as LOOKUP_NAMES, debit_lookups
 from agent.workflows.debit_dispute import PARTIAL_AMOUNT_CATEGORIES, DebitDispute
 from agent.workflows.debit_replacement import DebitReplacement
@@ -59,6 +60,8 @@ How to work:
    ask the customer anything until you have used one of them; ask only if the search finds nothing or several.
    Never ask for a transaction id, card id or account id that a search can find. If the customer did not say
    which card or account and more than one could be meant, ask. Do not choose.
+   When the request has a card_ids detail (several card ids, comma separated), the customer chose all of those
+   cards: plan each one (for a close, one close per card), and no other card.
 3. A frozen card must be unfrozen before it can be closed. Only one card can be active on a
    checking account, so the old card is closed before a replacement is ordered for it.
 4. Replacement cards: the fees are charged to the checking account. Give the exact
@@ -224,24 +227,77 @@ CARD_KINDS = frozenset(
 _NAMES_A_RECORD = ("account_id", "transaction_id", "credit_card_account_id")
 
 
+_SAYS_CLOSE = re.compile(r"\b(?:close|closed|closing|permanent\w*|for good|lost|stolen|fraud\w*|damaged|no longer|replace\w*)\b", re.I)
+_SAYS_FREEZE = re.compile(r"\b(?:freeze|frozen|pause|hold|temporar\w*|undo)\b", re.I)
+CANCEL_MEANS = "cancel_means"
+
+
+def _cancel_unclear(intent: Intent) -> Optional[RouteOutcome]:
+    """"Cancel" can mean freeze for now or close for good. Closing cannot be undone, so ask once, then go on."""
+    if intent.kind is not K.CLOSE_CARD or (intent.slots.get("reason") or "").strip():
+        return None
+    said = " ".join([intent.summary, *(v for k, v in intent.slots.items() if k != CANCEL_MEANS)])
+    if not re.search(r"\bcancel\w*", said, re.I) or _SAYS_CLOSE.search(said):
+        return None
+    meant = (intent.slots.get(CANCEL_MEANS) or "").strip()
+    if not meant:
+        question = "Do you want to freeze it for now (you can undo that any time), or close it for good (that cannot be undone)?"
+        return RouteOutcome(
+            intent_id=intent.id,
+            status=OutcomeStatus.NEEDS_INFO,
+            questions=(Question(intent_id=intent.id, slot=CANCEL_MEANS, text=question),),
+        )
+    if _SAYS_FREEZE.search(meant) and not _SAYS_CLOSE.search(meant):
+        return RouteOutcome(
+            intent_id=intent.id,
+            status=OutcomeStatus.DONE,
+            text="Okay, I have not closed anything. To freeze a card for now, tell me which one (for example "
+            "'freeze my card ending 1234') and I will do it straight away.",
+        )
+    return None
+
+
 def prepare(intent: Intent, user_id: str, db: Any) -> Intent | RouteOutcome:
     """Settle which card is meant, in code, before a model gets involved."""
     if intent.kind not in CARD_KINDS:
         return intent
+    if (unclear := _cancel_unclear(intent)) is not None:
+        return unclear
     named = (intent.slots.get("card_id") or "").strip()
     cards = owned_cards(db, user_id)
     if named:
         if any(c.get("card_id") == named for c in cards):
             return intent
-        if named.isdigit() and len(named) == 4:  # said the last four digits
-            matches = [c for c in cards if c.get("last_4_digits") == named]
-            if len(matches) == 1:
-                return intent.model_copy(update={"slots": {**intent.slots, "card_id": str(matches[0]["card_id"])}})
-            return which_card(intent, db, matches or cards) if (matches or cards) else intent
-        return which_card(intent, db, cards) if cards else intent
+        resolved = resolve_cards(named, cards, db, owned=owned_cards(db, user_id, statuses=_ANY_STATUS))
+        note = _unplaced(resolved)
+        if resolved.cards and not note and not resolved.ambiguous and (len(resolved.cards) == 1 or intent.kind is K.CLOSE_CARD):
+            return _chosen(intent, resolved.cards)
+        if not cards:
+            return intent
+        offer = [c for c in cards if c.get("last_4_digits") in resolved.ambiguous] or cards
+        return which_card(intent, db, offer, allow_all=intent.kind is K.CLOSE_CARD, note=note)
     if any((intent.slots.get(k) or "").strip() for k in _NAMES_A_RECORD):
         return intent
     return which_card(intent, db, cards) if len(cards) > 1 else intent
+
+
+_ANY_STATUS = ("ACTIVE", "FROZEN", "PENDING", "CLOSED")
+
+
+def _unplaced(resolved: Resolution) -> str:
+    """What the customer said that is not one of their usable cards, in words, so it is never swapped for another."""
+    parts = [f"I don't see a card ending {n} on your account" for n in resolved.unknown]
+    parts += [f"the card ending {c.get('last_4_digits')} is already closed" for c in resolved.closed]
+    return ("; ".join(parts) + ". ").capitalize() if parts else ""
+
+
+def _chosen(intent: Intent, cards: Sequence[Mapping[str, Any]]) -> Intent:
+    """One card goes in ``card_id``; several (only a close takes more) go in ``card_ids``, one id each."""
+    ids = [str(c["card_id"]) for c in cards]
+    slots = {k: v for k, v in intent.slots.items() if k != "card_id"}
+    if len(ids) == 1:
+        return intent.model_copy(update={"slots": {**slots, "card_id": ids[0]}})
+    return intent.model_copy(update={"slots": {**slots, "card_ids": ", ".join(ids)}})
 
 
 def _pin(value: Any) -> Optional[str]:

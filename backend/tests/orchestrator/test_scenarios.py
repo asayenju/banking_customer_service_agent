@@ -119,12 +119,12 @@ def test_mixed_confidence_runs_two_and_hands_one_to_a_human_in_one_reply():
     r = w.turn("check my balance, freeze my card, and sort out my fees")
     assert brief(r) == [
         "scored:bal", "scored:frz", "scored:fee",
-        "decided:bal", "decided:frz", "decided:fee", "escalated:fee",
+        "decided:bal", "decided:frz", "decided:fee", "asked:fee",
         "routed:frz@1", "started:frz@1", "finished:frz@1",
         "routed:bal@2", "started:bal@2", "finished:bal@2",
     ]  # fmt: skip
     assert "Done: summary of bal" in r.reply.text
-    assert "handing this to a human agent: summary of fee" in r.reply.text
+    assert "To be sure I have this right: summary of fee" in r.reply.text
 
 
 @covers("Reversible write, kind answer under 0.85")
@@ -132,7 +132,7 @@ def test_a_freeze_the_kind_answer_is_unsure_about_asks_first_and_runs_once_sure(
     freeze = I("frz", K.FREEZE_CARD, {"card_id": "c1"})
     w = World(
         [interp(freeze, claims=GOOD_CLAIMS), interp(I("frz", K.FREEZE_CARD, {"card_id": "c1"}))],
-        [[S("frz", 0.8)], [S("frz", 0.97)]],
+        [[S("frz", 0.7)], [S("frz", 0.97)]],
     )
     first = w.turn("I think I want my card frozen")
     assert brief(first) == ["scored:frz", "decided:frz", "asked:frz"]
@@ -151,7 +151,7 @@ def test_something_that_depends_on_an_escalated_intent_waits_and_is_reported():
         [[S("fee", 0.40), S("b", 0.96)]],
     )
     r = w.turn("fix my fees, then tell me what changed")
-    assert brief(r) == ["scored:fee", "scored:b", "decided:fee", "escalated:fee", "decided:b"]
+    assert brief(r) == ["scored:fee", "scored:b", "decided:fee", "asked:fee", "decided:b"]
     assert w.sub.calls == []
     assert "Still to do: summary of b once summary of fee is done" in r.reply.text
 
@@ -417,7 +417,7 @@ def test_greetings_gibberish_and_silence_get_the_menu_and_then_a_human():
 @covers("Intent still under 0.85 after 3 asks")
 def test_an_intent_that_never_gets_sure_enough_escalates_after_three_questions():
     # Each reply to "tell me more" is read with the whole story, so the request is scored again every time.
-    w = World([interp(I("x")), interp(), interp(), interp()], [[S("x", 0.70)]] * 4)
+    w = World([interp(I("x")), interp(), interp(), interp()], [[S("x", 0.30)]] * 4)
     assert brief(w.turn("tell me about the thing")) == ["scored:x", "decided:x", "asked:x"]
     assert brief(w.turn("hmm")) == ["scored:x", "decided:x", "asked:x"]
     assert brief(w.turn("hmm")) == ["scored:x", "decided:x", "asked:x"]
@@ -484,7 +484,10 @@ def test_a_caller_who_can_only_give_two_details_is_still_verified_and_gets_both_
     assert brief(first) == ["decided:bal", "asked:bal", "decided:mail", "asked:mail"]
     assert len(first.reply.questions) == 1
     second = w.turn("my email is kenji.tanaka@example.com and my phone is 206-555-0293")
-    assert w.orch.verified and sorted(w.direct.calls) == ["bal", "mail"]
+    # The balance is a read and runs; the email change is how an account is taken over, so it shows the exact
+    # change and waits for a yes.
+    assert w.orch.verified and w.direct.calls == ["bal"]
+    assert [q.slot for q in second.reply.questions] == ["confirmation"]
     assert {e.wave for e in second.trace.events if e.kind is T.STARTED} == {1}
 
 

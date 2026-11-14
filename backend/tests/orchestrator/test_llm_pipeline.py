@@ -51,10 +51,10 @@ def test_missing_card_id_makes_the_orchestrator_ask_not_act() -> None:
     assert direct.calls == [] and sub.calls == []
 
 
-def test_low_jev_confidence_escalates_instead_of_running() -> None:
+def test_low_jev_confidence_asks_what_they_mean_instead_of_running() -> None:
     orch, direct, sub = build([reply(raw("i1", "GENERAL_QUESTION", "opening hours"))], 0.3)
     (decision,) = turn(orch, "what are your opening hours").decisions
-    assert decision.action is Action.ESCALATE
+    assert decision.action is Action.ASK
     assert direct.calls == [] and sub.calls == []
 
 

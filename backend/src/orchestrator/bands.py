@@ -20,18 +20,40 @@ ASK_AT = 0.65
 WRITE_KIND_ASK_AT = 0.80
 
 
+class Risk(StrEnum):
+    """What a wrong run costs. The bar for acting follows it: a read changes nothing, a freeze can be undone, anything
+    else needs the customer's yes to an exact plan, and a loss report must not wait on a hesitant score because the
+    named cards are frozen first."""
+
+    READ = "read"
+    REVERSIBLE = "reversible"
+    IRREVERSIBLE = "irreversible"
+    URGENT = "urgent"
+
+
+# (proceed at, ask at) per class. Placeholders until the decision log (docs/prd-decision-layer.md) is calibrated.
+# Below the ask line the customer is asked what they mean, not handed to a person.
+BANDS: dict[Risk, tuple[float, float]] = {
+    Risk.READ: (0.70, 0.40),
+    Risk.REVERSIBLE: (0.80, 0.55),
+    Risk.IRREVERSIBLE: (PROCEED_AT, ASK_AT),
+    Risk.URGENT: (0.70, 0.40),
+}
+
+
 class Band(StrEnum):
     PROCEED = "proceed"
     ASK = "ask"
     ESCALATE = "escalate"
 
 
-def band(confidence: float) -> Band:
+def band(confidence: float, risk: Risk = Risk.IRREVERSIBLE) -> Band:
     # Written so that NaN, which fails every comparison, also escalates.
     if not 0.0 <= confidence <= 1.0:
         return Band.ESCALATE
-    if confidence >= PROCEED_AT:
+    proceed, ask = BANDS[risk]
+    if confidence >= proceed:
         return Band.PROCEED
-    if confidence >= ASK_AT:
+    if confidence >= ask:
         return Band.ASK
     return Band.ESCALATE

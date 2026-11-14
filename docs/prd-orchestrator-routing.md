@@ -79,9 +79,9 @@ Reuse: `banking_tools.get_registry()` for reversibility and `ToolKind`, the reda
 ### Edge cases and expected behavior
 | Case | Expected |
 |---|---|
-| 98/96/40 mixed confidence | first two run, third escalated with a note, one reply |
+| 98/96/40 mixed confidence | first two run, the third (under its ask line) is asked what the customer means, one reply (it was escalated before docs/prd-decision-layer.md) |
 | Reversible write, kind answer under 0.85 | asks the customer to clarify, does not run; runs once the kind is sure |
-| Escalated intent that others depend on | dependents wait, then are reported as blocked |
+| Escalated intent that others depend on | dependents wait, then are reported as blocked (now an intent being asked about, since low confidence asks) |
 | Freeze card and dispute a charge on it | freeze first, dispute after (same resource, write) |
 | Close an account and open another in one message | the opening goes first; the closing waits for it and is skipped if the opening did not complete |
 | Two reads on the same account | parallel |

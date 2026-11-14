@@ -38,3 +38,30 @@ CAPABILITY: dict[K, str] = {
 
 def capability(kind: K) -> str:
     return CAPABILITY[kind]
+
+
+# A short phrase for "do you want me to ...?", used to ask between the two readings Jev finds most likely.
+LABEL: dict[K, str] = {
+    K.FREEZE_CARD: "freeze a card",
+    K.UNFREEZE_CARD: "unfreeze a card",
+    K.ACTIVATE_CARD: "activate a new card",
+    K.ORDER_REPLACEMENT_CARD: "order a replacement card",
+    K.CHANGE_OR_RESET_PIN: "change or reset a PIN",
+    K.CLOSE_CARD: "close a card",
+    K.CARD_CONTROLS: "change a card's limits or alerts",
+    K.DISPUTE_TRANSACTION: "dispute a charge",
+    K.CREDIT_LIMIT_REQUEST: "ask for a credit limit increase",
+    K.FEE_OR_INTEREST_ADJUSTMENT: "review a fee, interest or rewards",
+    K.TRANSFER_FUNDS: "move money between your accounts",
+    K.PAY_CREDIT_CARD: "pay a credit card",
+    K.OPEN_ACCOUNT: "open an account",
+    K.CLOSE_ACCOUNT: "close an account",
+    K.ACCOUNT_BALANCE_OR_HISTORY: "see your balances or recent transactions",
+    K.LOOKUP_INFO: "look up your cards or profile details",
+    K.GENERAL_QUESTION: "answer a question about the bank's products or policies",
+    K.UPDATE_PROFILE: "change your email",
+    K.REPORT_FRAUD_OR_LOSS: "protect your cards after a loss or theft",
+    K.REQUEST_HUMAN: "connect you with a person",
+    K.UNCLEAR_OR_GREETING: "show you what I can help with",
+    K.OTHER: "pass this to a person",
+}

@@ -19,6 +19,7 @@ The HAND_OFF route has no runner on purpose: a hand-off kind never runs, it esca
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional
 
 from agent.containment import WalletContainment
@@ -37,6 +38,7 @@ from banking_tools.session import BankingSession
 from knowledge.index import KnowledgeIndex
 from orchestrator.auth import CustomerRecord, Directory, IdentityField, claim_matches
 from orchestrator.context import scoped
+from orchestrator.decision_log import DecisionLog, JsonlLog
 from orchestrator.decomposer import Decomposer
 from orchestrator.executor import ROUTE_TIMEOUTS
 from orchestrator.orchestrator import Orchestrator
@@ -97,6 +99,10 @@ class Conversation:
     specialists: Mapping[Name, Specialist]
 
 
+# Passive record of every decision from real use of the demo (git-ignored); the calibration report reads it.
+DECISION_LOG_PATH = Path(__file__).resolve().parents[2] / "evals" / "decisions.jsonl"
+
+
 def build_conversation(
     *,
     decomposer: Decomposer,
@@ -106,6 +112,7 @@ def build_conversation(
     session: Optional[BankingSession] = None,
     directory: Optional[Directory] = None,
     route_timeouts: Optional[Mapping[Route, float]] = None,
+    decision_log: Optional[DecisionLog] = None,
 ) -> Conversation:
     shared = session if session is not None else BankingSession()
     vault = SecretVault()
@@ -124,6 +131,7 @@ def build_conversation(
         capture_secrets=vault.capture,
         containment=WalletContainment(shared.database),
         products_for=lambda user: product_summary(shared.database, user),
+        decision_log=decision_log,
     )
     return Conversation(orchestrator, shared, vault, dispatcher, specialists)
 
@@ -151,4 +159,5 @@ def live_conversation(session: Optional[BankingSession] = None) -> Conversation:
         llm=LiteLLMToolClient(),
         index=get_index(),
         session=session,
+        decision_log=DecisionLog(JsonlLog(DECISION_LOG_PATH)),
     )

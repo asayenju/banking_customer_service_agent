@@ -58,7 +58,10 @@ from orchestrator.executor import (
 )
 from orchestrator.plan import READ_ONLY_KINDS, Plan, PlanRejected, Waiting, closes_wait_for_openings, plan
 from orchestrator.plan_preview import PlanPreview
-from orchestrator.reply import Reply, compose_reply
+from orchestrator import jev_state
+from orchestrator.decision_log import DecisionLog
+from orchestrator.repair import RepairLadder
+from orchestrator.reply import Reply, compose_reply, wording
 from orchestrator.routes import Route, route_for
 from orchestrator.scoring import ScoreContext, SCORER_TIMEOUT_SECONDS, IntentScore, Scorer, score_intents
 from orchestrator.trace import Trace, TraceEvent, TraceKind
@@ -172,6 +175,7 @@ class Orchestrator:
         scorer_timeout: float = SCORER_TIMEOUT_SECONDS,
         containment: Optional[Containment] = None,
         products_for: Optional[Callable[[str], str]] = None,
+        decision_log: Optional[DecisionLog] = None,
     ) -> None:
         self._decomposer = decomposer
         self._scorer = scorer
@@ -204,11 +208,13 @@ class Orchestrator:
         # Freezes made before a lost-wallet plan is worked out: (the freeze intent, what happened), this turn only.
         self._containment = containment
         self._products_for = products_for
+        self._decision_log = decision_log
         self._contained: list[tuple[Intent, RouteOutcome]] = []
         # What the customer wrote while a lost-wallet report was open: containment reads the cards named in it.
         self._report_text: dict[str, str] = {}
         # Requests for a person made while card protection was open: how many, and the last one, still owed.
         self._human_asks = 0
+        self._ladder = RepairLadder()
         self._deferred_human: Optional[Intent] = None
 
         self._active: dict[str, Intent] = {}
@@ -299,7 +305,16 @@ class Orchestrator:
         customer holds (never ids, balances or amounts)."""
         user = self._auth.verified_user_id
         products = self._products_for(user) if self._products_for is not None and user else ""
-        return ScoreContext(recent=self._history_now, products=products)
+        facts: tuple[tuple[str, str], ...] = ()
+        if jev_state.facts_enabled():
+            facts = jev_state.build(
+                verified=self._auth.verified_user_id is not None,
+                question_slot=next(iter(sorted(self._last_asked)), None),
+                plan_waiting=bool(self._pending_confirm),
+                other_open_kinds=[i.kind for i in self._active.values()],
+                asks_so_far=max(self._asks.values(), default=0),
+            )
+        return ScoreContext(recent=self._history_now, products=products, facts=facts)
 
     def _remember(self, said: str, replied: str) -> None:
         """Keep the last few turns, with the customer's words as they were after secrets were hidden."""
@@ -332,6 +347,7 @@ class Orchestrator:
         )
 
     def _forget(self, intent_id: str) -> None:
+        self._ladder.forget(intent_id)
         for table in (
             self._active,
             self._asks,
@@ -712,6 +728,17 @@ class Orchestrator:
 
         for decision in decisions.values():
             events.extend(_decision_events(decision))
+        if self._decision_log is not None:
+            self._decision_log.turn += 1
+            for decision in decisions.values():
+                logged = view.get(decision.intent_id)
+                if logged is not None:
+                    self._decision_log.decision(
+                        logged, self._scores.get(decision.intent_id), decision, asks_so_far=self._asks.get(decision.intent_id, 0),
+                        signals=dict(self._scores[decision.intent_id].signals) if decision.intent_id in self._scores else None,
+                    )
+                    if decision.action is Action.ESCALATE:
+                        self._decision_log.outcome(decision.intent_id, logged.kind.value, "escalated")
 
         executed = await self._execute(the_plan, {i.id: i for i in run_intents})
         events.extend(executed.trace.events)
@@ -734,6 +761,8 @@ class Orchestrator:
             if outcome.status is OutcomeStatus.DONE:
                 self._done.append(outcome.intent_id)
                 self._progress.pop(outcome.intent_id, None)
+                if self._decision_log is not None and outcome.intent_id in view:
+                    self._decision_log.outcome(outcome.intent_id, view[outcome.intent_id].kind.value, "completed")
             if outcome.status is OutcomeStatus.PARTIAL:
                 self._keep_for_retry(outcome.intent_id, view)
             if outcome.intent_id in still_asking or outcome.intent_id in waiting_on_answer:
@@ -754,7 +783,7 @@ class Orchestrator:
             view[owed.id] = owed
             events.extend(_decision_events(owed_decision))
 
-        ordered = tuple(decisions.values())
+        ordered = tuple(self._ladder.apply(view, tuple(decisions.values()), wording))
         self._awaiting = any(d.action is Action.ASK for d in ordered)
         self._last_asked = frozenset(
             q.slot for d in ordered if d.action is Action.ASK for q in d.questions

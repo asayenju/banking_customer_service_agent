@@ -9,3 +9,6 @@ __pycache__/
 
 # Recorded model conversations from live runs (they hold customer-like data)
 backend/evals/cassettes/
+
+# Decisions recorded passively from the demo
+backend/evals/decisions.jsonl

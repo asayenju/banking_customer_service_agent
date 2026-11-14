@@ -14,6 +14,7 @@ automatic offer.
 from typing import Any
 
 from agent.credit_lookup import NAMES as LOOKUP_NAMES, credit_lookups
+from agent.entities import ordinal_picks
 from agent.cards import describe_credit, owned_credit_accounts, resolve_credit
 from agent.specialist import SpecialistConfig, Validator
 from agent.specialists import credit_rules as rules
@@ -90,6 +91,9 @@ def prepare(intent: Intent, user_id: str, db: Any) -> Intent | RouteOutcome:
     named = next(((intent.slots.get(k) or "").strip() for k in _NAMING_SLOTS if (intent.slots.get(k) or "").strip()), "")
     if named:
         chosen = resolve_credit(named, accounts)
+        if chosen is None:  # "the second one", "2": counted along the list they were shown
+            picks = ordinal_picks(named.lower(), accounts)
+            chosen = picks[0] if len(picks) == 1 else None
         if chosen is None:
             return _which(intent, accounts)
     elif len(accounts) == 1:

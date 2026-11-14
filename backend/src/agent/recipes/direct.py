@@ -19,6 +19,7 @@ from collections.abc import Mapping
 from typing import Any, Optional
 
 from agent.cards import Card, describe, named_cards, owned_cards, resolve, which_card
+from agent.entities import resolve_cards
 from agent.guard import DbOwnership, Guard, GuardedSession
 from orchestrator.context import RouteContext
 from orchestrator.executor import OutcomeStatus, RouteOutcome
@@ -93,6 +94,11 @@ class DirectRunner:
             [intent.summary, *(str(v) for k, v in intent.slots.items() if k in ("card_id", "card_ids", "cards", "card_or_account_id", "account_id", "card"))]
         )
         named, every = named_cards(said, everyone, self._db)
+        if not (named or every):
+            # "the second one", "2", "those": counted along the list this customer was just shown.
+            answer = " ".join(str(intent.slots.get(k) or "") for k in ("card_id", "card_ids", "cards", "card"))
+            picked = resolve_cards(answer, candidates, self._db)
+            named, every = list(picked.cards), picked.every
         if named or every:
             return self._set_each(intent, guarded, named, freeze=freeze, every=every)
         gave_something = any((intent.slots.get(k) or "").strip() for k in ("card_id", "card_ids", "cards", "card_or_account_id"))
