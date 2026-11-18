@@ -233,13 +233,24 @@ def test_saying_no_runs_nothing_and_an_unrelated_message_does_not_approve():
     assert r.outcomes == ()
 
 
-def test_a_yes_that_is_not_about_this_plan_is_ignored():
+def test_a_plain_yes_confirms_the_plan_on_screen_whichever_request_the_decomposer_named():
+    """The system knows which plan it showed. A model that attributes a plain yes to some other request must not leave the
+    customer saying it twice."""
     shared = BankingSession(fidelity=Fidelity.TAU2)
     planner = Planner((CLOSE_STEP,))
     w = world(planner, shared, scripts=[interp(closing(), claims=GOOD_CLAIMS), interp(confirmed=("somebody_else",))])
     w.turn("close my debit card")
     w.turn("yes")
-    assert planner.executed == []
+    assert planner.executed == [("close_debit_card_4721", True)]
+
+
+def test_a_reply_that_is_more_than_a_plain_yes_is_still_left_to_the_decomposer():
+    shared = BankingSession(fidelity=Fidelity.TAU2)
+    planner = Planner((CLOSE_STEP,))
+    w = world(planner, shared, scripts=[interp(closing(), claims=GOOD_CLAIMS), interp(confirmed=("somebody_else",))])
+    w.turn("close my debit card")
+    w.turn("yes, but only if the refund goes to my checking account")
+    assert planner.executed == [], "a conditional yes is not a plain yes"
 
 
 def test_a_plan_of_only_undoable_steps_at_high_confidence_asks_nothing():
@@ -275,13 +286,15 @@ def test_a_route_that_asks_for_approval_when_it_was_already_given_one_fails():
     assert [o.status for o in r.outcomes] == [OutcomeStatus.FAILED]
 
 
-def test_a_plan_asked_about_three_times_without_a_yes_escalates():
+def test_a_plan_asked_about_again_and_again_without_a_yes_escalates_at_the_ask_limit():
+    from orchestrator.orchestrator import MAX_ASKS
+
     shared = BankingSession(fidelity=Fidelity.TAU2)
     planner = Planner((CLOSE_STEP,))
-    w = world(planner, shared, scripts=[interp(closing(), claims=GOOD_CLAIMS)] + [interp()] * 4)
-    results = [w.turn("close my debit card")] + [w.turn("hmm") for _ in range(4)]
-    assert [r.decisions[0].action.value for r in results][:3] == ["ask"] * 3
-    assert results[3].decisions[0].action.value == "escalate" and w.orch.active_ids == ()
+    w = world(planner, shared, scripts=[interp(closing(), claims=GOOD_CLAIMS)] + [interp()] * (MAX_ASKS + 1))
+    results = [w.turn("close my debit card")] + [w.turn("hmm") for _ in range(MAX_ASKS)]
+    assert [r.decisions[0].action.value for r in results][:MAX_ASKS] == ["ask"] * MAX_ASKS
+    assert results[MAX_ASKS].decisions[0].action.value == "escalate" and w.orch.active_ids == ()
     assert shared.audit_log == ()
 
 

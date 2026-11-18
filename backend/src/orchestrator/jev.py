@@ -88,6 +88,14 @@ def _state(message: str, intent: Intent, context: ScoreContext | None = None) ->
             state["products_the_customer_holds"] = context.products
         if context.facts:
             state["situation"] = "; ".join(f"{name.replace('_', ' ')}: {value}" for name, value in context.facts)
+        others = [r for r in context.requests if r[0] != intent.id]
+        if others:
+            state["the_customers_other_requests"] = "; ".join(f"{kind.lower().replace('_', ' ')}: {redact(summary)}" for _, kind, summary, _ in others)
+        waits = {r[0]: r[3] for r in context.requests}.get(intent.id, ())
+        if waits:
+            named = [f"{kind.lower().replace('_', ' ')}: {redact(summary)}" for rid, kind, summary, _ in context.requests if rid in waits]
+            if named:
+                state["the_customer_wants_this_after"] = "; ".join(named)
     return state
 
 

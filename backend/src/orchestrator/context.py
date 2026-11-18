@@ -68,6 +68,9 @@ class RouteContext:
     approved: Optional[PlanPreview] = None
     # The last few turns of the conversation, (who, text) oldest first, with secrets already hidden.
     recent: tuple[tuple[str, str], ...] = ()
+    # What has already been done in this conversation, one plain sentence each, from the audit of what really changed ("A dispute
+    # was filed...", "A replacement was ordered for ... (the old card closes)"). Written by code, never by a model.
+    done_so_far: tuple[str, ...] = ()
 
 
 def scoped(session: BankingSession) -> Callable[[SessionRequest], AgentSession]:

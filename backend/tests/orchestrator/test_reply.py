@@ -89,9 +89,21 @@ def test_questions_come_one_at_a_time_tied_to_their_intent_with_wording_filled_i
     assert batch.questions[1].text == "To be sure I have this right: sort out my fees. Is that what you want? If not, tell me more."
 
 
-def test_every_yes_to_what_is_about_to_be_done_is_still_asked_together_with_the_next_missing_detail():
+def test_what_is_about_to_be_done_is_asked_first_and_alone_and_a_missing_detail_waits_its_turn():
+    """A plan and a question in one reply leave the customer unsure which a yes or a date answers."""
     reply = compose_reply(INTENTS, decisions=[ask("cls", CONFIRM_SLOT), ask("frz", "card_id", "reason"), ask("fee", CONFIRM_SLOT)])
-    assert [(q.intent_id, q.slot) for q in reply.questions] == [("frz", "card_id"), ("cls", CONFIRM_SLOT), ("fee", CONFIRM_SLOT)]
+    assert [(q.intent_id, q.slot) for q in reply.questions] == [("cls", CONFIRM_SLOT), ("fee", CONFIRM_SLOT)]
+    after = compose_reply(INTENTS, decisions=[ask("frz", "card_id", "reason")])
+    assert [(q.intent_id, q.slot) for q in after.questions] == [("frz", "card_id")], "the question comes once nothing is waiting for a yes"
+
+
+def test_a_missing_detail_for_a_request_that_can_move_comes_before_a_what_do_you_mean():
+    from orchestrator.decision import CLARIFY_SLOT
+
+    reply = compose_reply(INTENTS, decisions=[ask("fee", CLARIFY_SLOT), ask("frz", "card_id")])
+    assert [(q.intent_id, q.slot) for q in reply.questions] == [("frz", "card_id")]
+    only = compose_reply(INTENTS, decisions=[ask("fee", CLARIFY_SLOT)])
+    assert [q.slot for q in only.questions] == [CLARIFY_SLOT], "an unclear request is still asked about when it is the only thing"
 
 
 def test_a_confirmation_question_says_what_will_happen():

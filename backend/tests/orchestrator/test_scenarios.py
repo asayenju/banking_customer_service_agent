@@ -353,7 +353,7 @@ def test_a_reply_that_changes_another_intent_leaves_the_asked_one_alone():
     ]  # fmt: skip
     second = w.turn("forget the card for now, make the transfer 900")
     assert brief(second) == ["decided:z", "scored:z", "decided:x", "asked:x", "decided:z", "asked:z"]
-    assert w.orch.ask_counts == {"x": 2, "z": 1}
+    assert w.orch.ask_counts == {"x": 0, "z": 1}, "x waited behind the transfer's confirmation and used none of its asks"
 
 
 @covers("Mock times out, malformed or partial")
@@ -415,15 +415,15 @@ def test_greetings_gibberish_and_silence_get_the_menu_and_then_a_human():
 
 
 @covers("Intent still under 0.85 after 3 asks")
-def test_an_intent_that_never_gets_sure_enough_escalates_after_three_questions():
+def test_an_intent_that_never_gets_sure_enough_escalates_after_the_ask_limit():
     # Each reply to "tell me more" is read with the whole story, so the request is scored again every time.
-    w = World([interp(I("x")), interp(), interp(), interp()], [[S("x", 0.30)]] * 4)
+    w = World([interp(I("x")), *[interp()] * MAX_ASKS], [[S("x", 0.30)]] * (MAX_ASKS + 1))
     assert brief(w.turn("tell me about the thing")) == ["scored:x", "decided:x", "asked:x"]
-    assert brief(w.turn("hmm")) == ["scored:x", "decided:x", "asked:x"]
-    assert brief(w.turn("hmm")) == ["scored:x", "decided:x", "asked:x"]
+    for _ in range(MAX_ASKS - 1):
+        assert brief(w.turn("hmm")) == ["scored:x", "decided:x", "asked:x"]
     assert w.orch.ask_counts == {"x": MAX_ASKS}
     assert brief(w.turn("hmm")) == ["scored:x", "decided:x", "escalated:x"]
-    assert w.scorer.asked == [["x"]] * 4
+    assert w.scorer.asked == [["x"]] * (MAX_ASKS + 1)
 
 
 @covers("Customer answers one intent but not another")
@@ -431,7 +431,7 @@ def test_answering_one_intent_rescores_only_it_while_the_other_keeps_counting():
     x = I("x", K.FREEZE_CARD, missing=("card_id",))
     z = I("z", K.FEE_OR_INTEREST_ADJUSTMENT, missing=("amount",))
     w = World(
-        [interp(x, z, claims=GOOD_CLAIMS), interp(I("x", K.FREEZE_CARD, {"card_id": "c1"})), interp(), interp()],
+        [interp(x, z, claims=GOOD_CLAIMS), interp(I("x", K.FREEZE_CARD, {"card_id": "c1"})), *[interp()] * (MAX_ASKS + 1)],
         [[S("x", 0.96), S("z", 0.96)], [S("x", 0.96)]],
     )
     w.turn("freeze my card and fix the interest on my savings")
@@ -440,8 +440,9 @@ def test_answering_one_intent_rescores_only_it_while_the_other_keeps_counting():
         "decided:x", "scored:x", "decided:x", "decided:z", "asked:z",
         "routed:x@1", "started:x@1", "finished:x@1",
     ]  # fmt: skip
-    assert w.scorer.asked == [["x", "z"], ["x"]] and w.orch.ask_counts == {"z": 2}
-    w.turn("not sure")
+    assert w.scorer.asked == [["x", "z"], ["x"]] and w.orch.ask_counts == {"z": 1}, "z waited behind x's question, then was asked once"
+    for _ in range(MAX_ASKS - 1):
+        w.turn("not sure")
     assert brief(w.turn("not sure")) == ["decided:z", "escalated:z"]
 
 

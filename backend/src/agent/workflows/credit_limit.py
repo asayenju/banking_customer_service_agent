@@ -113,6 +113,15 @@ class CreditLimit:
         if account is None or account.get("user_id") != ctx.user_id:
             return Refuse(f"{facts.credit_card_account_id} is not one of this customer's credit card accounts")
         if str(account.get("status") or "").upper() == "CLOSED" or str(account.get("account_status") or "").upper() == "CLOSED":
+            replaced = any(
+                o.get("credit_card_account_id") == facts.credit_card_account_id and str(o.get("status")).upper() not in ("CANCELLED", "CANCELED")
+                for o in db.credit_card_orders.data.values()
+            )
+            if replaced:
+                return Reply(
+                    "That card was closed when its replacement was ordered, so its limit cannot be raised. "
+                    "Once the new card is active, you can ask for the increase on it."
+                )
             return Reply("That card account is closed, so its limit cannot be raised.")
         if facts.requested_increase_amount <= 0:
             return Refuse("the increase must be a whole number of dollars above zero")

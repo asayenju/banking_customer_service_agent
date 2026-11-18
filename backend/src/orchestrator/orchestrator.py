@@ -69,9 +69,9 @@ from orchestrator.routes import Route, route_for
 from orchestrator.scoring import ScoreContext, SCORER_TIMEOUT_SECONDS, IntentScore, Scorer, score_intents
 from orchestrator.trace import Trace, TraceEvent, TraceKind
 from orchestrator.types import Choice, Decomposition, Intent, IntentKind, Question
-from orchestrator.unclear import HelpState, handle_unclear, offer_help, precheck
+from orchestrator.unclear import CLOSING_REPLY, HelpState, handle_unclear, is_closing, offer_help, precheck
 
-MAX_ASKS = 3
+MAX_ASKS = 5
 MAX_OFFERS = 100  # buttons remembered per conversation, oldest first out
 # Kinds a decomposer may call a reply to a clarifying question instead of the kind of the open request.
 _SIBLINGS: dict[IntentKind, frozenset[IntentKind]] = {
@@ -167,6 +167,15 @@ def _decision_events(decision: IntentDecision) -> list[TraceEvent]:
     return events
 
 
+def _shorten(text: str) -> str:
+    """At most HISTORY_CHARS, keeping the start and the end: a long reply ends with the question or the plan the customer is
+    answering, and cutting only the tail of it away would hide exactly that."""
+    if len(text) <= HISTORY_CHARS:
+        return text
+    keep = (HISTORY_CHARS - 5) // 2
+    return f"{text[:keep]} ... {text[-keep:]}"
+
+
 def _slot_hashes(intent: Intent) -> dict[str, str]:
     return {k: hashlib.sha256(str(v).encode()).hexdigest()[:8] for k, v in intent.slots.items() if k not in TRANSIENT_SLOTS}
 
@@ -192,6 +201,7 @@ class Orchestrator:
         scorer_timeout: float = SCORER_TIMEOUT_SECONDS,
         containment: Optional[Containment] = None,
         products_for: Optional[Callable[[str], str]] = None,
+        ledger: Optional[Callable[[], Sequence[str]]] = None,
         decision_log: Optional[DecisionLog] = None,
     ) -> None:
         self._decomposer = decomposer
@@ -225,6 +235,7 @@ class Orchestrator:
         # Freezes made before a lost-wallet plan is worked out: (the freeze intent, what happened), this turn only.
         self._containment = containment
         self._products_for = products_for
+        self._ledger = ledger
         self._decision_log = decision_log
         self._contained: list[tuple[Intent, RouteOutcome]] = []
         # What the customer wrote while a lost-wallet report was open: containment reads the cards named in it.
@@ -341,7 +352,11 @@ class Orchestrator:
     async def _interpret(self, message: str) -> Interpretation:
         """Ask the decomposer what the message means, telling it which questions are waiting (when it can take them)."""
         intents = tuple(self._active.values()) + tuple(self._resumable.values())
-        if "pending" in inspect.signature(self._decomposer.interpret).parameters:
+        parameters = inspect.signature(self._decomposer.interpret).parameters
+        if "awaiting_yes" in parameters:
+            waiting = tuple(i for i in self._pending_confirm if i in self._active)
+            return await self._decomposer.interpret(message, intents, self._history_now, self._pending_questions(), waiting)
+        if "pending" in parameters:
             return await self._decomposer.interpret(message, intents, self._history_now, self._pending_questions())
         return await self._decomposer.interpret(message, intents, self._history_now)
 
@@ -359,12 +374,13 @@ class Orchestrator:
                 other_open_kinds=[i.kind for i in self._active.values()],
                 asks_so_far=max(self._asks.values(), default=0),
             )
-        return ScoreContext(recent=self._history_now, products=products, facts=facts)
+        requests = tuple((i.id, i.kind.value, i.summary, i.depends_on) for i in self._active.values())
+        return ScoreContext(recent=self._history_now, products=products, facts=facts, requests=requests)
 
     def _remember(self, said: str, replied: str) -> None:
         """Keep the last few turns, with the customer's words as they were after secrets were hidden."""
-        self._transcript.append(("customer", said[:HISTORY_CHARS]))
-        self._transcript.append(("agent", replied[:HISTORY_CHARS]))
+        self._transcript.append(("customer", _shorten(said)))
+        self._transcript.append(("agent", _shorten(replied)))
         del self._transcript[:-HISTORY_MESSAGES]
 
     def _context_for(self, intent: Intent, timeout: float) -> RouteContext:
@@ -389,6 +405,7 @@ class Orchestrator:
             mode=self._mode,
             approved=approved,
             recent=self._history_now,
+            done_so_far=tuple(self._ledger()) if self._ledger is not None else (),
         )
 
     def _forget(self, intent_id: str) -> None:
@@ -422,6 +439,8 @@ class Orchestrator:
             message = self._capture_secrets(message, expecting_secret=bool(self._last_asked & SECRET_SLOTS))
         self._latest = message
         events: list[TraceEvent] = []
+        if not self._awaiting and not self._pending_confirm and is_closing(message):
+            return self._closing_turn(events)  # thanks, with nothing waiting for an answer: say so kindly and stop
         if not self._awaiting:
             unclear = precheck(message)
             if unclear is not None:
@@ -431,6 +450,13 @@ class Orchestrator:
         except Exception as exc:
             return self._failed_turn(f"decomposer failed: {type(exc).__name__}", events)
         return await self._real_turn(message, interpretation, events)
+
+    def _closing_turn(self, events: list[TraceEvent]) -> TurnResult:
+        """The customer said thanks (or goodbye) and asked for nothing: no request is made of it, and nothing is asked."""
+        events.append(TraceEvent(kind=TraceKind.DECIDED, detail="closing", reason="the customer is saying thanks"))
+        self._awaiting = False
+        reply = Reply(text=CLOSING_REPLY, questions=(), escalated_intent_ids=(), failed_intent_ids=())
+        return TurnResult(reply=reply, trace=Trace(events=tuple(events)), decisions=(), outcomes=())
 
     async def _unclear_turn(self, intent: Intent, events: list[TraceEvent]) -> TurnResult:
         decision, self._help = handle_unclear(intent, self._help)
@@ -635,7 +661,8 @@ class Orchestrator:
                 )
 
         asked_before = dict(self._pending_route_questions)  # what a route was waiting on, before this message
-        waiting_on_yes = self._waiting_on_one_question(asked_before)
+        # A plan on screen takes the yes: a question held back behind it is not what a plain yes answers.
+        waiting_on_yes = None if self._pending_confirm else self._waiting_on_one_question(asked_before)
         agreeing = waiting_on_yes is not None and confirms_understanding(message)
         if agreeing:
             # A plain yes or no to the question on screen is never a new request, whatever the decomposer made of it.
@@ -775,6 +802,10 @@ class Orchestrator:
         plain_agreement = says_yes(message) or is_affirmation(message)
         if agreeing and waiting_on_yes is not None and waiting_on_yes not in confirmed_now:
             confirmed_now = (*confirmed_now, waiting_on_yes)  # the yes was the answer even if the decomposer missed it
+        if says_yes(message) and (confirms_understanding(message) or is_affirmation(message)) and waiting_on_yes is None:
+            # A plain yes while plans are waiting for one confirms the plans on screen, whatever the decomposer listed: the
+            # system knows which plans it showed, so it does not ask a model. (A "yes, but ..." is not plain and goes to it.)
+            confirmed_now = (*confirmed_now, *(i for i in self._pending_confirm if i in self._active and i not in confirmed_now))
         for intent_id in confirmed_now:
             shown = self._pending_confirm.pop(intent_id, None)
             if shown is not None and intent_id in self._active:
@@ -921,6 +952,11 @@ class Orchestrator:
             Waiting(intent_id=i, blocked_by=blockers) for i, blockers in waiting_on_answer.items()
         )
         reply = compose_reply(view, outcomes=reported, decisions=ordered, waiting=waiting)
+        put_to_customer = {(q.intent_id, q.slot) for q in reply.questions}
+        for held in ordered:
+            if held.action is Action.ASK and held.questions and not any((q.intent_id, q.slot) in put_to_customer for q in held.questions):
+                # It waited behind a plan or another question and was not put to the customer: it must not use up its asks.
+                self._asks[held.intent_id] = max(0, self._asks.get(held.intent_id, 0) - 1)
         self._clarifying = {q.intent_id: q for q in reply.questions if q.slot == CLARIFY_SLOT and q.intent_id in self._active}
         for on_screen in reply.questions:
             # The question on screen is the one the customer's next message answers.

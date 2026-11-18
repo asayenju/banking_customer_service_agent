@@ -10,7 +10,7 @@ from orchestrator import observe
 from orchestrator.decomposer import Interpretation, ScriptedDecomposer
 from orchestrator.observe import Recorder, failure_class, note, render_turn, summarise
 from orchestrator.scoring import IntentScore
-from orchestrator.types import Decomposition, Intent, IntentKind as K
+from orchestrator.types import Decomposition, Intent, IntentKind as K, Question
 from banking_tools import BankingSession
 from banking_tools.manifest import load_tasks
 from knowledge.index import Document, KnowledgeIndex
@@ -128,3 +128,40 @@ def test_a_turn_is_recorded_with_its_decisions_and_never_its_words(tmp_path):
     assert "turn 1" in render_turn(row) and recorder.conversation("conv-1") == [row]
     assert row["reply_asks"] == [], "a reply with no question sends the chat no asks"
     assert recorder.conversation("other") == []
+
+
+def test_a_question_held_back_behind_a_plan_is_not_counted_as_a_repeated_ask():
+    import time
+
+    from orchestrator.decision import Action, IntentDecision
+    from orchestrator.executor import RouteOutcome
+    from orchestrator.trace import Trace
+
+    class Reply:
+        text = "Done: it worked."
+        escalated_intent_ids = ()
+        failed_intent_ids = ()
+        choices = ()
+
+        def __init__(self, questions):
+            self.questions = questions
+
+    held = IntentDecision(intent_id="l", action=Action.ASK, reason="not sure enough to act yet", questions=(Question(intent_id="l", slot="clarification"),))
+
+    class Result:
+        decisions = (held,)
+        outcomes = ()
+        trace = Trace(events=())
+
+        def __init__(self, shown):
+            self.reply = Reply(shown)
+
+    recorder = Recorder(path=None)
+    observe.begin()
+    for turn in (1, 2):  # the same intent is asking both turns, but the customer is shown a plan, not its question
+        row = recorder.record("c", f"m{turn}", Result(()), [], time.monotonic(), ["l"])
+        assert row["failure_class"] is None, turn
+    shown = Question(intent_id="l", slot="clarification", text="To be sure?")
+    first = recorder.record("c", "m3", Result((shown,)), [], time.monotonic(), ["l"])
+    second = recorder.record("c", "m4", Result((shown,)), [], time.monotonic(), ["l"])
+    assert first["failure_class"] is None and second["failure_class"] == "repeated_ask", "shown twice in a row is a repeat"

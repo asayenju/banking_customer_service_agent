@@ -76,6 +76,9 @@ class ScoreContext:
     products: str = ""
     # Facts from application state, as types and flags only ("verified": "yes"), never a value, id, amount or digit.
     facts: tuple[tuple[str, str], ...] = ()
+    # Every open request the assistant found in the conversation, as (id, kind, summary, ids it waits for): the other things
+    # the customer asked for, and what they said should come first. A request is judged with them in view.
+    requests: tuple[tuple[str, str, str, tuple[str, ...]], ...] = ()
 
 
 class Scorer(Protocol):

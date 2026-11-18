@@ -24,6 +24,7 @@ from typing import Any, Optional
 
 from agent.containment import WalletContainment
 from agent.dispatcher import Name, RecordKinds, SubAgentDispatcher
+from agent.handoff import done_events
 from agent.llm_tools import ToolCallingLLMClient
 from agent.recipes.direct import DirectRunner
 from agent.specialist import Specialist, SpecialistConfig
@@ -131,6 +132,7 @@ def build_conversation(
         capture_secrets=vault.capture,
         containment=WalletContainment(shared.database),
         products_for=lambda user: product_summary(shared.database, user),
+        ledger=lambda: done_events(shared.database, shared.audit_log),
         decision_log=decision_log,
     )
     return Conversation(orchestrator, shared, vault, dispatcher, specialists)

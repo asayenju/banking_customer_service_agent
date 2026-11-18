@@ -130,27 +130,22 @@ def test_a_yes_goes_stale_when_the_details_change_with_it():
     assert result.reply.questions[0].slot == "confirmation"
 
 
-def test_each_intent_escalates_after_three_asks_while_the_others_carry_on():
+def test_each_intent_escalates_after_the_ask_limit_while_the_others_carry_on():
     w = World(
-        [
-            interp(I("x", K.FREEZE_CARD, missing=("card_id",)), I("y"), claims=GOOD_CLAIMS),
-            interp(),
-            interp(),
-            interp(),
-        ],
+        [interp(I("x", K.FREEZE_CARD, missing=("card_id",)), I("y"), claims=GOOD_CLAIMS), *[interp()] * (MAX_ASKS + 1)],
         [[S("x", 0.96), S("y", 0.96)]],
     )
     first = w.turn()
     assert w.sub.calls == ["y"] and "Done: summary of y" in first.reply.text
-    w.turn("uh")
-    third = w.turn("uh")
-    assert w.orch.ask_counts == {"x": MAX_ASKS} == {"x": 3}
-    fourth = w.turn("uh")
-    assert decisions(fourth)["x"].action is Action.ESCALATE
-    assert decisions(fourth)["x"].reason == "still not enough information after 3 questions"
-    assert fourth.reply.escalated_intent_ids == ("x",)
+    for _ in range(MAX_ASKS - 1):
+        last_ask = w.turn("uh")
+    assert w.orch.ask_counts == {"x": MAX_ASKS} == {"x": 5}
+    escalating = w.turn("uh")
+    assert decisions(escalating)["x"].action is Action.ESCALATE
+    assert decisions(escalating)["x"].reason == f"still not enough information after {MAX_ASKS} questions"
+    assert escalating.reply.escalated_intent_ids == ("x",)
     assert w.sub.calls == ["y"] and w.scorer.asked == [["x", "y"]]
-    assert third.reply.questions[0].slot == "card_id"
+    assert last_ask.reply.questions[0].slot == "card_id"
 
 
 def test_answering_one_intent_rescores_only_it_and_leaves_the_other_counting_up():
@@ -158,17 +153,18 @@ def test_answering_one_intent_rescores_only_it_and_leaves_the_other_counting_up(
     z = I("z", K.FEE_OR_INTEREST_ADJUSTMENT, missing=("amount",))
     answered = I("x", K.FREEZE_CARD, {"card_id": "c1"})
     w = World(
-        [interp(x, z, claims=GOOD_CLAIMS), interp(answered), interp(), interp()],
+        [interp(x, z, claims=GOOD_CLAIMS), interp(answered), *[interp()] * (MAX_ASKS + 1)],
         [[S("x", 0.96), S("z", 0.96)], [S("x", 0.96)]],
     )
     w.turn()
     second = w.turn("the card is c1")
     assert w.scorer.asked == [["x", "z"], ["x"]]
     assert w.direct.calls == ["x"] and "Done: summary of x" in second.reply.text
-    assert w.orch.ask_counts == {"z": 2}
-    w.turn("hm")
-    fourth = w.turn("hm")
-    assert fourth.reply.escalated_intent_ids == ("z",)
+    assert w.orch.ask_counts == {"z": 1}, "z waited behind x's question, then was asked once"
+    for _ in range(MAX_ASKS - 1):
+        w.turn("hm")
+    escalating = w.turn("hm")
+    assert escalating.reply.escalated_intent_ids == ("z",)
 
 
 def test_changing_the_details_of_an_intent_starts_its_count_again():

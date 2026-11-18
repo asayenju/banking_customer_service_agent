@@ -62,7 +62,7 @@ def describe(db: Any, entry: AuditEntry) -> str:
         txn = db.credit_card_transaction_history.data.get(str(a.get("transaction_id")), {})
         return f"A dispute was filed for a {txn.get('merchant_name', 'card')} charge ({_words(a.get('dispute_reason'))})."
     if tool == "order_replacement_credit_card_7291":
-        return f"A replacement was ordered for {card} ({_words(a.get('reason'))})."
+        return f"A replacement was ordered for {card} ({_words(a.get('reason'))}); the old card closes when a replacement is ordered."
     if tool == "submit_credit_limit_increase_request_7392":
         return f"A limit increase of {_dollars(a.get('requested_increase_amount'))} was requested for {card}."
     if tool == "approve_credit_limit_increase_5847":

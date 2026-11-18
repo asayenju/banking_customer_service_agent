@@ -103,6 +103,7 @@ class DecisionLog:
                 "signals": dict(signals or {}),
                 # Which details the request carries, by name only: enough to see that a reply landed in the wrong slot.
                 "slot_names": sorted(intent.slots),
+                "depends_on": list(intent.depends_on),
             }
         )
 

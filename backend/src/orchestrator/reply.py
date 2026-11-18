@@ -17,6 +17,7 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
 from orchestrator.auth import IDENTITY_SLOT
+from orchestrator.conflicts import heads_up
 from orchestrator.capabilities import LABEL
 from orchestrator.decision import CLARIFY_SLOT, CONFIRM_SLOT, Action, IntentDecision
 from orchestrator.executor import OutcomeStatus, RouteOutcome
@@ -168,8 +169,23 @@ def compose_reply(
         # time, when the request runs again with this answer (a route recomputes what it still needs each time).
         # A yes to what is about to be done is not a question to spread out: every one of those stays.
         details = [q for q in questions if q.slot != CONFIRM_SLOT]
-        questions = (*details[:1], *(q for q in questions if q.slot == CONFIRM_SLOT))
+        confirms = [q for q in questions if q.slot == CONFIRM_SLOT]
+        if confirms:
+            # What is about to be done comes first, and alone: a plan and a question in one reply leave the customer (and the
+            # model reading their answer) unsure which one a yes or a date belongs to. The question waits its turn.
+            questions = tuple(confirms)
+        else:
+            # A concrete missing detail for a request that can move comes before a "what do you mean?" about one that cannot.
+            details.sort(key=lambda q: q.slot == CLARIFY_SLOT)
+            questions = tuple(details[:1])
     if questions:
+        planned = {intents[q.intent_id].kind for q in questions if q.slot == CONFIRM_SLOT and q.intent_id in intents}
+        waiting_kinds = {
+            intents[d.intent_id].kind
+            for d in decisions
+            if d.action is Action.ASK and d.intent_id in intents and not any(q.slot == CONFIRM_SLOT for q in d.questions)
+        }
+        lines.extend(heads_up(planned, waiting_kinds))  # what the plan on screen will do to something else they asked for
         lines.append("To go on, I need a little more information:")
         lines.extend(f"- {q.text}" for q in questions)
 

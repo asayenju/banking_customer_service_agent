@@ -119,6 +119,9 @@ class SpecialistConfig:
 BASE_RULES = """You are a bank's specialist for one kind of request. You act only for the customer who
 has been verified. Follow these rules.
 - Never ask for, use or mention another person's details, accounts or cards.
+- "already done in this conversation" lists what has really been changed so far. Take it into account: do not offer or
+  repeat it, and say so when it is why something cannot be done now (a card a replacement has closed, a dispute that is
+  still open).
 - Write plain text for a person in a chat window: no markdown (no asterisks, no bold, no headings, no backticks),
   short sentences. A short list is fine as lines starting with a number or a dash.
 - Look facts up with your read tools, and with look_up_customer_records, which reads the customer's own
@@ -263,7 +266,7 @@ class Specialist:
             self._llm,
             box,
             system=system_prompt(self.config, intent.kind),
-            request=self._request(working, verified=ctx.verified_user_id is not None, recent=ctx.recent),
+            request=self._request(working, verified=ctx.verified_user_id is not None, recent=ctx.recent, done=ctx.done_so_far),
             terminals=(*self.config.terminals, *workflows),
             budget=self.config.budget,
             deadline=ctx.deadline,
@@ -462,7 +465,9 @@ class Specialist:
             return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text=decision.text)
         return _failed(intent, "the workflow asked for a human agent")
 
-    def _request(self, intent: Intent, verified: bool = False, recent: Sequence[tuple[str, str]] = ()) -> str:
+    def _request(
+        self, intent: Intent, verified: bool = False, recent: Sequence[tuple[str, str]] = (), done: Sequence[str] = ()
+    ) -> str:
         details = {k: v for k, v in sorted(intent.slots.items())}
         body: dict[str, Any] = {
             "kind": intent.kind.value,
@@ -473,6 +478,8 @@ class Specialist:
             body["identity"] = "the customer is already verified; never ask them to verify"
         if recent:
             body["recent conversation"] = [f"{who}: {said}" for who, said in recent]
+        if done:
+            body["already done in this conversation"] = list(done)
         return self._vault.capture(json.dumps(body, ensure_ascii=False))
 
     def _search_tool(self, seen: set[str]) -> ExtraTool:

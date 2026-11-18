@@ -107,7 +107,8 @@ class Recorder:
             for e in result.trace.events
         ]
         outcomes = [{"intent": o.intent_id, "status": o.status.value, "error": (o.error or "")[:_MAX_TEXT]} for o in result.outcomes]
-        asked = {d["intent"]: d["asked"][0] for d in decisions if d["action"] == Action.ASK.value and d["asked"]}
+        # Only a question that was put to the customer counts as asked: one held back behind a plan is not a repeat.
+        asked = {q.intent_id: q.slot for q in result.reply.questions}
         label = failure_class(decisions, outcomes, notes, intents, self._asked.get(conversation_id, {}), asked)
         self._asked[conversation_id] = asked
         rows = self._records[conversation_id]

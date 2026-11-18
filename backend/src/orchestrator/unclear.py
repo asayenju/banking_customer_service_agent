@@ -85,6 +85,34 @@ def precheck(message: str) -> Optional[Decomposition]:
     return Decomposition(intents=(intent,))
 
 
+CLOSING_REPLY = "You're welcome! I'm glad I could help. If you need anything else, I'm here."
+
+# Words a customer uses to say thanks or goodbye. A message is a closing only when every word is one of these and one of them
+# is gratitude or a farewell: "thanks for that, now freeze my card" has other words and is a request.
+_THANKS = frozenset("thanks thank thx ty appreciate appreciated cheers bye goodbye".split())
+_CLOSING_WORDS = _THANKS | frozenset(
+    """
+    you so much very a lot it that's thats all great perfect awesome good ok okay fine cool nice wonderful lovely
+    no problem worries worry ah oh well alright right sure got have day nice one for your help helping the i
+    really truly kindly anything else nothing more needed that will be is
+    """.split()
+)
+_NOTHING_ELSE = re.compile(r"\b(?:that(?:'s| is)? all|nothing else|no more|that will be all)\b", re.IGNORECASE)
+
+
+def is_closing(message: str) -> bool:
+    """The customer is saying thanks or goodbye and asking for nothing, so the conversation can simply end kindly. Judged on
+    the words alone, so a request tucked into a thank-you is never swallowed, and applied only when no question is open (a
+    "no thank you" to an offer is an answer, not a goodbye)."""
+    text = message.strip().lower()
+    if not text or len(text) > 80:
+        return False
+    tokens = _TOKEN.findall(text)
+    if not tokens or not all(t in _CLOSING_WORDS for t in tokens):
+        return False
+    return any(t in _THANKS for t in tokens) or bool(_NOTHING_ELSE.search(text))
+
+
 def offer_help() -> str:
     """The read-only help tool: one fixed menu, the same for every customer."""
     return HELP_MENU
