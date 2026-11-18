@@ -96,11 +96,15 @@ def needs_confirmation(kind: IntentKind) -> bool:
     return kind not in NO_YES_NEEDED
 
 
+# Details that are context for a route and never part of what a yes covers (the exchange so far: see ``talk``).
+TRANSIENT_SLOTS = frozenset({"conversation_so_far"})
+
+
 def fingerprint(intent: Intent) -> str:
     """Identifies exactly what a yes covers. A hash, so a PIN in the slots never
     sits in confirmation state in the clear."""
     canonical = json.dumps(
-        {"kind": intent.kind.value, "slots": intent.slots},
+        {"kind": intent.kind.value, "slots": {k: v for k, v in intent.slots.items() if k not in TRANSIENT_SLOTS}},
         sort_keys=True,
         separators=(",", ":"),
     )

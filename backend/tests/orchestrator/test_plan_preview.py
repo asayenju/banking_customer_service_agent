@@ -312,3 +312,38 @@ def test_every_step_label_a_plan_can_carry_matches_the_catalog_for_all_write_too
     for name, spec in get_registry().items():
         if spec.kind is ToolKind.WRITE:
             assert spec.reversibility in (Reversibility.REVERSIBLE, Reversibility.IRREVERSIBLE), name
+
+
+# ---------------------------------------------------------------- the exchange is not part of what a yes covers
+
+def test_a_yes_still_runs_when_the_decomposer_sends_the_request_again_with_fewer_details():
+    shared = BankingSession(fidelity=Fidelity.TAU2)
+    planner = Planner((CLOSE_STEP,))
+    w = world(
+        planner, shared,
+        scripts=[interp(closing({"card_id": CARD, "reason": "lost"}), claims=GOOD_CLAIMS), interp(closing({"card_id": CARD}), confirmed=("x",))],
+    )
+    w.turn("close my debit card because I lost it")
+    w.turn("yes, go ahead")
+    assert planner.modes == ["plan", "execute"], "a detail left out of a re-sent request is not a change"
+    assert planner.executed == [("close_debit_card_4721", True)]
+
+
+def test_a_changed_detail_says_which_detail_when_the_plan_goes_stale():
+    shared = BankingSession(fidelity=Fidelity.TAU2)
+    planner = Planner((CLOSE_STEP,))
+    w = world(
+        planner, shared,
+        scripts=[interp(closing(), claims=GOOD_CLAIMS), interp(closing({"card_id": "other"}), confirmed=("x",))],
+    )
+    w.turn("close my debit card")
+    r = w.turn("yes, but the other card")
+    assert "went stale: details changed (card_id)" in r.decisions[0].reason
+    assert "other" not in r.decisions[0].reason  # names only, never values
+
+
+def test_the_exchange_so_far_never_changes_a_fingerprint():
+    plain = closing({"card_id": CARD})
+    talking = closing({"card_id": CARD, "conversation_so_far": "Asked: which card?\nCustomer: the blue one"})
+    assert fingerprint(plain) == fingerprint(talking)
+    assert fingerprint(plain) != fingerprint(closing({"card_id": "other"}))

@@ -26,6 +26,7 @@ Rules this module is responsible for:
 """
 
 import asyncio
+import hashlib
 import inspect
 import re
 from collections.abc import Callable, Mapping, Sequence
@@ -46,7 +47,8 @@ from orchestrator.containment import Containment
 from orchestrator.context import AgentSession, Mode, RouteContext, SessionRequest
 from orchestrator.llm_decomposer import confirms_understanding, is_affirmation
 from orchestrator.bands import PROCEED_AT, WRITE_KIND_ASK_AT
-from orchestrator.decision import CLARIFY_SLOT, CONFIRM_SLOT, HUMAN_AFTER_ASKS, Action, IntentDecision, decide, fingerprint
+from orchestrator.talk import KEY as TALK_KEY, Talk
+from orchestrator.decision import CLARIFY_SLOT, CONFIRM_SLOT, HUMAN_AFTER_ASKS, TRANSIENT_SLOTS, Action, IntentDecision, decide, fingerprint
 from orchestrator.decomposer import Decomposer, Interpretation
 from orchestrator.executor import (
     ROUTE_TIMEOUTS,
@@ -160,6 +162,16 @@ def _decision_events(decision: IntentDecision) -> list[TraceEvent]:
     return events
 
 
+def _slot_hashes(intent: Intent) -> dict[str, str]:
+    return {k: hashlib.sha256(str(v).encode()).hexdigest()[:8] for k, v in intent.slots.items() if k not in TRANSIENT_SLOTS}
+
+
+def _slot_changes(shown: Mapping[str, str], intent: Intent) -> set[str]:
+    """Names of the details added, removed or changed since the plan was shown. Never their values."""
+    now = _slot_hashes(intent)
+    return {k for k in set(shown) | set(now) if shown.get(k) != now.get(k)}
+
+
 class Orchestrator:
     def __init__(
         self,
@@ -215,6 +227,10 @@ class Orchestrator:
         # Requests for a person made while card protection was open: how many, and the last one, still owed.
         self._human_asks = 0
         self._ladder = RepairLadder()
+        self._talk = Talk()
+        # A short hash of each detail when a plan was shown, to say which details changed if the plan goes stale.
+        self._shown_slots: dict[str, dict[str, str]] = {}
+        self._stale_note: dict[str, str] = {}
         self._deferred_human: Optional[Intent] = None
 
         self._active: dict[str, Intent] = {}
@@ -348,8 +364,11 @@ class Orchestrator:
 
     def _forget(self, intent_id: str) -> None:
         self._ladder.forget(intent_id)
+        self._talk.forget(intent_id)
         for table in (
             self._active,
+            self._shown_slots,
+            self._stale_note,
             self._asks,
             self._runner_asks,
             self._pending_route_questions,
@@ -411,11 +430,19 @@ class Orchestrator:
         self._sessions_this_run = {}
         return await execute_plan(
             the_plan,
-            intents,
+            {i: self._with_talk(intent) for i, intent in intents.items()},
             self._runners,
             timeout=self._route_timeouts,
             context_for=self._context_for,
         )
+
+    def _with_talk(self, intent: Intent) -> Intent:
+        """The intent as a route sees it: its details plus the window of what was said about it (never fingerprinted)."""
+        said = self._talk.render(intent.id)
+        return intent.model_copy(update={"slots": {**intent.slots, TALK_KEY: said}}) if said else intent
+
+    def talk_for(self, intent_id: str) -> str:
+        return self._talk.render(intent_id)
 
     @staticmethod
     def _is_answer_no(message: str, asked: tuple[Question, ...]) -> bool:
@@ -464,8 +491,12 @@ class Orchestrator:
             return None
         fold: list[Intent] = []
         for found in decomposition.intents:
-            if found.id == intent_id and found.slots != self._active[intent_id].slots:
-                return None  # the decomposer already put the details where they belong
+            if (
+                found.id == intent_id
+                and found.slots != self._active[intent_id].slots
+                and (found.slots.get(question.slot) or "").strip()
+            ):
+                return None  # the decomposer already put the asked detail where it belongs
             if found.id not in self._active and (
                 found.kind is self._active[intent_id].kind or found.kind in _SIBLINGS.get(self._active[intent_id].kind, frozenset())
             ):
@@ -533,12 +564,8 @@ class Orchestrator:
                 # customer withdrawing the whole request.
                 (asked_no,) = asked_pending[intent_id]
                 intent_now = self._active[intent_id]
-                no_said = message.strip()[:500]
-                talk_so_far = intent_now.slots.get("conversation_so_far", "")
-                exchange = f"{talk_so_far}\nAsked: {asked_no.text or asked_no.slot.replace('_', ' ')}\nCustomer: {no_said}".strip()
-                self._active[intent_id] = intent_now.model_copy(
-                    update={"slots": {**intent_now.slots, asked_no.slot: "no", "conversation_so_far": exchange[-1500:]}}
-                )
+                self._talk.add(intent_id, asked_no.text or asked_no.slot.replace("_", " "), message)
+                self._active[intent_id] = intent_now.model_copy(update={"slots": {**intent_now.slots, asked_no.slot: "no"}})
                 self._prints[intent_id] = fingerprint(self._active[intent_id])
                 self._asks[intent_id] = 0
                 self._pending_route_questions.pop(intent_id, None)
@@ -606,6 +633,11 @@ class Orchestrator:
                 # never changes afterwards, so a plan's approval stays bound to the same details.
                 said = self._report_text.setdefault(intent.id, message[:2000])
                 intent = intent.model_copy(update={"slots": {**intent.slots, "said": said}})
+            open_now = self._active.get(intent.id)
+            if open_now is not None and open_now.kind is intent.kind:
+                # A request the decomposer sends again each turn can add or change a detail, never erase one by leaving
+                # it out (a card settled earlier would be lost, and a plan the customer saw would look stale).
+                intent = intent.model_copy(update={"slots": {**open_now.slots, **intent.slots}})
             current = fingerprint(intent)
             earlier = self._prints.get(intent.id)
             if earlier is not None and earlier != current:
@@ -630,13 +662,10 @@ class Orchestrator:
             for extra in folded:  # details the decomposer put on a second copy of the same request
                 waiting_intent = waiting_intent.model_copy(update={"slots": {**extra.slots, **waiting_intent.slots}})
             said = message.strip()[:500]
-            # The exchange is kept as one detail of the request, in words: the specialist reads it like a conversation
-            # (the summary stays the customer's own short statement of what they want).
-            earlier = waiting_intent.slots.get("conversation_so_far", "")
-            exchange = f"{earlier}\nAsked: {asked.text or asked_slot.replace('_', ' ')}\nCustomer: {said}".strip()
-            self._active[answered_id] = waiting_intent.model_copy(
-                update={"slots": {**waiting_intent.slots, asked_slot: said, "conversation_so_far": exchange[-1500:]}}
-            )
+            # The exchange is kept in words, apart from the details: the specialist reads it like a conversation, and
+            # it never changes what a yes covers (the summary stays the customer's own short statement).
+            self._talk.add(answered_id, asked.text or asked_slot.replace("_", " "), said)
+            self._active[answered_id] = waiting_intent.model_copy(update={"slots": {**waiting_intent.slots, asked_slot: said}})
             self._prints[answered_id] = fingerprint(self._active[answered_id])
             self._asks[answered_id] = 0
             # Not "touched", like a yes: the customer only answered, so the request keeps the score it earned when it
@@ -656,11 +685,8 @@ class Orchestrator:
                 current_intent = current_intent.model_copy(
                     update={"slots": {**extra.slots, **current_intent.slots}, "summary": extra.summary or current_intent.summary}
                 )
-            talk = current_intent.slots.get("conversation_so_far", "")
-            exchange = f"{talk}\nAsked: {question_shown.text or 'tell me more'}\nCustomer: {said_now}".strip()
-            self._active[clarified_id] = current_intent.model_copy(
-                update={"slots": {**current_intent.slots, "conversation_so_far": exchange[-1500:]}}
-            )
+            self._talk.add(clarified_id, question_shown.text or "tell me more", said_now)
+            self._active[clarified_id] = current_intent
             self._prints[clarified_id] = fingerprint(self._active[clarified_id])
             if only_yes:
                 self._understood.add(clarified_id)  # "yes, that is what I want": the kind is settled
@@ -884,15 +910,19 @@ class Orchestrator:
         """Where an intent stands once it passed the confidence and detail checks."""
         current = fingerprint(intent)
         proposal = self._proposals.get(intent.id)
+        stale = ""
         if proposal is not None and proposal.intent_fp != current:
             # The details changed since the plan was shown: it, and any yes to it, is stale.
+            changed = sorted(_slot_changes(self._shown_slots.get(intent.id, {}), intent))
+            stale = "the plan the customer saw went stale: details changed (" + (", ".join(changed) or "unknown") + ")"
+            self._stale_note[intent.id] = stale
             self._proposals.pop(intent.id, None)
             self._pending_confirm.pop(intent.id, None)
             self._confirmed.pop(intent.id, None)
             proposal = None
         if proposal is None:
             return IntentDecision(
-                intent_id=intent.id, action=Action.PREVIEW, reason="working out exactly what to do"
+                intent_id=intent.id, action=Action.PREVIEW, reason=stale or "working out exactly what to do"
             )
         if proposal.reversible_only or self._confirmed.get(intent.id) == proposal.plan_fp:
             self._approved[intent.id] = proposal
@@ -939,6 +969,7 @@ class Orchestrator:
             if outcome.status is OutcomeStatus.NEEDS_CONFIRMATION and outcome.proposal is not None:
                 proposal = outcome.proposal
                 self._proposals[intent_id] = proposal
+                self._shown_slots[intent_id] = _slot_hashes(self._active[intent_id])
                 if proposal.reversible_only:
                     self._approved[intent_id] = proposal
                     decisions[intent_id] = IntentDecision(
@@ -947,9 +978,10 @@ class Orchestrator:
                 else:
                     self._pending_confirm[intent_id] = proposal.plan_fp
                     self._asks[intent_id] = self._asks.get(intent_id, 0) + 1
-                    decisions[intent_id] = self._ask_for_plan(
-                        intent_id, proposal, "awaiting the customer's yes to the plan"
-                    )
+                    why = "awaiting the customer's yes to the plan"
+                    if note := self._stale_note.pop(intent_id, ""):
+                        why = f"{why}; {note}"
+                    decisions[intent_id] = self._ask_for_plan(intent_id, proposal, why)
             elif outcome.status is OutcomeStatus.NEEDS_INFO:
                 self._route_asked(outcome, decisions, events)
             else:

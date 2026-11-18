@@ -7,6 +7,7 @@ the card. Another customer's card never appears in a list and never resolves.
 """
 
 import re
+from datetime import datetime
 from collections.abc import Mapping, Sequence
 from typing import Any, Optional
 
@@ -77,8 +78,24 @@ def describe_credit(account: Card) -> str:
     return f"your {account.get('card_type')}{last_four} (credit card)"
 
 
+def describe_credit_detail(account: Card) -> str:
+    """A credit card told apart by what the records hold: its name, when it was opened and what it owes. The bank
+    does not store a credit card's last four digits, so they are never shown."""
+    opened = str(account.get("date_of_account_open") or "")
+    try:
+        month = datetime.strptime(opened[:10], "%m/%d/%Y").strftime("%b %Y")
+    except ValueError:
+        month = ""
+    bits = ([f"opened {month}"] if month else []) + ([f"balance {account['current_balance']}"] if account.get("current_balance") else [])
+    return f"your {account.get('card_type')} (credit card{', ' + ', '.join(bits) if bits else ''})"
+
+
+_NOISE = {"card", "cards", "my", "the", "your", "credit", "a", "an", "one"}
+
+
 def _words(text: str) -> set[str]:
-    return {w for w in "".join(c.lower() if c.isalnum() else " " for c in text).split() if w not in {"card", "cards", "my", "the"}}
+    bare = re.sub(r"\(.*?\)", " ", text)  # a pasted list line: "your Gold Card (credit card, opened ...)"
+    return {w for w in "".join(c.lower() if c.isalnum() else " " for c in bare).split() if w not in _NOISE}
 
 
 def resolve_credit(named: str, accounts: Sequence[Card]) -> Optional[Card]:

@@ -14,8 +14,8 @@ automatic offer.
 from typing import Any
 
 from agent.credit_lookup import NAMES as LOOKUP_NAMES, credit_lookups
-from agent.entities import ordinal_picks
-from agent.cards import describe_credit, owned_credit_accounts, resolve_credit
+from agent.entities import pick_credit
+from agent.cards import describe_credit_detail, owned_credit_accounts
 from agent.specialist import SpecialistConfig, Validator
 from agent.specialists import credit_rules as rules
 from agent.workflows.credit_closure import CreditClosure
@@ -53,6 +53,8 @@ How to work:
    account at least 60 days old. Before closing, log the reason and make the retention offer
    that the notes give for the card's tier. Never offer a downgrade or an upgrade; you cannot
    apply for a card for the customer.
+   A balance is the workflow's to handle (it finds which checking account can pay it): report the closure with
+   start_credit_closure and never ask the customer about paying the balance yourself.
 6. For a limit increase, check the requested amount against the tier's cap before you submit.
    An open dispute or a pending replacement blocks an approval: do the limit request first when
    the customer wants several things.
@@ -74,7 +76,7 @@ _NAMING_SLOTS = ("credit_card_account_id", "card_or_account_id", "account_id")
 
 
 def _which(intent: Intent, accounts: list[Any]) -> RouteOutcome:
-    listing = "\n".join(f"- {describe_credit(a)}" for a in accounts)
+    listing = "\n".join(f"- {describe_credit_detail(a)}" for a in accounts)
     return RouteOutcome(
         intent_id=intent.id,
         status=OutcomeStatus.NEEDS_INFO,
@@ -93,10 +95,7 @@ def prepare(intent: Intent, user_id: str, db: Any) -> Intent | RouteOutcome:
         return intent
     named = next(((intent.slots.get(k) or "").strip() for k in _NAMING_SLOTS if (intent.slots.get(k) or "").strip()), "")
     if named:
-        chosen = resolve_credit(named, accounts)
-        if chosen is None:  # "the second one", "2": counted along the list they were shown
-            picks = ordinal_picks(named.lower(), accounts)
-            chosen = picks[0] if len(picks) == 1 else None
+        chosen = pick_credit(named, accounts)  # also "the second one", "2": counted along the list they were shown
         if chosen is None:
             return _which(intent, accounts)
     elif len(accounts) == 1:

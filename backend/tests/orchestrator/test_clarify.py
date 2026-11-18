@@ -53,7 +53,7 @@ def test_a_reply_read_as_a_fraud_report_is_still_the_same_dispute_and_adds_its_d
     w.turn(REPLY)
     kept = w.orch._active.get("d") or w.orch._active.get("n1")
     assert w.orch.active_ids == ("d",) and kept.slots["date"] == "10/21/2025" and "never used Zoom" in kept.summary
-    assert "Customer: " + REPLY[:30] in kept.slots["conversation_so_far"]
+    assert "Customer: " + REPLY[:30] in w.orch.talk_for("d")
 
 
 def test_a_real_new_request_in_the_reply_is_not_swallowed():

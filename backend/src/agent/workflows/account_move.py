@@ -23,7 +23,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agent import bank_accounts as accounts
 from agent.bank_accounts import BankAccount, Product
-from agent.cards import describe_credit, owned_credit_accounts, resolve_credit
+from agent.cards import describe_credit, describe_credit_detail, owned_credit_accounts
+from agent.entities import pick_credit
 from agent.specialist import ValidationContext
 from agent.specialists import accounts_rules as rules
 from agent.specialists.credit_rules import money
@@ -120,19 +121,26 @@ class PayCard:
     facts = PayFacts
 
     def decide(self, ctx: WorkflowContext, facts: PayFacts) -> Decision:
+        cards = owned_credit_accounts(ctx.database, ctx.user_id)
+        card = pick_credit(facts.credit_card_account_id, cards) or pick_credit(str(ctx.slots.get("credit_card_account_id") or ""), cards)
         if rules.cents(facts.amount) <= 0:
             return Refuse("a payment must be a dollar amount above zero")
         if (problem := _amount_differs(ctx, facts.amount)) is not None:
             return Refuse(problem)
-        cards = owned_credit_accounts(ctx.database, ctx.user_id)
-        card = resolve_credit(facts.credit_card_account_id, cards)
         checking_options = [a for a in accounts.accounts_of(ctx.database, ctx.user_id) if a.is_open and a.product is Product.CHECKING]
-        checking = accounts.resolve(facts.checking_account_id, checking_options)
+        able = [a for a in checking_options if a.balance is not None and a.balance >= facts.amount]
+        checking = accounts.resolve(facts.checking_account_id, checking_options) or accounts.resolve(
+            str(ctx.slots.get("checking_account_id") or ""), checking_options
+        )
+        if checking is None and len(able) == 1:
+            checking = able[0]
         questions: list[Ask] = []
         if card is None:
-            questions.append(Ask("credit_card_account_id", "Which card would you like to pay?\n" + "\n".join(f"- {describe_credit(c)}" for c in cards)))
+            questions.append(Ask("credit_card_account_id", "Which card would you like to pay?\n" + "\n".join(f"- {describe_credit_detail(c)}" for c in cards)))
         if checking is None:
-            questions.append(Ask("checking_account_id", f"Which checking account should the payment come from?\n{_listing(checking_options)}"))
+            if not able:
+                return Reply(f"None of your checking accounts has ${facts.amount:,.2f} to make that payment.")
+            questions.append(Ask("checking_account_id", f"Which checking account should the payment come from?\n{_listing(able)}"))
         if questions or card is None or checking is None:
             return NeedInfo(tuple(questions))
         args = {

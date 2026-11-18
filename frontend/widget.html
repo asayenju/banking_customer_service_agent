@@ -100,6 +100,7 @@
   .primary { flex:1; border:0; background:var(--accent); color:var(--accent-ink); border-radius:10px; padding:10px 14px; font-weight:600; cursor:pointer; }
   .ghost { border:1px solid var(--line); background:transparent; border-radius:10px; padding:10px 14px; cursor:pointer; color:var(--muted); font-weight:500; }
   .actions button:disabled { opacity:.45; cursor:default; }
+  .actions.choices { flex-wrap:wrap; border-top:0; padding:8px 0 0; }
   .done { border-color:var(--ok); }
   .done > header { background:var(--ok-bg); color:var(--ok); }
   .done li { margin:0 0 4px; }
@@ -259,6 +260,25 @@ function render(into, data) {
   }
   if (/^Done: /.test(text)) { into.append(doneCard(text)); return; }
   for (const part of [clean(text), extra].filter(Boolean)) into.append(el("p", null, part));
+  const bar = choiceBar([text, extra].join("\n"));
+  if (bar) into.append(bar);
+}
+/* Tap answers for the two kinds of question the bank asks: pick one from a list, or yes or no. They send the same words a
+   person would type, so nothing changes on the server. A bulleted list sends the line, a numbered one sends its number. */
+function choiceBar(text) {
+  const lines = text.split("\n"), bullets = [], numbered = [];
+  for (const line of lines) {
+    let m;
+    if ((m = line.match(/^\s*-\s+(.*\S)\s*$/))) bullets.push(m[1]);
+    else if ((m = line.match(/^\s*(\d+)\.\s+(.*\S)\s*$/))) numbered.push([m[1], m[2]]);
+  }
+  const bar = el("div", "actions choices");
+  const lock = () => bar.querySelectorAll("button").forEach(b => { b.disabled = true; });
+  const add = (label, said, cls) => { const b = el("button", cls || "ghost", label); b.type = "button"; b.onclick = () => { lock(); send(said); }; bar.append(b); };
+  if (numbered.length >= 2) numbered.forEach(([n, label]) => add(label, n));
+  else if (bullets.length >= 2) bullets.forEach(label => add(label, label));
+  else if (/\b(would you like|do you want|shall i|should i|can i go ahead|is that (right|correct))\b[^\n]*\?\s*$/i.test(text.trim())) { add("Yes", "Yes", "primary"); add("No", "No"); }
+  return bar.children.length ? bar : null;
 }
 
 async function send(text) {

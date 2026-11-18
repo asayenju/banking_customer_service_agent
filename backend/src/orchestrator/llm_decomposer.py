@@ -237,7 +237,7 @@ def is_affirmation(text: str) -> bool:
 
 _AGREEING_WORDS = frozenset(
     "yes yeah yep yup correct right exactly sure ok okay that thats that's is what i want it please do go ahead thanks "
-    "thank you so indeed absolutely definitely".split()
+    "thank you so indeed absolutely definitely would be great good sounds works fine perfect".split()
 )
 
 

@@ -77,11 +77,15 @@ def _shown(value: Any) -> str:
     return str(value)
 
 
+# The customer's own id means nothing to them and is no part of what they approve.
+_NOT_SHOWN = frozenset({"user_id"})
+
+
 def render_plan(steps: tuple[PlanStep, ...]) -> str:
     """The text the customer approves. Built here so it always matches the steps."""
     lines = ["Here is exactly what I will do:"]
     for step in steps:
-        details = ", ".join(f"{k.replace('_', ' ')}: {_shown(v)}" for k, v in sorted(step.args.items()))
+        details = ", ".join(f"{k.replace('_', ' ')}: {_shown(v)}" for k, v in sorted(step.args.items()) if k not in _NOT_SHOWN)
         undo = "can be undone" if step.reversible else "cannot be undone"
         lines.append(f"{step.index}. {step.description}" + (f" ({details})" if details else "") + f" - {undo}")
     lines.append("Shall I go ahead? (yes or no)")

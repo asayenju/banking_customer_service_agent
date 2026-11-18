@@ -27,6 +27,8 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
+from agent import bank_accounts as accounts
+from agent.bank_accounts import Product
 from agent.specialists.credit_rules import (
     MIN_AGE_FOR_CLOSING_DAYS,
     account_disputes,
@@ -113,6 +115,7 @@ class CreditClosure:
         if tier is None:
             return HandOff(f"the card type {account.get('card_type')} has no closing rules on file")
         account_id = facts.credit_card_account_id
+        card_name = f"your {account.get('card_type')}"
         if account_disputes(db, account):
             return Reply("There is a dispute in progress on this card. It can be closed once the dispute is resolved.")
         if active_orders(db, account_id):
@@ -124,16 +127,30 @@ class CreditClosure:
         if balance is None:
             return HandOff("the balance on this card is not on file")
         if balance > 0:
-            if not facts.pay_from_checking_account_id:
-                return NeedInfo(
-                    (
-                        Ask(
-                            "pay_from_checking_account_id",
-                            f"This card has a balance of ${balance:,.2f}, which has to be paid before it can be closed. "
-                            "I can pay it from one of your checking accounts. Which one would you like to use?",
-                        ),
+            pay_from = facts.pay_from_checking_account_id
+            if not pay_from:
+                open_checking = [a for a in accounts.accounts_of(db, ctx.user_id) if a.is_open and a.product is Product.CHECKING]
+                able = [a for a in open_checking if a.balance is not None and a.balance >= balance]
+                if not able:
+                    held = "; ".join(f"{accounts.label(a)} has ${a.balance or 0:,.2f}" for a in open_checking) or "you have no open checking account"
+                    return Reply(
+                        f"This card has a balance of ${balance:,.2f}, which has to be paid before it can be closed, and none of your "
+                        f"checking accounts can cover it ({held}). The card can be closed once the balance is paid in full."
                     )
-                )
+                if len(able) == 1:
+                    pay_from = able[0].account_id  # the one account that can pay: the plan shown next is the customer's chance to say no
+                else:
+                    options = "\n".join(f"{n}. {accounts.describe(a)} (has ${a.balance:,.2f})" for n, a in enumerate(able, start=1))
+                    return NeedInfo(
+                        (
+                            Ask(
+                                "pay_from_checking_account_id",
+                                f"This card has a balance of ${balance:,.2f}, which has to be paid before it can be closed. "
+                                f"Which checking account should pay it?\n{options}",
+                            ),
+                        )
+                    )
+            facts = facts.model_copy(update={"pay_from_checking_account_id": pay_from})
             checking = db.accounts.data.get(facts.pay_from_checking_account_id)
             if checking is None or checking.get("user_id") != ctx.user_id or checking.get("class") != "checking" or checking.get("status") != "OPEN":
                 return Refuse(f"{facts.pay_from_checking_account_id} is not one of this customer's open checking accounts")
@@ -148,16 +165,17 @@ class CreditClosure:
                     Step(
                         "pay_credit_card_from_checking_9182",
                         {"checking_account_id": facts.pay_from_checking_account_id, "credit_card_account_id": account_id, "amount": balance},
+                        note=f"Pay {card_name}'s balance of ${balance:,.2f} from your {checking.get('level') or 'checking'} account (it has ${funds:,.2f})",
                     ),
                 )
             )
         if retention_tried_recently(db, account_id, ctx.today):
-            return Plan((Step("close_credit_card_account_7834", {"credit_card_account_id": account_id}),))
+            return Plan((Step("close_credit_card_account_7834", {"credit_card_account_id": account_id}, note=f"Close {card_name}"),))
         if facts.reason is None:
             return NeedInfo((Ask("closure_reason", "I can help with that. May I ask why you would like to close this card?"),))
         log: list[Step] = []
         if not closure_records(db, account_id):  # the bank's tool cannot log a second reason for a card
-            log = [Step("log_credit_card_closure_reason_4521", {"credit_card_account_id": account_id, "closure_reason": facts.reason})]
+            log = [Step("log_credit_card_closure_reason_4521", {"credit_card_account_id": account_id, "closure_reason": facts.reason}, note=f"Note on {card_name} why you are closing it")]
         if facts.keeps_card:
             return Plan(tuple(log)) if log else Reply("Understood, the card stays open as it is.")
         if facts.reason == "annual_fee" and years_after(opened, WAIVER_MIN_YEARS) <= ctx.today:
@@ -195,9 +213,9 @@ class CreditClosure:
                 )
             )
         if facts.credit_answer == "yes":
-            credit = Step("apply_statement_credit_8472", {"credit_card_account_id": account_id, "amount": amount, "reason": "retention_offer"})
+            credit = Step("apply_statement_credit_8472", {"credit_card_account_id": account_id, "amount": amount, "reason": "retention_offer"}, note=f"Add a ${amount:,.0f} statement credit to {card_name}")
             return Plan((*log, credit))
-        return Plan((*log, Step("close_credit_card_account_7834", {"credit_card_account_id": account_id})))
+        return Plan((*log, Step("close_credit_card_account_7834", {"credit_card_account_id": account_id}, note=f"Close {card_name}")))
 
     def after(self, ctx: WorkflowContext, steps: Sequence[Step]) -> str:
         """What to tell the customer once the plan has run."""

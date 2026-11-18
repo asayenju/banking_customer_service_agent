@@ -11,7 +11,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from agent.cards import Card, named_cards
+from typing import Optional
+
+from agent.cards import Card, named_cards, resolve_credit
 
 _ORDINALS = {"first": 0, "second": 1, "third": 2, "fourth": 3, "fifth": 4, "1st": 0, "2nd": 1, "3rd": 2, "4th": 3, "5th": 4}
 _NUMBER_WORDS = {"two": 2, "three": 3, "four": 4, "five": 5, "2": 2, "3": 3, "4": 4, "5": 5}
@@ -79,3 +81,13 @@ def resolve_cards(text: str, shown: Sequence[Card], db: Any, *, owned: Sequence[
             unknown.append(four)
     kept = tuple(c for c in found if c.get("last_4_digits") not in shared)
     return Resolution(cards=kept, every=False, unknown=tuple(unknown), closed=tuple(closed), ambiguous=shared)
+
+
+def pick_credit(named: str, accounts: Sequence[Card]) -> Optional[Card]:
+    """The one credit account a reply means: by id, last four, name (also a pasted list line) or place in the list
+    ("1", "the second one"). None when it does not settle on exactly one of the customer's own."""
+    chosen = resolve_credit(named, accounts)
+    if chosen is not None:
+        return chosen
+    picks = ordinal_picks(named.strip().lower(), accounts)
+    return picks[0] if len(picks) == 1 else None

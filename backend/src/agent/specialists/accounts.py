@@ -12,9 +12,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from agent import bank_accounts as accounts
-from agent.cards import describe_credit, owned_credit_accounts, resolve_credit
+from agent.cards import describe_credit_detail, owned_credit_accounts
+from agent.entities import pick_credit
 from agent.specialist import SpecialistConfig, Validator
 from agent.specialists import accounts_rules as rules
+from agent.specialists.credit_rules import money
 from agent.workflows.account_close import CloseAccount
 from agent.workflows.account_move import PayCard, TransferFunds
 from agent.workflows.account_open import OpenAccount
@@ -50,6 +52,8 @@ How to work:
    accounts and start_pay_card for a credit card payment from checking. Report the accounts as the request's
    details give them and the exact amount the customer said; the rules are worked out for you. Money never
    goes to anyone else's account.
+   If the request's details carry balance_owed and the customer asked to pay the card off (or gave no amount),
+   the amount is balance_owed, exactly; never guess an amount.
 8. Wires, ACH, bill pay, overdraft, holds and check deposits have no tool. Answer questions from the
    notes; for a request, say what the customer can do themselves or hand over."""
 
@@ -95,13 +99,14 @@ def _first(intent: Intent, names: tuple[str, ...]) -> str:
 
 def _prepare_payment(intent: Intent, user_id: str, db: Any) -> Intent | RouteOutcome:
     """Which card is paid and from which checking account. A decomposer may have put either in ``account_id``;
-    whichever of the customer's records it names decides. One card, or one checking account, needs no question."""
+    whichever of the customer's records it names decides. One card, or one checking account that can cover the
+    payment, needs no question; a list never offers an account that cannot pay."""
     cards = owned_credit_accounts(db, user_id)
     checking = [a for a in accounts.accounts_of(db, user_id) if a.is_open and a.product is accounts.Product.CHECKING]
     card_name = _first(intent, ("credit_card_account_id", "card_account_id"))
     checking_name = _first(intent, ("checking_account_id", "from_account_id", "source_account_id"))
     loose = _first(intent, ("account_id",))
-    if loose and not card_name and resolve_credit(loose, cards) is not None:
+    if loose and not card_name and pick_credit(loose, cards) is not None:
         card_name = loose
     elif loose and not checking_name:
         checking_name = loose
@@ -109,19 +114,40 @@ def _prepare_payment(intent: Intent, user_id: str, db: Any) -> Intent | RouteOut
         return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text="I do not see a credit card on your profile to pay.")
     if not checking:
         return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text="I do not see an open checking account on your profile to pay from.")
-    card = resolve_credit(card_name, cards) if card_name else (cards[0] if len(cards) == 1 else None)
+    card = pick_credit(card_name, cards) if card_name else (cards[0] if len(cards) == 1 else None)
     if card is None:
-        listing = "\n".join(f"- {describe_credit(c)}" for c in cards)
+        listing = "\n".join(f"- {describe_credit_detail(c)}" for c in cards)
+        lead = f"I don't see a card matching \"{card_name[:60]}\" on your profile. " if card_name else ""
         return RouteOutcome(
             intent_id=intent.id,
             status=OutcomeStatus.NEEDS_INFO,
-            questions=(Question(intent_id=intent.id, slot="credit_card_account_id", text=f"Which card would you like to pay?\n{listing}"),),
+            questions=(Question(intent_id=intent.id, slot="credit_card_account_id", text=f"{lead}Which card would you like to pay?\n{listing}"),),
         )
-    paying = accounts.resolve(checking_name, checking) if checking_name else (checking[0] if len(checking) == 1 else None)
+    owed = money(card.get("current_balance")) or 0.0
+    if owed <= 0:
+        return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text=f"{describe_credit_detail(card)} has no balance to pay.")
+    said = money(intent.slots.get("amount")) if intent.slots.get("amount") else None
+    needed = min(said, owed) if said else owed
+    able = [a for a in checking if a.balance is not None and a.balance >= needed]
+    if not able:
+        held = "; ".join(f"{accounts.label(a)} has ${a.balance or 0:,.2f}" for a in checking)
+        return RouteOutcome(
+            intent_id=intent.id,
+            status=OutcomeStatus.DONE,
+            text=f"{describe_credit_detail(card)} needs ${needed:,.2f} paid, and none of your checking accounts can cover it ({held}).",
+        )
+    paying = accounts.resolve(checking_name, checking) if checking_name else (able[0] if len(able) == 1 else None)
     if paying is None:
-        return _which(intent, "checking_account_id", checking)
+        return _which(intent, "checking_account_id", able)
     return intent.model_copy(
-        update={"slots": {**intent.slots, "credit_card_account_id": str(card["account_id"]), "checking_account_id": paying.account_id}}
+        update={
+            "slots": {
+                **intent.slots,
+                "credit_card_account_id": str(card["account_id"]),
+                "checking_account_id": paying.account_id,
+                "balance_owed": f"{owed:.2f}",
+            }
+        }
     )
 
 

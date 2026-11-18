@@ -101,6 +101,8 @@ class DecisionLog:
                 "shadow_action": shadow,
                 "disagrees": disagree,
                 "signals": dict(signals or {}),
+                # Which details the request carries, by name only: enough to see that a reply landed in the wrong slot.
+                "slot_names": sorted(intent.slots),
             }
         )
 

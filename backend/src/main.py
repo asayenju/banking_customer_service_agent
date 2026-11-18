@@ -64,6 +64,10 @@ def _verified(task: dict[str, Any]) -> Optional[dict[str, Any]]:
     return who
 
 
+# The accounts tasks that are distinct customers; the other accounts tasks repeat one of these with other amounts.
+ACCOUNTS_DEMO = frozenset({"task_055", "task_056", "task_060", "task_062", "task_064", "task_067", "task_076"})
+
+
 def personas() -> list[dict[str, Any]]:
     """The test customers, listed by name and area only. Who they are comes from ``persona`` when one is opened;
     the list carries no situation and no user id."""
@@ -77,6 +81,8 @@ def personas() -> list[dict[str, Any]]:
         if who is None:
             continue
         entry = entries[task["id"]]
+        if list(entry.clusters) == ["accounts"] and task["id"] not in ACCOUNTS_DEMO:
+            continue
         found.append(
             {
                 "id": task["id"],
