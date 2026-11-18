@@ -185,7 +185,7 @@ class CreditClosure:
                         Ask(
                             "waiver_answer",
                             "As a thank you for being a customer for more than two years, I can waive this card's annual fee "
-                            "for a year. Would you like that instead of closing the card?", kind="yes_no"
+                            "for a year. Would you like that instead of closing the card?"
                         ),
                     )
                 )
@@ -208,7 +208,7 @@ class CreditClosure:
                     Ask(
                         "credit_answer",
                         f"{advice} Before you decide, I can add a ${amount:,.0f} statement credit to your account if you keep the card. "
-                        "Would you like that?".strip(), kind="yes_no"
+                        "Would you like that?".strip()
                     ),
                 )
             )

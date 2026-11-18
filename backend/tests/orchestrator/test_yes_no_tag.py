@@ -25,7 +25,7 @@ def test_a_question_is_untagged_unless_the_code_that_asks_it_says_yes_or_no():
     assert Question(intent_id="x", slot="s", kind="yes_no").kind == "yes_no"
 
 
-def test_the_retention_offer_is_a_yes_or_no_and_the_closure_reason_is_not():
+def test_questions_that_gather_information_or_a_preference_carry_no_tag():
     db = world()
     db.credit_card_accounts.data[BSILVER]["current_balance"] = "$0.00"  # nothing owed: the offers come next
     base = dict(credit_card_account_id=BSILVER, pay_from_checking_account_id=None, waiver_answer=None, credit_answer=None, keeps_card=False)
@@ -33,7 +33,7 @@ def test_the_retention_offer_is_a_yes_or_no_and_the_closure_reason_is_not():
     reason = CreditClosure().decide(ctx, ClosureFacts(reason=None, **base))
     assert isinstance(reason, NeedInfo) and [(a.slot, a.kind) for a in reason.questions] == [("closure_reason", "")]
     offer = CreditClosure().decide(ctx, ClosureFacts(reason="not_using_card", **base))
-    assert isinstance(offer, NeedInfo) and [(a.slot, a.kind) for a in offer.questions] == [("credit_answer", "yes_no")]
+    assert isinstance(offer, NeedInfo) and [(a.slot, a.kind) for a in offer.questions] == [("credit_answer", "")]
 
 
 def test_how_much_would_you_like_is_never_a_yes_or_no():
@@ -97,3 +97,13 @@ def test_the_please_confirm_question_reaches_the_chat_as_a_yes_or_no():
     w = World([interp(I("x", K.CLOSE_CARD, {"card_id": "c1"}), claims=GOOD_CLAIMS)], [[S("x", 0.99)]])
     result = w.turn("close my card")
     assert [(q.slot, q.kind) for q in result.reply.questions] == [("confirmation", "yes_no")]
+
+
+def test_no_workflow_question_is_tagged_so_buttons_belong_only_to_confirmations_that_run_something():
+    """The rule: a question that gathers a detail, a preference or an agreement to a charge is typed. Buttons come only
+    from the plan card and the 'please confirm' question that gates a write, both made by the orchestrator."""
+    import pathlib
+
+    workflows = pathlib.Path(__file__).resolve().parents[2] / "src" / "agent" / "workflows"
+    tagged = [p.name for p in workflows.glob("*.py") if 'kind="yes_no"' in p.read_text()]
+    assert tagged == []

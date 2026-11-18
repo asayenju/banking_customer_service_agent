@@ -100,7 +100,7 @@ class CreditReplacement:
             fee = EXPEDITED_FEE[tier] if item.expedited else 0.0
             if fee > 0 and not item.accepts_expedite_fee:
                 return NeedInfo(
-                    (Ask("accepts_expedite_fee", f"Expedited delivery for this card costs ${fee:.0f}. Would you like to go ahead with it?", kind="yes_no"),)
+                    (Ask("accepts_expedite_fee", f"Expedited delivery for this card costs ${fee:.0f}. Would you like to go ahead with it?"),)
                 )
             address = item.shipping_address or str(user.get("address") or "")
             if not address:

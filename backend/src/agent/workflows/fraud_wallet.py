@@ -137,7 +137,6 @@ class WalletLoss:
                 "Nothing is closed or replaced yet. Any card you named is frozen, so nobody can use it, and you can "
                 "unfreeze one if you find it. Are you sure the cards are gone? If you are, I will close them and order "
                 "replacements.",
-                kind="yes_no",
             )
             return NeedInfo((*asks, sure))
         steps: list[Step] = []
@@ -193,7 +192,7 @@ class WalletLoss:
                         "accepts_refund_to_checking",
                         f"{label[0].upper()}{label[1:]} has a refund still pending. It cannot be closed until the "
                         "refund processes, unless you agree that it is credited to your checking account instead. "
-                        "Do you agree?", kind="yes_no"
+                        "Do you agree?"
                     )
                 )
                 continue
