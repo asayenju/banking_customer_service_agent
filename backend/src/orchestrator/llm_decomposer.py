@@ -13,6 +13,7 @@ and ``declined`` to ids that are actually open.
 """
 
 import json
+import logging
 import re
 from collections.abc import Sequence
 from typing import Annotated, Any, Optional
@@ -27,8 +28,9 @@ from orchestrator.policy import ACTION_POLICY
 from orchestrator.request_type import CommunicationType, unrequested_writes
 from orchestrator.sanitize import redact
 from orchestrator.types import Conflict, Decomposition, Flag, Intent, IntentKind
-from orchestrator.validate import validate
+from orchestrator.validate import InvalidDecomposition, validate
 
+logger = logging.getLogger(__name__)
 MAX_ATTEMPTS = 3
 MAX_MESSAGE_CHARS = 4000
 CLAIM_FIELDS = frozenset({"user_id", "date_of_birth", "email", "phone_number", "address"})
@@ -221,6 +223,11 @@ def _only_identity(text: str) -> bool:
     return not [w for w in re.findall(r"[a-z'-]+", rest.lower()) if w not in _FILLER]
 
 
+def _gives_only_contact_details(text: str) -> bool:
+    """The message is the customer proving who they are: an email or phone number, no word about changing it."""
+    return not _CHANGE_WORDS.search(text) and bool(_EMAIL.search(text) or _PHONE.search(text)) and _only_identity(text)
+
+
 # A bare yes is the answer to a question, never a request. A model sometimes re-lists the open intent
 # as a new one with "yes" as its evidence; that intent is dropped here (the yes is in ``confirmed``).
 _AFFIRMATION = re.compile(
@@ -259,6 +266,16 @@ def _span(start: Optional[int], end: Optional[int]) -> Optional[tuple[int, int]]
     return (start, end)
 
 
+def _stage(error: BaseException) -> str:
+    """The function an exception came from (the innermost frame of this module or its neighbours), for the log."""
+    tb = error.__traceback__
+    where = "unknown"
+    while tb is not None:
+        where = tb.tb_frame.f_code.co_name
+        tb = tb.tb_next
+    return where
+
+
 def _failed() -> Interpretation:
     """Safe result when the model gave nothing usable: a person takes over."""
     intent = Intent(id="unprocessed", kind=IntentKind.OTHER, summary="your request")
@@ -281,6 +298,7 @@ class LLMDecomposer:
         self._max_attempts = max_attempts
         self._temperature = temperature
         self._turn = 0
+        self.last_failure: tuple[str, ...] = ()
 
     async def interpret(
         self,
@@ -305,14 +323,19 @@ class LLMDecomposer:
         text = redact(message)[:MAX_MESSAGE_CHARS]
         prompt = self._prompt(text, open_intents, history, pending)
         open_ids = {i.id for i in open_intents}
+        failures: list[str] = []
         for _ in range(self._max_attempts):
             try:
                 raw = await self._client.complete(
                     prompt, schema=OUTPUT_SCHEMA, temperature=self._temperature
                 )
                 return self._build(text, _Output.model_validate_json(raw), open_ids, {i.id: i.kind for i in open_intents})
-            except Exception:  # bad output or a failed call: try again, then give up
+            except Exception as error:  # bad output or a failed call: try again, then give up
+                failures.append(f"{type(error).__name__} in {_stage(error)}")  # the type and where, never the text
                 continue
+        # Never silent: a person takes over from here, so say why (exception types only, no message text).
+        logger.warning("decomposer failed on turn %d after %d attempts: %s", self._turn, len(failures), "; ".join(failures))
+        self.last_failure = tuple(failures)
         return _failed()
 
     def _prompt(
@@ -373,8 +396,10 @@ class LLMDecomposer:
                 summary=redact(r.summary),
                 slots={p.name: p.value for p in r.slots},
                 depends_on=tuple(
-                    rename(d) for d in r.depends_on if d in in_this_turn or (d not in gone and d not in open_ids)
-                ),
+                    rename(d)
+                    for d in r.depends_on
+                    if rename(d) != rename(r.id) and (d in in_this_turn or (d not in gone and d not in open_ids))
+                ),  # an intent that waits on itself is a mistake in the output, not a request
                 source_span=_span(r.span_start, r.span_end),
             )
             for r in out.intents
@@ -385,10 +410,17 @@ class LLMDecomposer:
             for c in out.conflicts
             if not gone.intersection(c.intent_ids)
         )
-        decomposition = drop_unasked_handoff(
-            text,
-            validate(text, Decomposition(intents=intents, conflicts=conflicts)),
-        )
+        try:
+            decomposition = drop_unasked_handoff(
+                text,
+                validate(text, Decomposition(intents=intents, conflicts=conflicts)),
+            )
+        except InvalidDecomposition:
+            # A message that only gives contact details asks for nothing and its intents are dropped below, so a
+            # badly wired dependency in them must not hand the customer to a person. Anything else is bad output.
+            if not _gives_only_contact_details(text):
+                raise
+            decomposition = Decomposition(intents=())
         claims = {p.name: p.value for p in out.claims if p.name in CLAIM_FIELDS}
         if not _CHANGE_WORDS.search(text):
             # Contact details with no word about changing them are the customer proving who they are. The model

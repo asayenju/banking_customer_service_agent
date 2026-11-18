@@ -428,3 +428,28 @@ def test_the_prompt_tells_the_model_what_to_do_with_a_pending_question() -> None
     from orchestrator.llm_decomposer import SYSTEM_PROMPT
 
     assert "pending_questions" in SYSTEM_PROMPT and "answers" in SYSTEM_PROMPT and "do NOT" in SYSTEM_PROMPT
+
+
+# --- a badly wired dependency must not hand a customer to a person over a harmless message
+
+IDENTITY = "My phone is 503-555-0842 and my email is yuki.nakamura@simba.com"
+
+
+def test_a_dependency_cycle_in_the_output_for_a_message_of_only_contact_details_is_tolerated():
+    open_card = Intent(id="t1-i1", kind=K.CLOSE_CARD, summary="close my card")
+    cycle = reply(raw("a", "CLOSE_CARD", depends_on=("b",)), raw("b", "UPDATE_PROFILE", depends_on=("a",)))
+    result = interpret(FakeLLMClient([cycle]), IDENTITY, [open_card])
+    assert result.decomposition.intents == () and result.claims["email"] == "yuki.nakamura@simba.com"
+
+
+def test_a_dependency_cycle_in_any_other_message_is_still_bad_output():
+    cycle = reply(raw("a", "CLOSE_CARD", depends_on=("b",)), raw("b", "FREEZE_CARD", depends_on=("a",)))
+    fake = FakeLLMClient([cycle] * MAX_ATTEMPTS)
+    result = interpret(fake, "close my card and freeze it")
+    assert result.decomposition.intents[0].id == "unprocessed" and len(fake.calls) == MAX_ATTEMPTS
+
+
+def test_an_intent_that_waits_on_itself_is_kept_without_the_dependency():
+    result = interpret(FakeLLMClient([reply(raw("a", "FREEZE_CARD", depends_on=("a",)))]), "freeze my card")
+    (only,) = result.decomposition.intents
+    assert only.kind is K.FREEZE_CARD and only.depends_on == ()
