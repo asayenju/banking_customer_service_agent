@@ -28,6 +28,7 @@ from orchestrator.policy import ACTION_POLICY
 from orchestrator.request_type import CommunicationType, unrequested_writes
 from orchestrator.sanitize import redact
 from orchestrator.types import Conflict, Decomposition, Flag, Intent, IntentKind
+from orchestrator import observe
 from orchestrator.validate import InvalidDecomposition, validate
 
 logger = logging.getLogger(__name__)
@@ -324,6 +325,7 @@ class LLMDecomposer:
         prompt = self._prompt(text, open_intents, history, pending)
         open_ids = {i.id for i in open_intents}
         failures: list[str] = []
+        self.last_failure = ()
         for _ in range(self._max_attempts):
             try:
                 raw = await self._client.complete(
@@ -336,6 +338,7 @@ class LLMDecomposer:
         # Never silent: a person takes over from here, so say why (exception types only, no message text).
         logger.warning("decomposer failed on turn %d after %d attempts: %s", self._turn, len(failures), "; ".join(failures))
         self.last_failure = tuple(failures)
+        observe.note("decomposer_failed", attempts=len(failures), errors=failures)
         return _failed()
 
     def _prompt(

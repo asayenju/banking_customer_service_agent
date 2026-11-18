@@ -47,6 +47,7 @@ from agent.llm_tools import (
     tool_message,
 )
 from agent.toolbox import ScopedToolBox
+from orchestrator import observe
 
 
 class StopReason(StrEnum):
@@ -235,7 +236,8 @@ async def run_agent(
             )
         except TimeoutError:
             return result(StopReason.DEADLINE)
-        except Exception:  # only the fact of the failure is kept, never its message
+        except Exception as error:  # only the fact of the failure is kept, never its message
+            observe.note("model_error", type=type(error).__name__, step=steps)
             return result(StopReason.MODEL_FAILED)
         input_tokens += turn.usage.input_tokens
         output_tokens += turn.usage.output_tokens

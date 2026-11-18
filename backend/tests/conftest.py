@@ -28,3 +28,14 @@ def no_live_model_calls(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(litellm, "acompletion", refuse)
+
+
+@pytest.fixture(autouse=True)
+def turns_are_not_written_to_the_real_file() -> None:
+    """The app records every turn to evals/turns.jsonl; a test must never add to the file a person reads."""
+    try:
+        import main
+        from orchestrator.observe import Recorder
+    except ImportError:  # a test run that cannot import the app has nothing to guard
+        return
+    main.app.state.recorder = Recorder(path=None)

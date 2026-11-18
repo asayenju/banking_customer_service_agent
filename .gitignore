@@ -12,3 +12,4 @@ backend/evals/cassettes/
 
 # Decisions recorded passively from the demo
 backend/evals/decisions.jsonl
+backend/evals/turns.jsonl

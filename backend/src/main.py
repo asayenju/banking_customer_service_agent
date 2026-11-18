@@ -7,6 +7,7 @@ replace it with scripted parts.
 """
 
 import re
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Optional
@@ -14,6 +15,8 @@ from typing import Any, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+from orchestrator import observe
 
 app = FastAPI()
 app.state.conversations = {}
@@ -189,6 +192,21 @@ def one_persona(task_id: str) -> dict[str, Any]:
     return found
 
 
+# For testing: what each turn decided, ran and where it failed. No message text, values or amounts (see orchestrator/observe.py).
+app.state.recorder = observe.Recorder()
+
+
+@app.get("/debug/conversations/{conversation_id}/trace")
+def conversation_trace(conversation_id: str) -> list[dict[str, Any]]:
+    return app.state.recorder.conversation(conversation_id)
+
+
+@app.get("/debug/summary")
+def debug_summary() -> dict[str, Any]:
+    summary: dict[str, Any] = app.state.recorder.summary()
+    return summary
+
+
 @app.get("/demo")
 def demo() -> FileResponse:
     return FileResponse(WIDGET, media_type="text/html")
@@ -205,7 +223,10 @@ async def send_message(conversation_id: str, body: MessageIn) -> ReplyOut:
             conversations[conversation_id] = app.state.scenario_factory(body.scenario)
         else:
             raise HTTPException(status_code=422, detail="unknown scenario")
+    notes = observe.begin()
+    started = time.monotonic()
     result = await conversations[conversation_id].orchestrator.handle_turn(body.message_id, body.message)
+    app.state.recorder.record(conversation_id, body.message_id, result, notes, started, [d.intent_id for d in result.decisions])
     return ReplyOut(
         reply=result.reply.text,
         questions=[q.text or q.slot for q in result.reply.questions],

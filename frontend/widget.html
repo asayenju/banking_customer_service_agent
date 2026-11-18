@@ -108,6 +108,13 @@
   .after { padding:0 16px 14px; color:var(--muted); font-size:13.5px; }
 
   /* composer */
+  #debug { display:none; max-height:34vh; overflow-y:auto; border-top:1px solid var(--line); padding:8px 16px 10px; font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted); }
+  #debug.on { display:block; }
+  #debug .turn { margin:0 0 8px; white-space:pre-wrap; word-break:break-word; }
+  #debug .turn b { color:var(--ink); }
+  #debug .bad { color:var(--warn); background:var(--warn-bg); border-radius:6px; padding:0 6px; font-weight:600; }
+  #debug .bar { display:flex; gap:8px; align-items:center; margin-bottom:6px; }
+  #debug .bar button { border:1px solid var(--line); background:transparent; border-radius:8px; padding:2px 8px; font-size:12px; cursor:pointer; color:var(--muted); }
   .tips { display:none; gap:6px; padding:0 20px 8px; overflow-x:auto; }
   .tips button { flex:none; border:1px solid var(--line); background:transparent; border-radius:99px; padding:4px 11px; font-size:12.5px; cursor:pointer; color:var(--muted); }
   @media (max-width:1000px) { .tips { display:flex; } }
@@ -134,10 +141,12 @@
   <div class="top">
     <div class="mark" aria-hidden="true">C</div>
     <div class="name"><b>Banking customer service agent</b><span id="as">Online</span></div>
+    <button class="icon" id="dbg" title="Show what the agent decided and where it failed" aria-pressed="false">Debug</button>
     <button class="icon" id="reset" title="Start a new conversation">New chat</button>
   </div>
   <select id="pick" class="pick" aria-label="Test customer"></select>
   <div id="log" aria-live="polite"></div>
+  <div id="debug" aria-label="What the agent decided on each turn"></div>
   <div class="tips" id="tips"></div>
   <form id="form">
     <textarea id="text" rows="1" placeholder="Message the agent" aria-label="Message"></textarea>
@@ -292,6 +301,7 @@ async function send(text) {
     if (!r.ok) throw new Error("the server answered " + r.status);
     convo.first = false; const data = await r.json();
     wrap.innerHTML = ""; render(wrap, data);
+    if (debugOn) loadTrace();
     if (data.escalated) $("log").append(el("div", "notice", "Passed to a person"));
     if (data.failed) $("log").append(el("div", "notice", "Part of this could not be done"));
   } catch (e) {
@@ -303,7 +313,33 @@ const fit = () => { const t = $("text"); t.style.height = "auto"; t.style.height
 $("text").addEventListener("input", fit);
 $("text").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("form").requestSubmit(); } });
 $("form").onsubmit = e => { e.preventDefault(); const t = $("text").value.trim(); if (t) { $("text").value = ""; fit(); send(t); } };
-$("reset").onclick = reset;
+/* ---- debug: what each turn decided, ran and where it failed (names, kinds and reasons only: never what was said) ---- */
+let debugOn = false, lastTrace = [];
+function traceLine(r) {
+  const box = el("div", "turn");
+  const head = el("b", null, "turn " + r.turn + "  " + r.reply_kind + "  " + r.ms + " ms  ");
+  box.append(head);
+  if (r.failure_class) box.append(el("span", "bad", r.failure_class));
+  const lines = [];
+  for (const d of r.decisions) lines.push("decided " + d.intent + ": " + d.action + " - " + d.reason + (d.asked.length ? " (asked " + d.asked.join(", ") + ")" : ""));
+  for (const n of r.notes) lines.push(Object.entries(n).filter(([k, v]) => v !== "" && !(Array.isArray(v) && !v.length)).map(([k, v]) => k + "=" + (Array.isArray(v) ? v.join("|") : v)).join(", "));
+  for (const o of r.outcomes) lines.push("outcome " + o.intent + ": " + o.status + (o.error ? " (" + o.error + ")" : ""));
+  box.append(el("div", null, lines.join("\n")));
+  return box;
+}
+async function loadTrace() {
+  try {
+    lastTrace = await (await fetch("/debug/conversations/" + convo.id + "/trace")).json();
+    const box = $("debug"); box.innerHTML = "";
+    const bar = el("div", "bar"), copy = el("button", null, "Copy trace"); copy.type = "button";
+    copy.onclick = () => navigator.clipboard.writeText(JSON.stringify(lastTrace, null, 1)).then(() => { copy.textContent = "Copied"; setTimeout(() => { copy.textContent = "Copy trace"; }, 1200); });
+    bar.append(copy, el("span", null, lastTrace.length + " turn" + (lastTrace.length === 1 ? "" : "s"))); box.append(bar);
+    for (const r of lastTrace) box.append(traceLine(r));
+    box.scrollTop = box.scrollHeight;
+  } catch (e) { /* the panel is a convenience */ }
+}
+$("dbg").onclick = () => { debugOn = !debugOn; $("dbg").setAttribute("aria-pressed", debugOn); $("debug").classList.toggle("on", debugOn); if (debugOn) loadTrace(); };
+$("reset").onclick = () => { reset(); if (debugOn) $("debug").innerHTML = ""; };
 load();
 </script>
 </body>

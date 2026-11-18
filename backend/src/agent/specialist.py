@@ -52,6 +52,7 @@ from banking_tools.types import Reversibility
 from knowledge.index import KnowledgeIndex, render
 from knowledge.scopes import DocScope
 from orchestrator.context import RouteContext
+from orchestrator import observe
 from orchestrator.decision import fingerprint
 from orchestrator.executor import OutcomeStatus, RouteOutcome
 from orchestrator.plan_preview import PlanPreview, PlanStep, is_reference
@@ -274,6 +275,20 @@ class Specialist:
                 for name, w in workflows.items()
             },
         )
+        observe.note(
+            "agent",
+            specialist=self.config.name,
+            request=intent.kind.value,
+            stop=result.reason.value,
+            terminal=result.terminal or "",
+            steps=result.steps,
+            tool_calls=result.tool_calls,
+            writes=result.writes,
+            errors=result.errors,
+            input_tokens=result.usage.input_tokens,
+            output_tokens=result.usage.output_tokens,
+            tools=[r.name if r.ok else f"{r.name}(failed)" for r in result.log],
+        )
         if not result.finished:
             # The last thing the model was told is the most useful thing to report.
             return _failed(intent, refusals[-1] if refusals else f"the specialist stopped: {result.reason.value}")
@@ -393,6 +408,15 @@ class Specialist:
         except ValidationError:
             return "the form did not fit; fill in every field with an allowed value"
         decision = workflow.decide(self._context(ctx, intent), facts)
+        observe.note(
+            "workflow",
+            specialist=self.config.name,
+            workflow=workflow.name,
+            outcome=type(decision).__name__,
+            asked=[a.slot for a in getattr(decision, "questions", ())],
+            why=getattr(decision, "reason", ""),
+            steps=[s.tool for s in getattr(decision, "steps", ())],
+        )
         if isinstance(decision, Refuse):
             return decision.reason
         if isinstance(decision, Plan):
