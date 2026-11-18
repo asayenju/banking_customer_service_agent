@@ -1007,7 +1007,7 @@ class Orchestrator:
             decision = IntentDecision(
                 intent_id=intent_id,
                 action=Action.ASK,
-                reason="the route needs more information",
+                reason="the route needs more information: " + ", ".join(q.slot for q in outcome.questions[:3]),
                 questions=outcome.questions,
             )
         decisions[intent_id] = decision

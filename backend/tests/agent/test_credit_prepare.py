@@ -32,3 +32,12 @@ def test_a_number_past_the_end_asks_again():
     db, user = world()
     out = prepare(Intent(id="x", kind=K.CLOSE_CARD, summary="s", slots={"credit_card_account_id": "9"}), user, db)
     assert isinstance(out, RouteOutcome)
+
+
+def test_the_credit_prompt_says_the_last_four_of_a_credit_card_is_the_customers_to_give():
+    from agent.specialist import BASE_RULES
+    from agent.specialists.credit import INSTRUCTIONS
+
+    assert "do not store theirs" in BASE_RULES and "cards and their last four digits" not in BASE_RULES
+    assert "NOT IN THE RECORDS" in INSTRUCTIONS and "never call them a" in INSTRUCTIONS
+    assert "a card's last four digits or" not in INSTRUCTIONS
