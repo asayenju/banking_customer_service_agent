@@ -71,13 +71,27 @@ def _verified(task: dict[str, Any]) -> Optional[dict[str, Any]]:
 ACCOUNTS_DEMO = frozenset({"task_055", "task_056", "task_060", "task_062", "task_064", "task_067", "task_076"})
 
 
+# The credit tasks that are distinct customers; the other credit tasks repeat one of these (same flow, more transactions or
+# the same reason for closing), so the demo lists only these.
+CREDIT_DEMO = frozenset(
+    {
+        "task_031", "task_036", "task_038", "task_041",  # disputes: one charge, review first, several plus a new card, many across cards
+        "task_043", "task_044", "task_048", "task_049",  # closing: annual fee and a balance, a competitor, many cards, a customer who argues
+        "task_050", "task_051", "task_054",  # limit: approved, denied for utilization, and with a dispute and a replacement
+    }
+)
+
+
 def personas() -> list[dict[str, Any]]:
     """The test customers, listed by name and area only. Who they are comes from ``persona`` when one is opened;
     the list carries no situation and no user id."""
     from banking_tools.manifest import build_manifest, load_tasks
 
+    from agent.credit_report import credit_task_ids
+
     tasks = load_tasks()
     entries = {e.task_id: e for e in build_manifest(tasks)}
+    credit = set(credit_task_ids(tasks))
     found: list[dict[str, Any]] = []
     for task in tasks:
         who = _verified(task)
@@ -85,6 +99,8 @@ def personas() -> list[dict[str, Any]]:
             continue
         entry = entries[task["id"]]
         if list(entry.clusters) == ["accounts"] and task["id"] not in ACCOUNTS_DEMO:
+            continue
+        if task["id"] in credit and task["id"] not in CREDIT_DEMO:
             continue
         found.append(
             {
@@ -162,6 +178,8 @@ class MessageIn(BaseModel):
     message: str
     # Only read on a conversation's first message: the task id of the test customer the demo page is playing.
     scenario: Optional[str] = None
+    # The id of a button this conversation offered. Pressing one means exactly what was offered; the page sends no more.
+    pick: Optional[str] = None
 
 
 class AskOut(BaseModel):
@@ -170,10 +188,18 @@ class AskOut(BaseModel):
     kind: str
 
 
+class ChoiceOut(BaseModel):
+    id: str
+    # The line of the reply it belongs to, and the word on the button.
+    label: str
+    action: str
+
+
 class ReplyOut(BaseModel):
     reply: str
     questions: list[str]
     asks: list[AskOut]
+    choices: list[ChoiceOut]
     escalated: bool
     failed: bool
 
@@ -232,12 +258,13 @@ async def send_message(conversation_id: str, body: MessageIn) -> ReplyOut:
             raise HTTPException(status_code=422, detail="unknown scenario")
     notes = observe.begin()
     started = time.monotonic()
-    result = await conversations[conversation_id].orchestrator.handle_turn(body.message_id, body.message)
+    result = await conversations[conversation_id].orchestrator.handle_turn(body.message_id, body.message, body.pick)
     app.state.recorder.record(conversation_id, body.message_id, result, notes, started, [d.intent_id for d in result.decisions])
     return ReplyOut(
         reply=result.reply.text,
         questions=[q.text or q.slot for q in result.reply.questions],
         asks=[AskOut(slot=q.slot, kind=q.kind) for q in result.reply.questions],
+        choices=[ChoiceOut(id=c.id, label=c.label, action=c.action) for c in result.reply.choices],
         escalated=bool(result.reply.escalated_intent_ids),
         failed=bool(result.reply.failed_intent_ids),
     )

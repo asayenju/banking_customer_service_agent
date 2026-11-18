@@ -18,7 +18,7 @@ from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 
 from orchestrator.auth import IDENTITY_SLOT
-from orchestrator.decision import CONFIRM_SLOT, Action, IntentDecision
+from orchestrator.decision import CLARIFY_SLOT, CONFIRM_SLOT, Action, IntentDecision
 from orchestrator.types import Intent, Question
 
 _OPTION = re.compile(r"^\s*-\s+(.*\S)\s*$")
@@ -78,7 +78,11 @@ class RepairLadder:
         shown = self._shown.setdefault(q.intent_id, set())
         times = counts[base]
         counts[base] += 1
-        text = base if times == 0 else numbered(base) if times == 1 else offer_person(base)
+        if q.slot == CLARIFY_SLOT and times == 1:
+            # "Which you meant" fits a list. A "tell me more" has none, and the customer has just said more.
+            text = "I want to get this right. In your own words, what would you like me to help with?"
+        else:
+            text = base if times == 0 else numbered(base) if times == 1 else offer_person(base)
         while text in shown and times:
             text += " (I still need an answer to this.)"
         shown.add(text)

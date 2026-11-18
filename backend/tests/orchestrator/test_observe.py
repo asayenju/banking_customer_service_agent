@@ -105,6 +105,7 @@ def test_a_turn_is_recorded_with_its_decisions_and_never_its_words(tmp_path):
         questions = ()
         escalated_intent_ids = ()
         failed_intent_ids = ()
+        choices = ()
 
     from orchestrator.decision import Action, IntentDecision
     from orchestrator.executor import OutcomeStatus, RouteOutcome

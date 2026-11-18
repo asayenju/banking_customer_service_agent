@@ -102,9 +102,9 @@ class World:
         )
         self._n = 0
 
-    def turn(self, message=MESSAGE, message_id=None):
+    def turn(self, message=MESSAGE, message_id=None, pick=None):
         self._n += 1
-        return asyncio.run(self.orch.handle_turn(message_id or f"m{self._n}", message))
+        return asyncio.run(self.orch.handle_turn(message_id or f"m{self._n}", message, pick))
 
 
 def trace_kinds(result, intent_id):

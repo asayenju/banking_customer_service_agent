@@ -222,3 +222,14 @@ def test_the_products_line_for_jev_has_types_and_levels_and_no_ids_or_numbers():
     assert "credit cards:" in line and "Silver Rewards Card" in line
     assert "890389b165" not in line and "$" not in line and not any(ch.isdigit() for ch in line)
     assert product_summary(db, "nobody") == ""
+
+
+def test_the_demo_lists_only_the_distinct_credit_and_accounts_customers():
+    from agent.credit_report import credit_task_ids
+
+    shown = {p["id"] for p in main.personas()}
+    credit = set(credit_task_ids(load_tasks()))
+    assert credit & shown == main.CREDIT_DEMO, "every distinct credit customer is listed and no repeat is"
+    assert main.CREDIT_DEMO <= credit
+    assert {"task_037", "task_039", "task_040", "task_045", "task_047", "task_052", "task_053"}.isdisjoint(shown)
+    assert main.ACCOUNTS_DEMO <= shown

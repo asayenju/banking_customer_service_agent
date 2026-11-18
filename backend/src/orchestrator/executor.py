@@ -29,7 +29,7 @@ from orchestrator.plan import Plan
 from orchestrator.plan_preview import PlanPreview, unapproved_steps
 from orchestrator.routes import Route, route_for
 from orchestrator.trace import Trace, TraceEvent, TraceKind
-from orchestrator.types import Intent, Question
+from orchestrator.types import Choice, Intent, Question
 
 # A direct recipe is a few tool calls; a sub-agent loops over a model and tools.
 ROUTE_TIMEOUTS: Mapping[Route, float] = {
@@ -66,6 +66,8 @@ class RouteOutcome(BaseModel):
     questions: tuple[Question, ...] = ()
     # The plan to approve. Only for NEEDS_CONFIRMATION.
     proposal: Optional[PlanPreview] = None
+    # What the customer can press next to a line of ``text`` (see ``types.Choice``).
+    choices: tuple[Choice, ...] = ()
 
     @model_validator(mode="after")
     def _fields_match_status(self) -> Self:

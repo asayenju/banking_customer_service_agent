@@ -120,6 +120,7 @@ class Recorder:
             "reply_kind": _reply_kind(result),
             # What the chat was actually sent for each question: the slot and its kind ("yes_no" gets Yes and No buttons).
             "reply_asks": [{"slot": q.slot, "kind": q.kind} for q in result.reply.questions],
+            "reply_choices": [{"id": c.id.split(":")[0], "action": c.action} for c in result.reply.choices],
             "failure_class": label,
             "intents": list(intents),
             "decisions": decisions,

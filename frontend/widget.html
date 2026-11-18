@@ -108,6 +108,8 @@
   .after { padding:0 16px 14px; color:var(--muted); font-size:13.5px; }
 
   /* composer */
+  .choice-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+  .choice-row button { flex:none; padding:4px 12px; font-size:13px; }
   #debug { display:none; max-height:34vh; overflow-y:auto; border-top:1px solid var(--line); padding:8px 16px 10px; font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted); }
   #debug.on { display:block; }
   #debug .turn { margin:0 0 8px; white-space:pre-wrap; word-break:break-word; }
@@ -268,13 +270,32 @@ function render(into, data) {
     into.append(planCard(plan)); return;
   }
   if (/^Done: /.test(text)) { into.append(doneCard(text)); return; }
-  for (const part of [clean(text), extra].filter(Boolean)) into.append(el("p", null, part));
-  const bar = choiceBar([text, extra].join("\n"), data.asks || []);
+  const offered = data.choices || [];
+  if (offered.length) { renderRows(into, text, offered); if (extra) into.append(el("p", null, extra)); }
+  else for (const part of [clean(text), extra].filter(Boolean)) into.append(el("p", null, part));
+  const bar = choiceBar([text, extra].join("\n"), data.asks || [], offered.length > 0);
   if (bar) into.append(bar);
+}
+/* A line the server offered a button for (a charge the customer could dispute) is shown as the line with its button
+   beside it. Pressing it sends only the offer's id: what it means was decided when the server offered it. */
+function renderRows(into, text, offered) {
+  const byLabel = new Map(offered.map(c => [c.label, c]));
+  const rows = []; const all = () => rows.forEach(b => { b.disabled = true; });
+  let loose = [];
+  const flush = () => { if (loose.length) { into.append(el("p", null, loose.join("\n"))); loose = []; } };
+  for (const line of text.split("\n")) {
+    const c = byLabel.get(line.replace(/^\s*-\s+/, "").trim());
+    if (!c) { loose.push(line); continue; }
+    flush();
+    const row = el("div", "choice-row"), btn = el("button", "ghost", c.action); btn.type = "button";
+    btn.onclick = () => { all(); send(c.action + ": " + c.label, c.id); };
+    rows.push(btn); row.append(el("span", null, c.label), btn); into.append(row);
+  }
+  flush();
 }
 /* Tap answers for the two kinds of question the bank asks: pick one from a list, or yes or no. They send the same words a
    person would type, so nothing changes on the server. A bulleted list sends the line, a numbered one sends its number. */
-function choiceBar(text, asks) {
+function choiceBar(text, asks, listIsRows) {
   const lines = text.split("\n");
   let end = lines.length; while (end > 0 && !lines[end - 1].trim()) end--;
   // Only a list that closes the message and sits right under a line that asks is a set of choices. A list inside an
@@ -285,7 +306,10 @@ function choiceBar(text, asks) {
   const bar = el("div", "actions choices");
   const lock = () => bar.querySelectorAll("button").forEach(b => { b.disabled = true; });
   const add = (label, said, cls) => { const b = el("button", cls || "ghost", label); b.type = "button"; b.onclick = () => { lock(); send(said); }; bar.append(b); };
-  if (options.length >= 2 && /[?:]$/.test(stem) && options.every(o => o.label.length <= 140 && !/\*\*/.test(o.label))) {
+  // The line above the options has to ask: a "?" or the "reply with just a number" prompt. A list the agent reports ("Recent
+  // charges on your card:") is a result, and a press on one of its lines would send words with no meaning.
+  const asking = /\?$/.test(stem) || /reply with just a number:?$/i.test(stem);
+  if (!listIsRows && options.length >= 2 && asking && options.every(o => o.label.length <= 140 && !/\*\*/.test(o.label))) {
     options.forEach(o => add(o.label, o.n || o.label));
   } else if (asks.length === 1 && asks[0].kind === "yes_no") {
     // Only a question the code tagged as yes or no gets these: never guessed from the wording ("how much would you like...").
@@ -294,11 +318,12 @@ function choiceBar(text, asks) {
   return bar.children.length ? bar : null;
 }
 
-async function send(text) {
+async function send(text, pick) {
   if (busy) return; busy = true; $("send").disabled = true;
   const me = el("div", "row me"); me.append(el("div", "bubble", text)); $("log").append(me);
   const wrap = el("div", "says"), dots = el("div", "typing"); dots.append(el("i"), el("i"), el("i")); wrap.append(dots); $("log").append(wrap); bottom();
   const body = { message_id: newId(), message: text };
+  if (pick) body.pick = pick;
   if (convo.first && current) body.scenario = current.id;
   try {
     const r = await fetch("/conversations/" + convo.id + "/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

@@ -100,6 +100,25 @@ class Question(_Model):
     kind: str = ""
 
 
+class Choice(_Model):
+    """A button the chat can show next to a line of a result: what pressing it means, decided here and never by a model.
+
+    A route that lists something the customer may act on (a charge they could dispute) offers one choice per line. The
+    chat shows ``action`` beside the line, and sends back only ``id``. The orchestrator keeps what it offered, so a
+    press can only ever mean one of the offers it made: the request it makes is built from ``kind`` and ``slots`` here,
+    not read from anything the page sends."""
+
+    id: str = Field(min_length=1)
+    # The line it belongs to, exactly as it appears in the reply text.
+    label: str
+    # The word on the button ("Dispute").
+    action: str
+    kind: IntentKind
+    # Said for the customer in the request's own words, e.g. "dispute the $278.94 JetBlue charge on 10/21/2025".
+    summary: str
+    slots: dict[str, str]
+
+
 class Proceed(_Model):
     kind: Literal["proceed"] = "proceed"
     intent_ids: tuple[str, ...] = Field(min_length=1)

@@ -23,7 +23,7 @@ from agent.entities import resolve_cards
 from agent.guard import DbOwnership, Guard, GuardedSession
 from orchestrator.context import RouteContext
 from orchestrator.executor import OutcomeStatus, RouteOutcome
-from orchestrator.types import Intent, IntentKind, Question
+from orchestrator.types import Choice, Intent, IntentKind, Question
 from orchestrator.unclear import offer_help
 
 K = IntentKind
@@ -192,12 +192,35 @@ class DirectRunner:
         )[:HISTORY_ROWS]
         if not rows:
             return _done(intent, f"There are no charges on your {card_type}.")
-        lines = [f"Recent charges on your {card_type}:"] + [
-            f"- {str(t.get('transaction_date'))[:10]}  {_money(t.get('transaction_amount'))}  {t.get('merchant_name', '')}"
-            f" ({str(t.get('status', '')).lower()})"
+        shown = [
+            (
+                t,
+                f"{str(t.get('transaction_date'))[:10]}  {_money(t.get('transaction_amount'))}  {t.get('merchant_name', '')}"
+                f" ({str(t.get('status', '')).lower()})",
+            )
             for t in rows
         ]
-        return _done(intent, "\n".join(lines))
+        lines = [f"Recent charges on your {card_type}:"] + [f"- {label}" for _, label in shown]
+        # One "Dispute" button per charge. Pressing it means exactly this: the customer says they did not make this
+        # charge and wants it disputed. The request is built from the record, not from the words on the line.
+        choices = tuple(
+            Choice(
+                id=f"dispute:{t.get('transaction_id')}",
+                label=label,
+                action="Dispute",
+                kind=IntentKind.DISPUTE_TRANSACTION,
+                summary=f"dispute the {_money(t.get('transaction_amount'))} {t.get('merchant_name', '')} charge on {str(t.get('transaction_date'))[:10]}",
+                slots={
+                    "transaction_id": str(t.get("transaction_id")),
+                    "merchant": str(t.get("merchant_name", "")),
+                    "amount": _money(t.get("transaction_amount")),
+                    "date": str(t.get("transaction_date"))[:10],
+                },
+            )
+            for t, label in shown
+            if t.get("transaction_id")
+        )
+        return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text="\n".join(lines), choices=choices)
 
     def _accounts(self, intent: Intent, guarded: GuardedSession, user: str) -> RouteOutcome:
         mine = {k: v for k, v in self._db.accounts.data.items() if v.get("user_id") == user}

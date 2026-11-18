@@ -10,17 +10,19 @@ later behind the same structure. Internal reasons and error strings never reach
 the customer: they stay in the trace.
 """
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
 from orchestrator.auth import IDENTITY_SLOT
+from orchestrator.capabilities import LABEL
 from orchestrator.decision import CLARIFY_SLOT, CONFIRM_SLOT, Action, IntentDecision
 from orchestrator.executor import OutcomeStatus, RouteOutcome
 from orchestrator.plain import plain_text
 from orchestrator.plan import Waiting
-from orchestrator.types import Intent, Question
+from orchestrator.types import Choice, Intent, Question
 
 FALLBACK = "Is there anything I can help you with?"
 IDENTITY_PROMPT = (
@@ -38,6 +40,8 @@ class Reply(BaseModel):
     questions: tuple[Question, ...]
     escalated_intent_ids: tuple[str, ...]
     failed_intent_ids: tuple[str, ...]
+    # Buttons the chat may show next to lines of the text (see ``types.Choice``).
+    choices: tuple[Choice, ...] = ()
 
 
 def _summary(intents: Mapping[str, Intent], intent_id: str) -> str:
@@ -50,6 +54,15 @@ def _already_answered(intents: Mapping[str, Intent], question: Question) -> bool
     return intent is not None and bool(intent.slots.get(question.slot, "").strip())
 
 
+_NOTE_TO_SELF = re.compile(r"\b(?:the )?customer\b|\blikely\b|\bappears?\b|\bseems?\b|\breferenc|\bpresumably\b|\bpossibly\b", re.IGNORECASE)
+
+
+def _speakable(summary: str) -> bool:
+    """A summary that reads as the request itself ("sort out my fees"), short and in the customer's terms, and not as a
+    model's note about the customer ("The customer is referencing a charge, likely in relation to...")."""
+    return bool(summary) and len(summary) <= 100 and not _NOTE_TO_SELF.search(summary)
+
+
 def wording(intents: Mapping[str, Intent], question: Question) -> str:
     what = _summary(intents, question.intent_id).strip().rstrip(".?! ")
     if question.slot == IDENTITY_SLOT:
@@ -57,7 +70,14 @@ def wording(intents: Mapping[str, Intent], question: Question) -> str:
     if question.slot == CONFIRM_SLOT:
         return f"Please confirm: {what} (yes or no)?"
     if question.slot == CLARIFY_SLOT:
-        return f"To be sure I have this right: {what}. Is that what you want? If not, tell me more."
+        if _speakable(what):
+            return f"To be sure I have this right: {what}. Is that what you want? If not, tell me more."
+        intent = intents.get(question.intent_id)
+        if intent is not None and intent.kind in LABEL:
+            # The model's note about the request is not for the customer's eyes ("The customer is referencing a charge,
+            # likely in relation to..."): say it in words written here.
+            return f"To be sure I have this right: you would like me to {LABEL[intent.kind]}. Is that what you want? If not, tell me more."
+        return "I want to be sure I understand. What would you like me to help with?"
     return f"What is the {question.slot.replace('_', ' ')} for: {what}?"
 
 
@@ -158,4 +178,5 @@ def compose_reply(
         questions=questions,
         escalated_intent_ids=escalated_ids,
         failed_intent_ids=failed_ids,
+        choices=tuple(c for outcome in outcomes for c in outcome.choices),
     )

@@ -67,10 +67,11 @@ from orchestrator.reply import Reply, compose_reply, wording
 from orchestrator.routes import Route, route_for
 from orchestrator.scoring import ScoreContext, SCORER_TIMEOUT_SECONDS, IntentScore, Scorer, score_intents
 from orchestrator.trace import Trace, TraceEvent, TraceKind
-from orchestrator.types import Decomposition, Intent, IntentKind, Question
+from orchestrator.types import Choice, Decomposition, Intent, IntentKind, Question
 from orchestrator.unclear import HelpState, handle_unclear, offer_help, precheck
 
 MAX_ASKS = 3
+MAX_OFFERS = 100  # buttons remembered per conversation, oldest first out
 # Kinds a decomposer may call a reply to a clarifying question instead of the kind of the open request.
 _SIBLINGS: dict[IntentKind, frozenset[IntentKind]] = {
     IntentKind.DISPUTE_TRANSACTION: frozenset({IntentKind.REPORT_FRAUD_OR_LOSS}),
@@ -228,6 +229,10 @@ class Orchestrator:
         self._human_asks = 0
         self._ladder = RepairLadder()
         self._talk = Talk()
+        # The buttons offered in replies, by id, and the requests a press already made (their score is fixed, see _pick_turn).
+        self._offers: dict[str, Choice] = {}
+        self._picked: set[str] = set()
+        self._picks_made = 0
         # A short hash of each detail when a plan was shown, to say which details changed if the plan goes stale.
         self._shown_slots: dict[str, dict[str, str]] = {}
         self._stale_note: dict[str, str] = {}
@@ -287,16 +292,36 @@ class Orchestrator:
     def verified(self) -> bool:
         return self._auth.verified
 
-    async def handle_turn(self, message_id: str, message: str) -> TurnResult:
+    async def handle_turn(self, message_id: str, message: str, pick: Optional[str] = None) -> TurnResult:
+        """One turn. ``pick`` is the id of a button this conversation offered; a pressed offer makes its request itself
+        (see ``_pick_turn``) and anything else is just the customer's words."""
         async with self._lock:
             cached = self._processed.get(message_id)
             if cached is not None:
                 return cached
             self._history_now = tuple(self._transcript)
-            result = await self._turn(message)
+            choice = self._offers.get(pick) if pick else None
+            result = await (self._pick_turn(choice) if choice is not None else self._turn(message))
             self._remember(self._latest or message, result.reply.text)
+            for offered in result.reply.choices:
+                self._offers[offered.id] = offered
+            while len(self._offers) > MAX_OFFERS:
+                self._offers.pop(next(iter(self._offers)))
             self._processed[message_id] = result
             return result
+
+    async def _pick_turn(self, choice: Choice) -> TurnResult:
+        """The customer pressed a button this conversation offered. What it means was decided when it was offered, so no
+        model reads it: the request is made from the offer, and its confidence is fixed. It still goes through the
+        identity check, the plan preview and the customer's yes like any other request."""
+        self._picks_made += 1
+        said = f"{choice.action}: {choice.label}"
+        self._latest = said
+        intent = Intent(id=f"p{self._picks_made}-i1", kind=choice.kind, summary=choice.summary, slots=dict(choice.slots))
+        self._picked.add(intent.id)
+        events: list[TraceEvent] = [TraceEvent(kind=TraceKind.DECIDED, intent_id=intent.id, detail="button", reason=choice.id.split(":")[0])]
+        interpretation = Interpretation(decomposition=Decomposition(intents=(intent,)))
+        return await self._real_turn(said, interpretation, events)
 
     def _pending_questions(self) -> tuple[tuple[str, str], ...]:
         """(request id, the question on screen) for every open request that is waiting for an answer."""
@@ -365,6 +390,7 @@ class Orchestrator:
     def _forget(self, intent_id: str) -> None:
         self._ladder.forget(intent_id)
         self._talk.forget(intent_id)
+        self._picked.discard(intent_id)
         for table in (
             self._active,
             self._shown_slots,
@@ -505,6 +531,19 @@ class Orchestrator:
                 return None  # a real new request
         return intent_id, question, tuple(fold)
 
+    def _replaced_clarification(self, decomposition: Decomposition) -> Optional[str]:
+        """The id of the one open "is that what you want?" question that this message's new request replaces, if any.
+
+        Only a weak reading is replaced (a read, a general question, "other"): a clarification about a write is left open
+        beside a new request, because the customer may still mean both."""
+        waiting = [iid for iid in self._clarifying if iid in self._active]
+        if len(waiting) != 1 or waiting[0] not in self._active or self._active[waiting[0]].kind not in _ANSWER_NOISE:
+            return None
+        new = [f for f in decomposition.intents if f.id not in self._active and f.kind not in _ANSWER_NOISE]
+        if not new or any(f.id == waiting[0] for f in decomposition.intents):
+            return None
+        return waiting[0]
+
     def _clarification(
         self, message: str, decomposition: Decomposition, told: frozenset[str] = frozenset()
     ) -> Optional[tuple[str, tuple[Intent, ...], bool]]:
@@ -599,6 +638,15 @@ class Orchestrator:
         told = frozenset(interpretation.answers) & (set(asked_before) | set(self._clarifying))
         answering = self._free_answer(message, asked_before, decomposition, told)
         clarifying = self._clarification(message, decomposition, told) if answering is None else None
+        if answering is None and clarifying is None and (replaced := self._replaced_clarification(decomposition)) is not None:
+            # The customer was asked "is that what you want?" about a weak reading (a read of their history, say) and
+            # answered with a clear request of another kind. That request is the clarification: the open question is
+            # closed, so it does not keep coming first and hide the question the real request needs.
+            self._clarifying.pop(replaced, None)
+            self._understood.discard(replaced)
+            self._asked_once.discard(replaced)
+            self._forget(replaced)
+            events.append(TraceEvent(kind=TraceKind.SKIPPED, intent_id=replaced, reason="replaced by the request the customer then made"))
         if clarifying is not None:
             # A plain agreement says nothing new, so a decomposer that lists the request again for it changes nothing.
             kept_ids = {f.id for f in clarifying[1]}
@@ -1113,7 +1161,12 @@ class Orchestrator:
         ]
         for intent_id in touched:
             self._said.setdefault(intent_id, message)
-        to_score = [i for i in scoreable if i.id in touched or i.id not in self._scores]
+        for i in scoreable:
+            if i.id in self._picked and i.id not in self._scores:
+                # A pressed button is the customer's own clear choice: nothing to guess, nothing to score.
+                self._scores[i.id] = IntentScore.flat(i.id, 1.0)
+                events.append(TraceEvent(kind=TraceKind.SCORED, intent_id=i.id, detail="button"))
+        to_score = [i for i in scoreable if i.id not in self._picked and (i.id in touched or i.id not in self._scores)]
         # An intent held back (by the identity check, say) is scored on the message that stated it, not on whatever
         # the customer says later ("my phone is ..." would score a clear request as unclear).
         by_words: dict[str, list[Intent]] = {}
