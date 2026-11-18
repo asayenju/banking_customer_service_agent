@@ -269,12 +269,12 @@ function render(into, data) {
   }
   if (/^Done: /.test(text)) { into.append(doneCard(text)); return; }
   for (const part of [clean(text), extra].filter(Boolean)) into.append(el("p", null, part));
-  const bar = choiceBar([text, extra].join("\n"));
+  const bar = choiceBar([text, extra].join("\n"), data.asks || []);
   if (bar) into.append(bar);
 }
 /* Tap answers for the two kinds of question the bank asks: pick one from a list, or yes or no. They send the same words a
    person would type, so nothing changes on the server. A bulleted list sends the line, a numbered one sends its number. */
-function choiceBar(text) {
+function choiceBar(text, asks) {
   const lines = text.split("\n");
   let end = lines.length; while (end > 0 && !lines[end - 1].trim()) end--;
   // Only a list that closes the message and sits right under a line that asks is a set of choices. A list inside an
@@ -287,7 +287,8 @@ function choiceBar(text) {
   const add = (label, said, cls) => { const b = el("button", cls || "ghost", label); b.type = "button"; b.onclick = () => { lock(); send(said); }; bar.append(b); };
   if (options.length >= 2 && /[?:]$/.test(stem) && options.every(o => o.label.length <= 140 && !/\*\*/.test(o.label))) {
     options.forEach(o => add(o.label, o.n || o.label));
-  } else if (/\b(would you like|do you want|shall i|should i|can i go ahead|is that (right|correct))\b[^\n]*\?\s*$/i.test(lines.slice(0, end).join("\n").trim())) {
+  } else if (asks.length === 1 && asks[0].kind === "yes_no") {
+    // Only a question the code tagged as yes or no gets these: never guessed from the wording ("how much would you like...").
     add("Yes", "Yes", "primary"); add("No", "No");
   }
   return bar.children.length ? bar : null;
