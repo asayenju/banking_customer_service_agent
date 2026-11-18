@@ -109,7 +109,11 @@ def test_the_follow_up_after_paying_asks_why_and_after_closing_reminds_about_rew
     ctx = WorkflowContext(world().database, ME, TODAY)
     from agent.workflows.base import Step
 
-    assert "why" in c.after(ctx, [Step("pay_credit_card_from_checking_9182", {})]).lower()
+    pay = [Step("pay_credit_card_from_checking_9182", {})]
+    assert c.after(ctx, pay) == "The balance is paid."
+    ask = c.follow_up(ctx, pay)
+    assert ask is not None and ask.slot == "closure_reason" and "why" in ask.text.lower(), "the next question is a question, not part of the reply"
+    assert c.follow_up(ctx, [Step("close_credit_card_account_7834", {})]) is None
     assert c.after(ctx, [Step("close_credit_card_account_7834", {})]) == AFTER_CLOSING
     assert "45 days" in AFTER_CLOSING and "37 days" in AFTER_CLOSING
     assert c.after(ctx, [Step("apply_statement_credit_8472", {})]) == ""

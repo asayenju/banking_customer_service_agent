@@ -633,13 +633,24 @@ class Specialist:
             readback = self.config.readbacks.get(step.tool)
             if readback is not None and (missing := readback(validation, arguments)) is not None:
                 return _failed(intent, f"step {step.index} was reported done but {missing}")
+        follow = self._follow_up_for(intent, validation, ctx.approved.steps)
         said = self._reply_for(intent, validation, ctx.approved.steps)
         if said:  # the workflow words the whole answer itself (a bank decision is not "Done: ...")
-            return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text=said)
+            return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text=said, follow_up=follow)
         done = "; ".join(s.description for s in ctx.approved.steps)
         text = f"Done: {done}."
         note = self._follow_up(intent, validation, ctx.approved.steps)
-        return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text=f"{text} {note}" if note else text)
+        return RouteOutcome(
+            intent_id=intent.id, status=OutcomeStatus.DONE, text=f"{text} {note}" if note else text, follow_up=follow
+        )
+
+    def _follow_up_for(self, intent: Intent, validation: ValidationContext, steps: Sequence[PlanStep]) -> Optional[Question]:
+        workflow = next((w for w in self.config.workflows if intent.kind in w.kinds and hasattr(w, "follow_up")), None)
+        if workflow is None:
+            return None
+        shown = [Step(s.tool, {k: v for k, v in s.args.items() if not is_reference(v)}) for s in steps]
+        ask = workflow.follow_up(WorkflowContext(self._db, validation.user_id, validation.today), shown)
+        return None if ask is None else Question(intent_id=intent.id, slot=ask.slot, text=ask.text, kind=ask.kind)
 
     def _reply_for(self, intent: Intent, validation: ValidationContext, steps: Sequence[PlanStep]) -> str:
         workflow = next((w for w in self.config.workflows if intent.kind in w.kinds and hasattr(w, "reply")), None)

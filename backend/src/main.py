@@ -16,6 +16,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+import persona_text
 from orchestrator import observe
 
 app = FastAPI()
@@ -33,7 +34,6 @@ app.state.factory = _live
 # The demo page can start a conversation as any of the test customers: the bank's data for a tau2 task, so there
 # are real accounts and cards to talk about. A conversation without a scenario is built by ``factory`` as before.
 WIDGET = Path(__file__).resolve().parents[2] / "frontend" / "widget.html"
-_BOILERPLATE = "You are playing the role of a customer contacting a customer service representative agent."
 
 
 def _live_scenario(task_id: str) -> Any:  # pragma: no cover - needs keys
@@ -112,10 +112,7 @@ def personas() -> list[dict[str, Any]]:
     return found
 
 
-_CUT = re.compile(r"\*{0,2}Verification info|## Conversation Flow|Here are your behavior|Conversation Flow", re.IGNORECASE)
 _OPENING = re.compile(r"\*{0,2}Opening[^:\n]*:\*{0,2}\s*[\"“]([^\"”]+)[\"”]", re.IGNORECASE)
-_LABEL = re.compile(r"\*\*Your (?:character|situation):\*\*\s*")
-_USER_ID = re.compile(r"[^.!?\n]*\buser[ _-]?id\b[^.!?\n]*[.!?]?\s*", re.IGNORECASE)
 
 
 def _card_digits(task: dict[str, Any]) -> list[str]:
@@ -148,17 +145,15 @@ def persona(task_id: str) -> Optional[dict[str, Any]]:
         return None
     full = str((task.get("user_scenario") or {}).get("instructions") or "")
     opening = _OPENING.search(full)
-    text = full.replace(_BOILERPLATE, "").strip()
-    cut = _CUT.search(text)
-    text = _USER_ID.sub("", text[: cut.start()] if cut else text)
-    for secret in {str(who.get("user_id") or "")} - {""}:
-        text = text.replace(secret, "")
-    parts = [_LABEL.sub("", p).strip() for p in text.split("\n\n") if p.strip()]
+    shown = persona_text.sections(full, {str(who.get("user_id") or "")})
+    by_title = {sec["title"]: sec for sec in shown}
     return {
         "id": task_id,
         "name": who.get("name"),
-        "character": parts[0][:400] if parts else "",
-        "situation": " ".join(parts[1:])[:700],
+        # The brief in full, as plain text: a section per block (who they are, what they want, each card's disputes...).
+        "sections": shown,
+        "character": by_title.get("Who they are", {}).get("text", ""),
+        "situation": by_title.get("Their situation", {}).get("text", ""),
         "phone": who.get("phone_number"),
         "email": who.get("email"),
         "born": who.get("date_of_birth"),

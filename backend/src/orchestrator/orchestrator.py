@@ -50,6 +50,7 @@ from orchestrator.bands import PROCEED_AT, WRITE_KIND_ASK_AT
 from orchestrator.talk import KEY as TALK_KEY, Talk
 from orchestrator.decision import CLARIFY_SLOT, CONFIRM_SLOT, HUMAN_AFTER_ASKS, TRANSIENT_SLOTS, Action, IntentDecision, decide, fingerprint
 from orchestrator.decomposer import Decomposer, Interpretation
+from orchestrator.grounding import PERSON_WORDS
 from orchestrator.executor import (
     ROUTE_TIMEOUTS,
     ExecutionResult,
@@ -684,6 +685,14 @@ class Orchestrator:
                 said = self._report_text.setdefault(intent.id, message[:2000])
                 intent = intent.model_copy(update={"slots": {**intent.slots, "said": said}})
             open_now = self._active.get(intent.id)
+            if open_now is not None and open_now.kind is not intent.kind and (
+                confirms_understanding(message)
+                or is_affirmation(message)
+                or (intent.kind is IntentKind.REQUEST_HUMAN and not PERSON_WORDS.search(message))
+            ):
+                # "yes thank you" to an offer is its answer, and a message that never mentions a person is not a request for
+                # one: a decomposer that re-sends the open request as something else (a hand-off) does not change what it is.
+                continue
             if open_now is not None and open_now.kind is intent.kind:
                 # A request the decomposer sends again each turn can add or change a detail, never erase one by leaving
                 # it out (a card settled earlier would be lost, and a plan the customer saw would look stale).
@@ -843,6 +852,25 @@ class Orchestrator:
         }
         waiting_on_answer = self._waiting_on_answer(executed.outcomes, still_asking, view)
         for outcome in executed.outcomes:
+            if outcome.status is OutcomeStatus.DONE and outcome.follow_up is not None and outcome.intent_id in self._active:
+                # A step is done and the same request goes on with its next question: it stays open, with the card and
+                # everything else it already knows, and the customer's answer goes to it. What it has already done is
+                # remembered (so the next plan is not blamed for it), and the finished step's plan is not kept.
+                ran = self._sessions_this_run.get(outcome.intent_id)
+                self._progress[outcome.intent_id] = tuple(ran.completed()) if ran is not None else self._progress.get(outcome.intent_id, ())
+                for table in (self._proposals, self._approved, self._confirmed, self._pending_confirm, self._shown_slots, self._stale_note):
+                    table.pop(outcome.intent_id, None)
+                self._asks[outcome.intent_id] = 0
+                self._runner_asks[outcome.intent_id] = 0
+                self._last_route_slot[outcome.intent_id] = outcome.follow_up.slot
+                self._pending_route_questions[outcome.intent_id] = (outcome.follow_up,)
+                decisions[outcome.intent_id] = IntentDecision(
+                    intent_id=outcome.intent_id,
+                    action=Action.ASK,
+                    reason="the route's next question",
+                    questions=(outcome.follow_up,),
+                )
+                continue
             if outcome.status is OutcomeStatus.DONE:
                 self._done.append(outcome.intent_id)
                 self._progress.pop(outcome.intent_id, None)

@@ -68,6 +68,9 @@ class RouteOutcome(BaseModel):
     proposal: Optional[PlanPreview] = None
     # What the customer can press next to a line of ``text`` (see ``types.Choice``).
     choices: tuple[Choice, ...] = ()
+    # Only for DONE: the step is done and the same request goes on with this question (a card's balance was paid, now why
+    # is it being closed?). The request stays open, with everything it already knows, instead of ending here.
+    follow_up: Optional[Question] = None
 
     @model_validator(mode="after")
     def _fields_match_status(self) -> Self:
@@ -82,6 +85,8 @@ class RouteOutcome(BaseModel):
             raise ValueError("a needs_confirmation outcome must carry a plan for its own intent")
         if not proposing and self.proposal is not None:
             raise ValueError(f"a {self.status.value} outcome must not carry a plan")
+        if self.follow_up is not None and self.status is not OutcomeStatus.DONE:
+            raise ValueError("only a done outcome can carry a follow-up question")
         if asking and not self.questions:
             raise ValueError("a needs_info outcome must carry at least one question")
         if not asking and self.questions:
@@ -143,7 +148,9 @@ def _checked_against_plan(outcome: RouteOutcome, ctx: RouteContext) -> RouteOutc
     if ctx.approved is None or ctx.session is None or ctx.mode != "execute":
         return outcome
     try:
-        extra = unapproved_steps(tuple(ctx.session.completed()), ctx.approved)
+        # Writes an earlier plan of the same request already made (it was approved then) are not this plan's to answer for.
+        earlier = {step.audit_id for step in ctx.progress}
+        extra = unapproved_steps(tuple(s for s in ctx.session.completed() if s.audit_id not in earlier), ctx.approved)
     except Exception:
         return outcome
     if not extra:

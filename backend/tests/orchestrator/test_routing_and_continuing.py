@@ -1,0 +1,158 @@
+"""The fixes from the Yuki conversation: a card named up front is understood, a plain yes cannot turn an offer into a
+hand-off, and a closure that paid a balance goes on as the same request."""
+
+from agent.dispatcher import Name, RecordKinds
+from banking_tools import BankingSession
+from banking_tools.manifest import load_tasks
+from orchestrator.executor import OutcomeStatus, RouteOutcome
+from orchestrator.types import IntentKind as K, Question
+from scenario_kit import GOOD_CLAIMS, I, S, World, interp
+
+USER = "224959b99e"  # Yuki Nakamura (task_055): Platinum $75, Business Silver $125, Green checking, a debit card ending 8765
+
+
+def records():
+    session = BankingSession.from_task(next(t for t in load_tasks() if t["id"] == "task_055"))
+    return RecordKinds(session.database)
+
+
+def test_a_credit_card_named_in_words_in_any_card_slot_is_routed_to_the_credit_specialist():
+    r = records()
+    for slot in ("card_id", "credit_card_account_id", "account_id", "card_or_account_id"):
+        assert r.products({slot: "Platinum Rewards Card"}, USER) == {Name.CREDIT}, slot
+        assert r.products({slot: "your Business Silver Rewards Card (credit card)"}, USER) == {Name.CREDIT}, slot
+
+
+def test_a_name_that_fits_two_cards_or_none_is_still_asked_not_guessed():
+    r = records()
+    assert r.products({"card_id": "rewards card"}, USER) == frozenset(), "Platinum and Business Silver both fit"
+    assert r.products({"card_id": "Mystery Card"}, USER) == frozenset()
+    assert r.products({"card_id": "Platinum Rewards Card"}, "someone-else") == frozenset(), "never another customer's card"
+
+
+class Asking:
+    """Asks for the waiver answer once, then runs with whatever it was given."""
+
+    def __init__(self):
+        self.seen = []
+
+    async def run(self, intent, ctx):
+        self.seen.append((intent.kind, dict(intent.slots)))
+        if not intent.slots.get("waiver_answer"):
+            q = Question(intent_id=intent.id, slot="waiver_answer", text="I can waive the annual fee for a year. Would you like that?")
+            return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.NEEDS_INFO, questions=(q,))
+        return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text="Done: waived")
+
+
+def test_a_thank_you_yes_to_an_offer_is_its_answer_even_when_the_decomposer_calls_it_a_hand_off():
+    route = Asking()
+    handoff = I("x", K.REQUEST_HUMAN, {"waiver_answer": "yes thank you"})  # the open request, re-sent as something else
+    w = World(
+        [interp(I("x", K.FREEZE_CARD, {}), claims=GOOD_CLAIMS), interp(handoff)],
+        [[S("x", 0.99)], [S("x", 0.99)]],
+        direct=route,
+        sub=route,
+    )
+    w.turn("freeze my card")
+    result = w.turn("yes thank you")
+    assert not result.reply.escalated_intent_ids, "nobody asked for a person"
+    assert route.seen[-1][0] is K.FREEZE_CARD and route.seen[-1][1].get("waiver_answer") == "yes"
+
+
+def test_a_hand_off_replaces_an_open_request_only_when_the_customer_mentions_a_person():
+    route = Asking()
+    w = World(
+        [interp(I("x", K.FREEZE_CARD, {}), claims=GOOD_CLAIMS), interp(I("x", K.REQUEST_HUMAN, {}))],
+        [[S("x", 0.99)], [S("x", 0.99)]],
+        direct=route,
+        sub=route,
+    )
+    w.turn("freeze my card")
+    assert not w.turn("what does that cost me?").reply.escalated_intent_ids
+
+    route2 = Asking()
+    w2 = World(
+        [interp(I("x", K.FREEZE_CARD, {}), claims=GOOD_CLAIMS), interp(I("x", K.REQUEST_HUMAN, {}))],
+        [[S("x", 0.99)], [S("x", 0.99)]],
+        direct=route2,
+        sub=route2,
+    )
+    w2.turn("freeze my card")
+    assert w2.turn("I want to talk to a person").reply.escalated_intent_ids == ("x",)
+
+
+class PayThenAsk:
+    """Pays a balance and says what comes next, like the closure of a card that owed money."""
+
+    proposes_plans = False
+
+    def __init__(self):
+        self.seen = []
+
+    async def run(self, intent, ctx):
+        self.seen.append(dict(intent.slots))
+        if not intent.slots.get("closure_reason"):
+            follow = Question(intent_id=intent.id, slot="closure_reason", text="Why would you like to close this card?")
+            return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text="The balance is paid.", follow_up=follow)
+        return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text="Done: closed")
+
+
+def test_a_step_that_asks_what_comes_next_keeps_the_same_request_open_with_what_it_knows():
+    route = PayThenAsk()
+    w = World(
+        [interp(I("x", K.FREEZE_CARD, {"card_id": "platinum"}), claims=GOOD_CLAIMS), interp()],
+        [[S("x", 0.99)], [S("x", 0.99)]],
+        direct=route,
+        sub=route,
+    )
+    first = w.turn("freeze my platinum card")
+    assert "The balance is paid." in first.reply.text and first.reply.questions[0].slot == "closure_reason"
+    assert w.orch.active_ids == ("x",) and w.orch.done_ids == (), "the request is not over"
+    second = w.turn("it costs too much")
+    assert route.seen[-1].get("card_id") == "platinum", "the card it already knew is still there"
+    assert route.seen[-1].get("closure_reason") == "it costs too much"
+    assert w.orch.done_ids == ("x",) and "closed" in second.reply.text
+
+
+# ---------------------------------------------------------------- a request that goes on must not be blamed for its first step
+
+def test_a_request_that_goes_on_is_not_blamed_for_the_step_an_earlier_plan_already_made():
+    """The bug: a card closure paid a balance, asked why, and its second plan was refused as "a change that was not in the
+    approved plan", because the alarm compared every write of the request with only the latest plan."""
+    from banking_tools import BankingSession, Fidelity
+    from orchestrator.context import scoped
+    from orchestrator.decision import fingerprint
+    from orchestrator.plan_preview import PlanPreview, PlanStep
+
+    card = "dbc_lj82d4f1a9_bluest"
+    block = PlanStep(index=1, tool="set_debit_card_recurring_block_7382", args={"card_id": card, "block_recurring": True}, reversible=True, description="Block recurring charges")
+    freeze = PlanStep(index=1, tool="freeze_debit_card_3892", args={"card_id": card}, reversible=True, description="Freeze the card")
+
+    class TwoPlans:
+        proposes_plans = True
+
+        async def run(self, intent, ctx):
+            asked_why = bool(intent.slots.get("closure_reason"))
+            if ctx.mode == "plan":
+                steps = (freeze,) if asked_why else (block,)
+                return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.NEEDS_CONFIRMATION, proposal=PlanPreview.build(intent.id, fingerprint(intent), steps))
+            for step in ctx.approved.steps:
+                ctx.session.call(step.tool, step.args)
+            if asked_why:
+                return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text="Done: froze it")
+            follow = Question(intent_id=intent.id, slot="closure_reason", text="Why would you like to close this card?")
+            return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text="Done: blocked", follow_up=follow)
+
+    shared = BankingSession(fidelity=Fidelity.TAU2)
+    w = World(
+        [interp(I("x", K.CLOSE_CARD, {"card_id": card}), claims=GOOD_CLAIMS), interp()],
+        [[S("x", 0.99)], [S("x", 0.99)]],
+        sub=TwoPlans(),
+        session_for=scoped(shared),
+    )
+    first = w.turn("block my card")
+    assert first.reply.questions[0].slot == "closure_reason" and w.orch.active_ids == ("x",)
+    second = w.turn("it costs too much")
+    assert [o.status for o in second.outcomes] == [OutcomeStatus.DONE], [(o.status, o.error) for o in second.outcomes]
+    assert [e.tool for e in shared.audit_log if e.ok] == ["set_debit_card_recurring_block_7382", "freeze_debit_card_3892"]
+    assert "stale" not in " ".join(d.reason for d in second.decisions), "the finished step's plan is not kept around to go stale"

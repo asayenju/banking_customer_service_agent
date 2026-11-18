@@ -217,11 +217,17 @@ class CreditClosure:
             return Plan((*log, credit))
         return Plan((*log, Step("close_credit_card_account_7834", {"credit_card_account_id": account_id}, note=f"Close {card_name}")))
 
+    def follow_up(self, ctx: WorkflowContext, steps: Sequence[Step]) -> Optional[Ask]:
+        """The question the same request goes on with once the plan ran: after only the balance was paid, why close the card."""
+        if [s.tool for s in steps] == ["pay_credit_card_from_checking_9182"]:
+            return Ask("closure_reason", "Why would you like to close this card?")
+        return None
+
     def after(self, ctx: WorkflowContext, steps: Sequence[Step]) -> str:
         """What to tell the customer once the plan has run."""
         tools = [s.tool for s in steps]
         if tools == ["pay_credit_card_from_checking_9182"]:
-            return "The balance is paid. Why would you like to close this card?"
+            return "The balance is paid."
         if "close_credit_card_account_7834" in tools:
             return AFTER_CLOSING
         return ""

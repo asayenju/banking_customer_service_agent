@@ -102,19 +102,14 @@ class RecordKinds:
             elif name == "credit_card_account_id" and self._owned("credit_card_accounts", value, user_id):
                 found.add(Name.CREDIT)
             elif name == CHOSEN:
-                # The answer to "which card do you mean?": a debit card by id or last four digits,
-                # or a credit card by id, last four digits or name, when it picks out exactly one.
-                debit = resolve(value, owned_cards(self._db, user_id))
-                credit = resolve_credit(value, owned_credit_accounts(self._db, user_id))
-                if debit is not None and credit is None:
-                    found.add(Name.DEBIT)
-                elif credit is not None and debit is None:
-                    found.add(Name.CREDIT)
+                found |= self._by_name(value, user_id)
             elif name == "account_id":
                 if self._owned("accounts", value, user_id):
                     found.add(Name.DEBIT)
                 elif self._owned("credit_card_accounts", value, user_id):
                     found.add(Name.CREDIT)
+                else:
+                    found |= self._by_name(value, user_id)
             elif name == "transaction_id":
                 if self._owned("credit_card_transaction_history", value, user_id):
                     found.add(Name.CREDIT)
@@ -124,7 +119,21 @@ class RecordKinds:
                         found.add(Name.DEBIT)
                     elif row is None:
                         found |= self._described(value, user_id)
+            elif name in ("card_id", "credit_card_account_id"):
+                # Not an id of theirs: the customer (or the decomposer) put the card's name there ("Platinum Rewards Card").
+                found |= self._by_name(value, user_id)
         return frozenset(found)
+
+    def _by_name(self, value: str, user_id: str) -> set[Name]:
+        """A card the words pick out: a debit card by id or last four digits, or a credit card by id, last four digits or
+        name, when it picks out exactly one of the customer's cards. Never another customer's."""
+        debit = resolve(value, owned_cards(self._db, user_id))
+        credit = resolve_credit(value, owned_credit_accounts(self._db, user_id))
+        if debit is not None and credit is None:
+            return {Name.DEBIT}
+        if credit is not None and debit is None:
+            return {Name.CREDIT}
+        return set()
 
     def _described(self, words: str, user_id: str) -> set[Name]:
         """The customer named a charge in words (a merchant) instead of an id: the product whose own records hold it.
