@@ -275,15 +275,28 @@ function doneCard(text) {
   const ul = el("ul"); for (const p of doneText.split(/;\s+/)) { const t = p.replace(/\.$/, "").replace(/\bNot included:.*$/, "").trim(); if (t) ul.append(el("li", null, t)); }
   card.append(ul); if (after) card.append(el("div", "after", after)); return card;
 }
+/* A reply that reports something done and then asks something: the Done card holds only what was done, and the question is a
+   message of its own below it (with its buttons). Cut where the code starts the questions. */
+const QUESTIONS_START = "To go on, I need a little more information:";
+function splitDone(text) {
+  if (!/^Done: /.test(text)) return { done: "", rest: text };
+  const at = text.indexOf(QUESTIONS_START);
+  return at < 0 ? { done: text.trim(), rest: "" } : { done: text.slice(0, at).trim(), rest: text.slice(at) };
+}
 function render(into, data) {
-  let text = data.reply || "";
-  const extra = data.questions.filter(q => !text.includes(q)).join("\n\n");
+  const full = data.reply || "";
+  const extra = data.questions.filter(q => !full.includes(q)).join("\n\n");
+  const split = splitDone(full);
+  if (split.done) {
+    into.append(doneCard(split.done));
+    if (!split.rest && !extra) return;
+  }
+  let text = split.done ? split.rest : full;
   const plan = parsePlan(text);
   if (plan) {
     if (plan.before) into.append(el("p", null, plan.before));
     into.append(planCard(plan)); return;
   }
-  if (/^Done: /.test(text)) { into.append(doneCard(text)); return; }
   const offered = data.choices || [], asks = data.asks || [];
   // Options come from the question being asked, never from a list the agent is reporting: "Which card do you mean?" with
   // its cards is a pick, "Recent charges on your card:" is a result. The options are shown as buttons, not twice.

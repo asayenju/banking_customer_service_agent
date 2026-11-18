@@ -75,9 +75,12 @@ class _VerifiedCaller:
         history: Sequence[tuple[str, str]] = (),
         pending: Sequence[tuple[str, str]] = (),
         awaiting_yes: Sequence[str] = (),
+        already_done: Sequence[tuple[str, str]] = (),
     ) -> Interpretation:
         parameters = inspect.signature(self._inner.interpret).parameters
-        if "awaiting_yes" in parameters:
+        if "already_done" in parameters:
+            result = await self._inner.interpret(message, open_intents, history, pending, awaiting_yes, already_done)
+        elif "awaiting_yes" in parameters:
             result = await self._inner.interpret(message, open_intents, history, pending, awaiting_yes)
         elif "pending" in parameters:
             result = await self._inner.interpret(message, open_intents, history, pending)

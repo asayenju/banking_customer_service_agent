@@ -147,3 +147,62 @@ def test_jev_is_shown_the_customers_other_requests_and_what_this_one_waits_for()
     assert "dispute a charge" not in state["the_customers_other_requests"] and "dispute transaction: dispute the" in state["the_customers_other_requests"]
     assert "dispute transaction" in state["the_customer_wants_this_after"]
     assert "the_customers_other_requests" not in _state("one request", limit, ScoreContext(requests=((limit.id, limit.kind.value, limit.summary, ()),)))
+
+
+# ---------------------------------------------------------------- a held question does not climb the repair ladder unseen
+
+def test_a_question_held_back_does_not_move_up_the_repair_ladder_until_it_is_really_shown():
+    from orchestrator.decision import Action as A, IntentDecision as D
+    from orchestrator.repair import RepairLadder
+    from orchestrator.types import Question
+
+    intent = Intent(id="l", kind=K.CREDIT_LIMIT_REQUEST, summary="raise my limit")
+    ask = D(intent_id="l", action=A.ASK, reason="r", questions=(Question(intent_id="l", slot="clarification", text="To be sure: raise your limit?"),))
+    ladder = RepairLadder()
+    for _ in range(4):  # held behind a plan for four turns: not shown, so the wording does not move
+        (held,) = ladder.apply({"l": intent}, [ask], lambda i, q: "unused", set())
+        assert held.questions[0].text == "To be sure: raise your limit?"
+    (first,) = ladder.apply({"l": intent}, [ask], lambda i, q: "unused", {("l", "clarification")})
+    assert first.questions[0].text == "To be sure: raise your limit?", "the first time it is shown it is asked as written"
+    (second,) = ladder.apply({"l": intent}, [ask], lambda i, q: "unused", {("l", "clarification")})
+    assert second.questions[0].text != first.questions[0].text and "still need an answer" not in second.questions[0].text
+
+
+def test_the_last_rung_only_talks_about_a_card_when_the_question_is_about_one():
+    from orchestrator.repair import offer_person
+
+    assert "last four digits of the card" in offer_person("which card?", "card_or_account_id")
+    neutral = offer_person("what do you mean?", "clarification")
+    assert "last four digits" not in neutral and "say 'person'" in neutral
+
+
+# ---------------------------------------------------------------- the decomposer is told what is already finished
+
+def test_the_decomposer_is_told_which_requests_are_already_done_so_it_does_not_find_them_again():
+    from orchestrator.mocks import ScriptedRoute
+
+    w = World(
+        [interp(I("x", K.FREEZE_CARD, {"card_id": "c1"}, summary="freeze my card"), claims=GOOD_CLAIMS), interp()],
+        [[S("x", 0.99)], [S("x", 0.99)]],
+        direct=ScriptedRoute(),
+    )
+    w.turn("freeze my card")
+    w.turn("anything else?")
+    assert w.decomposer.finished[0] == () and w.decomposer.finished[1] == (("FREEZE_CARD", "freeze my card"),)
+
+
+def test_a_greeting_or_a_question_is_not_listed_as_finished_work():
+    from orchestrator.mocks import ScriptedRoute
+
+    w = World([interp(I("q", K.GENERAL_QUESTION, summary="what are your hours"), claims=GOOD_CLAIMS), interp()], [[S("q", 0.99)], [S("q", 0.99)]], direct=ScriptedRoute(), sub=ScriptedRoute())
+    w.turn("what are your hours")
+    w.turn("thanks for asking again")
+    assert w.decomposer.finished[1] == ()
+
+
+def test_the_model_sees_what_is_already_done_and_the_instruction_not_to_make_it_again():
+    client = FakeLLMClient([json.dumps({"intents": [], "conflicts": [], "confirmed": [], "declined": [], "answers": [], "claims": []})])
+    asyncio.run(LLMDecomposer(client).interpret("and the limit?", [], (), (), (), (("ORDER_REPLACEMENT_CARD", "order a replacement card"),)))
+    sent = client.calls[0]["messages"]
+    assert json.loads(sent[1]["content"])["already_done"] == [{"kind": "ORDER_REPLACEMENT_CARD", "summary": "order a replacement card"}]
+    assert "already_done" in sent[0]["content"] and "Never make a new intent out of one of them" in sent[0]["content"]

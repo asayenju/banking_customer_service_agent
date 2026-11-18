@@ -255,6 +255,8 @@ class Orchestrator:
 
         self._active: dict[str, Intent] = {}
         self._done: list[str] = []
+        # What each completed request was (kind, summary), so the decomposer is told not to find it again in the history.
+        self._finished: dict[str, tuple[str, str]] = {}
         self._asks: dict[str, int] = {}
         # Questions a route asked mid-run. Counted apart from _asks: a changed detail
         # (the answer to the question) restarts _asks, and must not restart this, or a
@@ -353,6 +355,10 @@ class Orchestrator:
         """Ask the decomposer what the message means, telling it which questions are waiting (when it can take them)."""
         intents = tuple(self._active.values()) + tuple(self._resumable.values())
         parameters = inspect.signature(self._decomposer.interpret).parameters
+        if "already_done" in parameters:
+            waiting = tuple(i for i in self._pending_confirm if i in self._active)
+            finished = tuple(self._finished.values())
+            return await self._decomposer.interpret(message, intents, self._history_now, self._pending_questions(), waiting, finished)
         if "awaiting_yes" in parameters:
             waiting = tuple(i for i in self._pending_confirm if i in self._active)
             return await self._decomposer.interpret(message, intents, self._history_now, self._pending_questions(), waiting)
@@ -407,6 +413,11 @@ class Orchestrator:
             recent=self._history_now,
             done_so_far=tuple(self._ledger()) if self._ledger is not None else (),
         )
+
+    def _note_finished(self, intent_id: str) -> None:
+        intent = self._active.get(intent_id)
+        if intent is not None and intent.kind not in (IntentKind.UNCLEAR_OR_GREETING, IntentKind.GENERAL_QUESTION):
+            self._finished[intent_id] = (intent.kind.value, intent.summary)
 
     def _forget(self, intent_id: str) -> None:
         self._ladder.forget(intent_id)
@@ -723,6 +734,9 @@ class Orchestrator:
                 or is_affirmation(message)
                 or (says_yes(message) and (intent.id in asked_before or intent.id in self._pending_confirm or intent.id in self._clarifying))
                 or (intent.kind is IntentKind.REQUEST_HUMAN and not PERSON_WORDS.search(message))
+                # A short answer to a question this request is waiting on is read by the decomposer as a general question, a
+                # lookup or "other" because it is not an action ("I never used that service"): it stays the request it answers.
+                or (intent.id in asked_before and intent.kind in _ANSWER_NOISE and len(message) <= 300)
             ):
                 # A reply that opens with a yes ("yes thank you", "yes, I would love that") to a question waiting for this request
                 # is its answer, and a message that never mentions a person is not a request for one. A decomposer that re-sends
@@ -879,6 +893,7 @@ class Orchestrator:
         for outcome in previewed:
             if outcome.status is OutcomeStatus.DONE:
                 self._done.append(outcome.intent_id)
+                self._note_finished(outcome.intent_id)
             self._forget(outcome.intent_id)
 
         for outcome in executed.outcomes:
@@ -913,6 +928,7 @@ class Orchestrator:
                 continue
             if outcome.status is OutcomeStatus.DONE:
                 self._done.append(outcome.intent_id)
+                self._note_finished(outcome.intent_id)
                 self._progress.pop(outcome.intent_id, None)
                 if self._decision_log is not None and outcome.intent_id in view:
                     self._decision_log.outcome(outcome.intent_id, view[outcome.intent_id].kind.value, "completed")
@@ -936,11 +952,6 @@ class Orchestrator:
             view[owed.id] = owed
             events.extend(_decision_events(owed_decision))
 
-        ordered = tuple(self._ladder.apply(view, tuple(decisions.values()), wording))
-        self._awaiting = any(d.action is Action.ASK for d in ordered)
-        self._last_asked = frozenset(
-            q.slot for d in ordered if d.action is Action.ASK for q in d.questions
-        )
         contained = tuple(outcome for _, outcome in self._contained)
         view.update({freeze.id: freeze for freeze, _ in self._contained})
         reported = contained + previewed + tuple(
@@ -950,6 +961,14 @@ class Orchestrator:
         )
         waiting = the_plan.waiting + tuple(
             Waiting(intent_id=i, blocked_by=blockers) for i, blockers in waiting_on_answer.items()
+        )
+        raw = tuple(decisions.values())
+        # Which questions will really reach the customer this turn: only those move up the repair ladder.
+        probe = compose_reply(view, outcomes=reported, decisions=raw, waiting=waiting)
+        ordered = tuple(self._ladder.apply(view, raw, wording, {(q.intent_id, q.slot) for q in probe.questions}))
+        self._awaiting = any(d.action is Action.ASK for d in ordered)
+        self._last_asked = frozenset(
+            q.slot for d in ordered if d.action is Action.ASK for q in d.questions
         )
         reply = compose_reply(view, outcomes=reported, decisions=ordered, waiting=waiting)
         put_to_customer = {(q.intent_id, q.slot) for q in reply.questions}

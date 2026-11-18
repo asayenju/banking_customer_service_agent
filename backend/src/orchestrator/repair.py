@@ -16,6 +16,7 @@ repaired: a yes is asked as it is, and the identity prompt is already a list of 
 import re
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
+from typing import Optional
 
 from orchestrator.auth import IDENTITY_SLOT
 from orchestrator.decision import CLARIFY_SLOT, CONFIRM_SLOT, Action, IntentDecision
@@ -37,10 +38,14 @@ def numbered(text: str) -> str:
     return f"{SORRY} Could you say it another way? {first}"
 
 
-def offer_person(text: str) -> str:
+_CARD_SLOTS = frozenset({"card_id", "credit_card_account_id", "card_or_account_id", "account_id", "card_last_4_digits"})
+
+
+def offer_person(text: str, slot: str = "") -> str:
+    hint = " (the last four digits of the card work best)" if slot in _CARD_SLOTS else ""
     return (
         "I'm still not sure I have this right, and I don't want to guess. You can tell me in your own words once "
-        "more (the last four digits of the card work best), or say 'person' and I'll connect you with someone."
+        f"more{hint}, or say 'person' and I'll connect you with someone."
     )
 
 
@@ -56,13 +61,19 @@ class RepairLadder:
         intents: Mapping[str, Intent],
         decisions: Sequence[IntentDecision],
         wording: Callable[[Mapping[str, Intent], Question], str],
+        shown: Optional[set[tuple[str, str]]] = None,
     ) -> list[IntentDecision]:
+        """``shown`` is the (request, detail) pairs that really go to the customer this turn. A question held back behind a plan
+        or another question has not been asked, so it is left alone: its wording does not move up the ladder unseen."""
         out: list[IntentDecision] = []
         for decision in decisions:
             if decision.action is not Action.ASK:
                 out.append(decision)
                 continue
-            fixed = tuple(self._repair(intents, q, wording) for q in decision.questions)
+            fixed = tuple(
+                self._repair(intents, q, wording) if shown is None or (q.intent_id, q.slot) in shown else q
+                for q in decision.questions
+            )
             out.append(decision.model_copy(update={"questions": fixed}))
         return out
 
@@ -82,7 +93,7 @@ class RepairLadder:
             # "Which you meant" fits a list. A "tell me more" has none, and the customer has just said more.
             text = "I want to get this right. In your own words, what would you like me to help with?"
         else:
-            text = base if times == 0 else numbered(base) if times == 1 else offer_person(base)
+            text = base if times == 0 else numbered(base) if times == 1 else offer_person(base, q.slot)
         while text in shown and times:
             text += " (I still need an answer to this.)"
         shown.add(text)

@@ -234,3 +234,33 @@ def test_a_reply_without_a_yes_can_still_change_what_a_request_is():
     w.turn("close my card")
     w.turn("actually, I meant a fee on my savings")
     assert route.seen[-1][0] is K.FEE_OR_INTEREST_ADJUSTMENT, "a real change of mind is still honoured"
+
+
+def test_a_short_answer_to_a_waiting_question_is_not_turned_into_a_general_question():
+    """The dispute asked "why are you disputing it?", the customer answered, and the decomposer re-sent the dispute as a general
+    question at 0.59: the request that was being worked on was gone and the conversation lost its thread."""
+    route = Offering()
+    relabelled = I("x", K.GENERAL_QUESTION, {"waiver_answer": "I never used that service"})
+    w = World(
+        [interp(I("x", K.CLOSE_CARD, {}), claims=GOOD_CLAIMS), interp(relabelled)],
+        [[S("x", 0.99)], [S("x", 0.59)]],
+        sub=route,
+    )
+    first = w.turn("close my card")
+    assert first.reply.questions[0].slot == "waiver_answer"
+    w.turn("I never used that service")
+    assert all(kind is K.CLOSE_CARD for kind, _ in route.seen), "it is still the closure it was"
+    assert route.seen[-1][1].get("waiver_answer") == "I never used that service"
+
+
+def test_a_real_change_of_mind_to_an_action_is_still_honoured_while_a_question_is_open():
+    route = Offering()
+    w = World(
+        [interp(I("x", K.CLOSE_CARD, {}), claims=GOOD_CLAIMS), interp(I("x", K.FREEZE_CARD, {"card_id": "c1"}))],
+        [[S("x", 0.99)], [S("x", 0.99)]],
+        sub=route,
+        direct=route,
+    )
+    w.turn("close my card")
+    w.turn("actually just freeze it")
+    assert route.seen[-1][0] is K.FREEZE_CARD, "a change to another action is a change of mind, not a mislabelled answer"

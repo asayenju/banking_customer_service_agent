@@ -47,3 +47,24 @@ def test_a_question_with_options_gets_one_button_per_option_and_nothing_else_get
     assert got[2] is None, "an amount is typed"
     assert got[3] == ["Yes", "No"]
     assert got[4] is None, "a result the agent reports is not a question"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_a_done_reply_that_also_asks_a_question_is_split_so_the_question_is_not_inside_the_done_card():
+    script = r"""
+    const fs = require('fs');
+    const html = fs.readFileSync(process.argv[1], 'utf8');
+    const grab = n => { const a = html.indexOf('function ' + n); return html.slice(a, html.indexOf('\n}\n', a) + 3); };
+    const start = html.match(/const QUESTIONS_START = [^\n]+\n/)[0];
+    const splitDone = new Function(start + grab('splitDone') + ';return splitDone')();
+    const cases = JSON.parse(process.argv[2]);
+    console.log(JSON.stringify(cases.map(splitDone)));
+    """
+    ask = "To go on, I need a little more information:\n- I'm still not sure I have this right. (I still need an answer to this.)"
+    cases = ["Done: Order a replacement card. The old card will be cancelled.\n" + ask, "Done: Order a replacement card.", "Which card do you mean?", "Done: A\nDone: B.\n" + ask]
+    run = subprocess.run(["node", "-e", script, str(WIDGET), json.dumps(cases)], capture_output=True, text=True, check=True)
+    one, only_done, no_done, two = json.loads(run.stdout)
+    assert one["done"] == "Done: Order a replacement card. The old card will be cancelled." and one["rest"] == ask
+    assert only_done == {"done": "Done: Order a replacement card.", "rest": ""}
+    assert no_done == {"done": "", "rest": "Which card do you mean?"}, "a reply that is not a Done is left alone"
+    assert two["done"] == "Done: A\nDone: B." and two["rest"] == ask
