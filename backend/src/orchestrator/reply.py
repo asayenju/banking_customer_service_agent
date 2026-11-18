@@ -77,14 +77,9 @@ def _batch(
             if key in seen:
                 continue
             seen.add(key)
-            batch.append(
-                Question(
-                    intent_id=question.intent_id,
-                    slot=question.slot,
-                    # Text a route or the plan preview built is the exact wording to show.
-                    text=question.text or wording(intents, question),
-                )
-            )
+            # Text a route or the plan preview built is the exact wording to show. Everything else about the question
+            # (its kind: "yes_no" tells the chat to offer Yes and No) is kept as it was.
+            batch.append(question.model_copy(update={"text": question.text or wording(intents, question)}))
     return tuple(batch)
 
 
@@ -147,7 +142,7 @@ def compose_reply(
         # stuck on "anything I can help with?", so the question is asked again as it was.
         again = next((q for d in decisions if d.action is Action.ASK for q in d.questions if q.slot not in (IDENTITY_SLOT,)), None)
         if again is not None:
-            questions = (Question(intent_id=again.intent_id, slot=again.slot, text=again.text or wording(intents, again)),)
+            questions = (again.model_copy(update={"text": again.text or wording(intents, again)}),)
     if one_at_a_time:
         # Never a list of questions: the first missing detail now. Whatever else is missing is asked again, one at a
         # time, when the request runs again with this answer (a route recomputes what it still needs each time).

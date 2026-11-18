@@ -125,4 +125,5 @@ def test_a_turn_is_recorded_with_its_decisions_and_never_its_words(tmp_path):
     assert "7351" not in written and "5,000" not in written, "no message text and no amounts"
     assert json.loads(written)["decisions"][0]["reason"] == "plan approved"
     assert "turn 1" in render_turn(row) and recorder.conversation("conv-1") == [row]
+    assert row["reply_asks"] == [], "a reply with no question sends the chat no asks"
     assert recorder.conversation("other") == []

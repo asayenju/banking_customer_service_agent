@@ -118,6 +118,8 @@ class Recorder:
             "at": round(time.time(), 3),
             "ms": round((time.monotonic() - started) * 1000),
             "reply_kind": _reply_kind(result),
+            # What the chat was actually sent for each question: the slot and its kind ("yes_no" gets Yes and No buttons).
+            "reply_asks": [{"slot": q.slot, "kind": q.kind} for q in result.reply.questions],
             "failure_class": label,
             "intents": list(intents),
             "decisions": decisions,
@@ -171,6 +173,8 @@ def render_turn(record: Mapping[str, Any]) -> str:
     lines = [f"turn {record['turn']}  {record['reply_kind']}  {record['ms']} ms" + (f"  FAILURE: {record['failure_class']}" if record.get("failure_class") else "")]
     for d in record["decisions"]:
         lines.append(f"  decided {d['intent']}: {d['action']} - {d['reason']}" + (f" (asked {', '.join(d['asked'])})" if d["asked"] else ""))
+    if record.get("reply_asks"):
+        lines.append("  sent to chat: " + ", ".join(f"{a['slot']}[{a['kind'] or 'plain'}]" for a in record["reply_asks"]))
     for n in record["notes"]:
         lines.append("  " + ", ".join(f"{k}={v}" for k, v in n.items()))
     for o in record["outcomes"]:

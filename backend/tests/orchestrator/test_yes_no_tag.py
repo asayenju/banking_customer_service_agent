@@ -56,7 +56,7 @@ def test_the_api_sends_each_question_with_its_kind():
 
     class Scores:
         async def score(self, message, decomposition):
-            return [IntentScore.flat(i.id, 0.4) for i in decomposition.intents]  # unsure: the code asks "please confirm"
+            return [IntentScore.flat(i.id, 0.4) for i in decomposition.intents]  # unsure: the code asks "tell me more"
 
     task = next(t for t in load_tasks() if t["id"] == "task_078")
     index = KnowledgeIndex({"doc_x": Document("doc_x", "Internal: x", "lost card protocol")})
@@ -67,3 +67,33 @@ def test_the_api_sends_each_question_with_its_kind():
     main.app.state.conversations = {}
     body = TestClient(main.app).post("/conversations/k1/messages", json={"message_id": "m1", "message": "freeze it"}).json()
     assert body["asks"] and all(set(a) == {"slot", "kind"} for a in body["asks"])
+    assert [a["kind"] for a in body["asks"]] == [""], "a 'tell me more' question is free text, never a yes or no"
+
+
+def test_the_reply_keeps_the_kind_of_a_question_it_rewords_or_repeats():
+    """The bug: the reply was rebuilt from slot and text only, so a tagged question reached the chat untagged."""
+    from orchestrator.decision import Action, IntentDecision
+    from orchestrator.reply import compose_reply
+    from orchestrator.types import Intent, IntentKind as K
+
+    intent = Intent(id="x", kind=K.OPEN_ACCOUNT, summary="open a savings account")
+    tagged = Question(intent_id="x", slot="fund_now", text="Would you like me to move the opening deposit?", kind="yes_no")
+    plain = Question(intent_id="x", slot="fund_amount", text="How much would you like to move?")
+    for question, kind in ((tagged, "yes_no"), (plain, "")):
+        decision = IntentDecision(intent_id="x", action=Action.ASK, reason="r", questions=(question,))
+        assert [q.kind for q in compose_reply({"x": intent}, decisions=[decision]).questions] == [kind]
+    # a question with no text of its own is worded by the reply, and still keeps its kind
+    bare = Question(intent_id="x", slot="fund_now", kind="yes_no")
+    decision = IntentDecision(intent_id="x", action=Action.ASK, reason="r", questions=(bare,))
+    (only,) = compose_reply({"x": intent}, decisions=[decision]).questions
+    assert only.kind == "yes_no" and only.text
+
+
+def test_the_please_confirm_question_reaches_the_chat_as_a_yes_or_no():
+    """Through the whole orchestrator: a write the customer has not said yes to is confirmed with a tagged question."""
+    from orchestrator.types import IntentKind as K
+    from scenario_kit import GOOD_CLAIMS, I, S, World, interp
+
+    w = World([interp(I("x", K.CLOSE_CARD, {"card_id": "c1"}), claims=GOOD_CLAIMS)], [[S("x", 0.99)]])
+    result = w.turn("close my card")
+    assert [(q.slot, q.kind) for q in result.reply.questions] == [("confirmation", "yes_no")]

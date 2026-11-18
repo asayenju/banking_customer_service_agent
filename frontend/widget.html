@@ -326,6 +326,7 @@ function traceLine(r) {
   if (r.failure_class) box.append(el("span", "bad", r.failure_class));
   const lines = [];
   for (const d of r.decisions) lines.push("decided " + d.intent + ": " + d.action + " - " + d.reason + (d.asked.length ? " (asked " + d.asked.join(", ") + ")" : ""));
+  if (r.reply_asks && r.reply_asks.length) lines.push("sent to chat: " + r.reply_asks.map(a => a.slot + "[" + (a.kind || "plain") + "]").join(", "));
   for (const n of r.notes) lines.push(Object.entries(n).filter(([k, v]) => v !== "" && !(Array.isArray(v) && !v.length)).map(([k, v]) => k + "=" + (Array.isArray(v) ? v.join("|") : v)).join(", "));
   for (const o of r.outcomes) lines.push("outcome " + o.intent + ": " + o.status + (o.error ? " (" + o.error + ")" : ""));
   box.append(el("div", null, lines.join("\n")));
