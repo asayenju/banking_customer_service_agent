@@ -85,6 +85,11 @@
             "title": "Intent Id",
             "type": "string"
           },
+          "kind": {
+            "default": "",
+            "title": "Kind",
+            "type": "string"
+          },
           "slot": {
             "title": "Slot",
             "type": "string"

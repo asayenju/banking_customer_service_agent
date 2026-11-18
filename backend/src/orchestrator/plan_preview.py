@@ -92,6 +92,12 @@ def render_plan(steps: tuple[PlanStep, ...]) -> str:
     return "\n".join(lines)
 
 
+# The only steps a plan may carry and still run without the customer's yes: the bank's own decision under its own rules.
+# The customer asked for the increase and gave the amount; the bank's rules then record the outcome. Nothing else is
+# listed, so every other irreversible step keeps needing a yes.
+BANK_DECISION_TOOLS = frozenset({"submit_credit_limit_increase_request_7392", "deny_credit_limit_increase_5848"})
+
+
 class PlanPreview(_Model):
     intent_id: Annotated[str, Field(min_length=1)]
     # decision.fingerprint(intent) when the plan was proposed; a changed detail makes it stale.
@@ -99,15 +105,18 @@ class PlanPreview(_Model):
     steps: Annotated[tuple[PlanStep, ...], Field(min_length=1)]
     plan_fp: str
     rendered: str
+    # True only for a plan made entirely of ``BANK_DECISION_TOOLS`` that code decided the bank must record.
+    bank_decision: bool = False
 
     @classmethod
-    def build(cls, intent_id: str, intent_fp: str, steps: tuple[PlanStep, ...]) -> Self:
+    def build(cls, intent_id: str, intent_fp: str, steps: tuple[PlanStep, ...], *, bank_decision: bool = False) -> Self:
         return cls(
             intent_id=intent_id,
             intent_fp=intent_fp,
             steps=steps,
             plan_fp=plan_fingerprint(steps),
             rendered=render_plan(steps),
+            bank_decision=bank_decision,
         )
 
     @model_validator(mode="after")
@@ -118,6 +127,8 @@ class PlanPreview(_Model):
             raise ValueError("plan_fp does not match the steps")
         if self.rendered != render_plan(self.steps):
             raise ValueError("rendered text does not match the steps")
+        if self.bank_decision and not all(s.tool in BANK_DECISION_TOOLS for s in self.steps):
+            raise ValueError("only the bank's own decision steps can run without the customer's yes")
         return self
 
     @property

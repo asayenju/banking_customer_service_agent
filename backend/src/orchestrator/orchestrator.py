@@ -935,9 +935,9 @@ class Orchestrator:
             return IntentDecision(
                 intent_id=intent.id, action=Action.PREVIEW, reason=stale or "working out exactly what to do"
             )
-        if proposal.reversible_only or self._confirmed.get(intent.id) == proposal.plan_fp:
+        if proposal.reversible_only or proposal.bank_decision or self._confirmed.get(intent.id) == proposal.plan_fp:
             self._approved[intent.id] = proposal
-            reason = "every step can be undone" if proposal.reversible_only else "plan approved"
+            reason = "every step can be undone" if proposal.reversible_only else "the bank records its own decision" if proposal.bank_decision else "plan approved"
             return IntentDecision(intent_id=intent.id, action=Action.RUN, reason=reason)
         return self._ask_for_plan(intent.id, proposal, "awaiting the customer's yes to the plan")
 
@@ -947,7 +947,7 @@ class Orchestrator:
             intent_id=intent_id,
             action=Action.ASK,
             reason=reason,
-            questions=(Question(intent_id=intent_id, slot=CONFIRM_SLOT, text=proposal.rendered),),
+            questions=(Question(intent_id=intent_id, slot=CONFIRM_SLOT, text=proposal.rendered, kind="yes_no"),),
             fingerprint=proposal.plan_fp,
         )
 
@@ -981,10 +981,12 @@ class Orchestrator:
                 proposal = outcome.proposal
                 self._proposals[intent_id] = proposal
                 self._shown_slots[intent_id] = _slot_hashes(self._active[intent_id])
-                if proposal.reversible_only:
+                if proposal.reversible_only or proposal.bank_decision:
                     self._approved[intent_id] = proposal
                     decisions[intent_id] = IntentDecision(
-                        intent_id=intent_id, action=Action.RUN, reason="every step can be undone"
+                        intent_id=intent_id,
+                        action=Action.RUN,
+                        reason="every step can be undone" if proposal.reversible_only else "the bank records its own decision",
                     )
                 else:
                     self._pending_confirm[intent_id] = proposal.plan_fp

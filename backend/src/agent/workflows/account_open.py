@@ -123,7 +123,7 @@ class OpenAccount:
                     Ask(
                         "fund_now",
                         f"Would you like me to move the opening deposit for your {wanted.account_class} from one of your "
-                        f"accounts right after it is opened? If not, you have {FUNDING_DAYS} days to fund it or it will be closed.",
+                        f"accounts right after it is opened? If not, you have {FUNDING_DAYS} days to fund it or it will be closed.", kind="yes_no"
                     )
                 )
             elif wanted.fund_now == "yes":

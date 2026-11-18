@@ -49,12 +49,16 @@ class Step:
 @dataclass(frozen=True)
 class Plan:
     steps: tuple[Step, ...]
+    # The bank records its own decision under its own rules (see ``plan_preview.BANK_DECISION_TOOLS``): no yes is asked.
+    bank_decision: bool = False
 
 
 @dataclass(frozen=True)
 class Ask:
     slot: str
     text: str
+    # "yes_no" when the answer is a plain yes or no, so the chat can offer those two buttons. Never guessed from the wording.
+    kind: str = ""
 
 
 @dataclass(frozen=True)

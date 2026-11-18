@@ -232,7 +232,7 @@ class DebitReplacement:
                         "accepts_refund_to_checking",
                         f"{_cap(label)} has a refund still pending. It cannot be closed until the refund "
                         "processes, unless you agree that it is credited to your checking account instead. "
-                        "Do you agree?",
+                        "Do you agree?", kind="yes_no"
                     )
                 )
                 continue
@@ -321,7 +321,7 @@ class DebitReplacement:
                                 "accepts_excess_fee",
                                 f"This account is past its replacement limit, so a ${excess:.0f} "
                                 "excess replacement fee would be charged to your checking account. "
-                                "Would you like to go ahead?",
+                                "Would you like to go ahead?", kind="yes_no"
                             ),
                         )
                     )

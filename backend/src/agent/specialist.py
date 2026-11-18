@@ -450,13 +450,13 @@ class Specialist:
             return RouteOutcome(
                 intent_id=intent.id,
                 status=OutcomeStatus.NEEDS_CONFIRMATION,
-                proposal=PlanPreview.build(intent.id, fingerprint(intent), steps),
+                proposal=PlanPreview.build(intent.id, fingerprint(intent), steps, bank_decision=decision.bank_decision),
             )
         if isinstance(decision, NeedInfo):
             return RouteOutcome(
                 intent_id=intent.id,
                 status=OutcomeStatus.NEEDS_INFO,
-                questions=tuple(Question(intent_id=intent.id, slot=a.slot, text=a.text) for a in decision.questions),
+                questions=tuple(Question(intent_id=intent.id, slot=a.slot, text=a.text, kind=a.kind) for a in decision.questions),
             )
         if isinstance(decision, Reply):
             return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text=decision.text)
@@ -633,10 +633,20 @@ class Specialist:
             readback = self.config.readbacks.get(step.tool)
             if readback is not None and (missing := readback(validation, arguments)) is not None:
                 return _failed(intent, f"step {step.index} was reported done but {missing}")
+        said = self._reply_for(intent, validation, ctx.approved.steps)
+        if said:  # the workflow words the whole answer itself (a bank decision is not "Done: ...")
+            return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text=said)
         done = "; ".join(s.description for s in ctx.approved.steps)
         text = f"Done: {done}."
         note = self._follow_up(intent, validation, ctx.approved.steps)
         return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text=f"{text} {note}" if note else text)
+
+    def _reply_for(self, intent: Intent, validation: ValidationContext, steps: Sequence[PlanStep]) -> str:
+        workflow = next((w for w in self.config.workflows if intent.kind in w.kinds and hasattr(w, "reply")), None)
+        if workflow is None:
+            return ""
+        shown = [Step(s.tool, {k: v for k, v in s.args.items() if not is_reference(v)}) for s in steps]
+        return str(workflow.reply(WorkflowContext(self._db, validation.user_id, validation.today), shown))
 
     def _follow_up(self, intent: Intent, validation: ValidationContext, steps: Sequence[PlanStep]) -> str:
         """What the workflow for this kind says to the customer after its plan ran, if it has anything."""

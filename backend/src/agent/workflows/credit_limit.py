@@ -10,12 +10,16 @@ and Approval Criteria" and "Processing CLI Approvals and Denials". The order of 
      good standing, utilization, payment history. The first one that fails is the denial reason.
   3. Approve (new limit = current limit + the increase) or deny with that reason.
 
-The plan therefore always starts with the submission and ends with an approval or a denial. A
-denial is shown to the customer as such before it is recorded. The cooldown counts only requests
-that were approved, from their submit date (document 005 over 007: a denied request starts no
-cooldown, and neither does the pending record the submission creates).
+The plan therefore always starts with the submission and ends with an approval or a denial. The rules
+are checked before anything is shown. A request that passes them is shown to the customer as a plan
+(the submission and the approval) and waits for their yes. A request that fails one is the bank's own
+decision under its own rules: it is recorded without asking (``Plan.bank_decision``) and the customer is
+told, in plain words, what stopped it and what to do. The cooldown counts only requests that were
+approved, from their submit date (document 005 over 007: a denied request starts no cooldown, and
+neither does the pending record the submission creates).
 """
 
+from collections.abc import Sequence
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
@@ -130,6 +134,7 @@ class CreditLimit:
                 )
             )
         steps: list[Step] = []
+        name = f"your {account.get('card_type')}"
         # The bank's tool refuses a second request of the same amount on a card ("a similar request may
         # already exist"), and the first one stays on file. When a request of this amount is already
         # there (task 051: denied for utilization, resubmitted after paying down), it stands as the
@@ -142,6 +147,7 @@ class CreditLimit:
                 Step(
                     "submit_credit_limit_increase_request_7392",
                     {"credit_card_account_id": facts.credit_card_account_id, "requested_increase_amount": facts.requested_increase_amount},
+                    note=f"Submit a request to raise {name}'s limit by ${facts.requested_increase_amount:,}",
                 )
             )
         reason = denial_reason(ctx, account, tier, limit)
@@ -150,8 +156,53 @@ class CreditLimit:
                 Step(
                     "approve_credit_limit_increase_5847",
                     {"credit_card_account_id": facts.credit_card_account_id, "new_credit_limit": int(limit) + facts.requested_increase_amount},
+                    note=f"Raise {name}'s limit from ${limit:,.0f} to ${limit + facts.requested_increase_amount:,.0f} (you meet the bank's requirements)",
                 )
             )
         else:
-            steps.append(Step("deny_credit_limit_increase_5848", {"credit_card_account_id": facts.credit_card_account_id, "denial_reason": reason}))
+            steps.append(
+                Step(
+                    "deny_credit_limit_increase_5848",
+                    {"credit_card_account_id": facts.credit_card_account_id, "denial_reason": reason},
+                    note=f"Record the bank's decision on it: declined ({reason.replace('_', ' ')})",
+                )
+            )
+            return Plan(tuple(steps), bank_decision=True)  # the bank's decision under its rules: not the customer's to approve
         return Plan(tuple(steps))
+
+    def reply(self, ctx: WorkflowContext, steps: Sequence[Step]) -> str:
+        """After a decline was recorded: say, in plain words, that it cannot be done and why. Empty after an approval."""
+        denial = next((s for s in steps if s.tool == "deny_credit_limit_increase_5848"), None)
+        if denial is None:
+            return ""
+        account = ctx.database.credit_card_accounts.data.get(str(denial.args.get("credit_card_account_id")), {})
+        tier = tier_of_card_type(str(account.get("card_type"))) or ""
+        why = _plain_reason(str(denial.args.get("denial_reason")), account, tier)
+        asked = next((s.args.get("requested_increase_amount") for s in steps if s.tool == "submit_credit_limit_increase_request_7392"), None)
+        recorded = f" I recorded your request for ${int(asked):,} as declined, and you will get a notice about it." if asked else ""
+        return f"I can't raise the limit on your {account.get('card_type')} right now. {why}{recorded}"
+
+
+def _plain_reason(code: str, account: dict[str, Any], tier: str) -> str:
+    if code == "high_utilization":
+        limit = money(account.get("credit_limit")) or 0.0
+        owed = money(account.get("current_balance")) or 0.0
+        share = f" ({owed / limit:.0%})" if limit else ""
+        return (
+            f"Your balance is ${owed:,.2f} of your ${limit:,.2f} limit{share}. The bank needs it under "
+            f"{CLI_MAX_UTILIZATION[tier]:.0%} before it can approve an increase. Once you have paid it down, you can ask again."
+        )
+    if code == "insufficient_account_age":
+        return f"The card has to be open at least {CLI_MIN_ACCOUNT_AGE_DAYS[tier]} days before an increase can be considered."
+    if code == "cooldown_period_active":
+        return f"An increase was approved on this card recently. The next request can be made {CLI_COOLDOWN_DAYS[tier]} days after that one."
+    if code == "pending_disputes":
+        return "There is a dispute still open on your account. Once it is resolved, you can ask again."
+    if code == "pending_replacement_card":
+        return "A replacement card for this account is on its way. Once it has arrived, you can ask again."
+    if code == "past_due_balance":
+        return "The account has a past-due amount or is not in good standing. Once that is brought up to date, you can ask again."
+    if code == "insufficient_payment_history":
+        return f"The bank needs your last {CLI_ON_TIME_PAYMENTS[tier]} payments on this card to all be on time."
+    return "It does not meet the bank's requirements for an increase."
+

@@ -185,6 +185,6 @@ def decide(
         intent_id=intent.id,
         action=Action.ASK,
         reason=reason,
-        questions=(Question(intent_id=intent.id, slot=CONFIRM_SLOT),),
+        questions=(Question(intent_id=intent.id, slot=CONFIRM_SLOT, kind="yes_no"),),
         fingerprint=current,
     )

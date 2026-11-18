@@ -96,6 +96,8 @@ class Question(_Model):
     intent_id: str
     slot: str
     text: Optional[str] = None
+    # "yes_no" when the answer is a plain yes or no; empty otherwise (the chat shows no buttons for it).
+    kind: str = ""
 
 
 class Proceed(_Model):

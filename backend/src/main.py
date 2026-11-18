@@ -164,9 +164,16 @@ class MessageIn(BaseModel):
     scenario: Optional[str] = None
 
 
+class AskOut(BaseModel):
+    slot: str
+    # "yes_no" when the answer is a plain yes or no; the chat offers Yes and No for it and nothing otherwise.
+    kind: str
+
+
 class ReplyOut(BaseModel):
     reply: str
     questions: list[str]
+    asks: list[AskOut]
     escalated: bool
     failed: bool
 
@@ -230,6 +237,7 @@ async def send_message(conversation_id: str, body: MessageIn) -> ReplyOut:
     return ReplyOut(
         reply=result.reply.text,
         questions=[q.text or q.slot for q in result.reply.questions],
+        asks=[AskOut(slot=q.slot, kind=q.kind) for q in result.reply.questions],
         escalated=bool(result.reply.escalated_intent_ids),
         failed=bool(result.reply.failed_intent_ids),
     )
