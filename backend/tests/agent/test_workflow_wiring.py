@@ -42,7 +42,7 @@ def run(script, kind=K.DISPUTE_TRANSACTION):
     session = BankingSession.from_task(TASK)
     llm = FakeToolLLM(script)
     specialist = Specialist(DEBIT_SPECIALIST, llm=llm, index=INDEX, database=session.database, vault=SecretVault())
-    intent = Intent(id="x", kind=kind, summary="dispute", slots={})
+    intent = Intent(id="x", kind=kind, summary="dispute", slots={"merchant": "x"})
     ctx = RouteContext(intent_id="x", verified_user_id=USER, session=scoped(session)(SessionRequest("x")), mode="plan")
     return asyncio.run(specialist.run(intent, ctx)), llm
 

@@ -114,6 +114,9 @@ class SpecialistConfig:
     lookups: Optional[Callable[[Any, str, date], list[ExtraTool]]] = None
     lookup_first: frozenset[IntentKind] = frozenset()
     lookup_names: frozenset[str] = frozenset()
+    # Runs when the model ends by asking the customer for details (intent, user, database, the detail names). It may
+    # answer in code with an outcome of its own instead, such as a list of the customer's charges to tap.
+    ask_hook: Optional[Callable[[Intent, str, Any, tuple[str, ...]], Optional[RouteOutcome]]] = None
 
 
 BASE_RULES = """You are a bank's specialist for one kind of request. You act only for the customer who
@@ -305,6 +308,12 @@ class Specialist:
                 return _failed(intent, "the answer did not rest on documents it had retrieved")
             return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text=answer)
         if result.terminal == "ask_customer":
+            if self.config.ask_hook is not None and ctx.verified_user_id is not None:
+                listed = self.config.ask_hook(
+                    intent, ctx.verified_user_id, self._db, tuple(_clean_details(result.arguments.get("details")))
+                )
+                if listed is not None:
+                    return listed
             return self._ask(intent, result)
         if result.terminal == "escalate":
             return _failed(intent, "the specialist asked for a human agent")

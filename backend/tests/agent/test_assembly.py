@@ -173,7 +173,7 @@ def test_the_demo_page_is_served_and_a_scenario_picks_the_sample_customer():
 def test_the_list_of_test_customers_carries_only_names_and_areas():
     page = TestClient(main.app).get("/personas")
     people = page.json()
-    assert page.status_code == 200 and len(people) > 60
+    assert page.status_code == 200 and len(people) > 50
     assert all(set(p) == {"id", "name", "areas"} and p["name"] and p["areas"] for p in people)
     assert next(p for p in people if p["id"] == "task_078") == {"id": "task_078", "name": "Mei-Lin Chen", "areas": ["debit"]}
 

@@ -82,6 +82,16 @@ CREDIT_DEMO = frozenset(
 )
 
 
+# The debit tasks that are distinct customers; the dropped ones repeat a flow with more transactions or another card.
+DEBIT_DEMO = frozenset(
+    {
+        "task_077", "task_078", "task_079", "task_080", "task_081",  # wallet: maybe lost, lost (replacement limit), stolen (pending refund), five cards and one found, asks for a person
+        "task_082", "task_083", "task_084",  # disputes: lost card plus unauthorized, four kinds of dispute, existing dispute limit
+        "task_087", "task_088", "task_089", "task_090", "task_092",  # declines: three declined, one declined, teen account, PIN lock with fraud, PIN lock sent to a person
+    }
+)
+
+
 def personas() -> list[dict[str, Any]]:
     """The test customers, listed by name and area only. Who they are comes from ``persona`` when one is opened;
     the list carries no situation and no user id."""
@@ -99,6 +109,8 @@ def personas() -> list[dict[str, Any]]:
             continue
         entry = entries[task["id"]]
         if list(entry.clusters) == ["accounts"] and task["id"] not in ACCOUNTS_DEMO:
+            continue
+        if "debit" in entry.clusters and task["id"] not in DEBIT_DEMO:
             continue
         if task["id"] in credit and task["id"] not in CREDIT_DEMO:
             continue

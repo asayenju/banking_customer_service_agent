@@ -27,7 +27,8 @@ from typing import Any, Optional
 
 from agent.cards import owned_cards, which_card
 from agent.entities import Resolution, resolve_cards
-from agent.debit_lookup import NAMES as LOOKUP_NAMES, debit_lookups
+from agent.debit_charges import dispute_choices, label_of
+from agent.debit_lookup import NAMES as LOOKUP_NAMES, _accounts_for, debit_lookups
 from agent.workflows.debit_dispute import PARTIAL_AMOUNT_CATEGORIES, DebitDispute
 from agent.workflows.debit_replacement import DebitReplacement
 from agent.specialist import SpecialistConfig, Validator, ValidationContext
@@ -58,7 +59,9 @@ How to work:
    id, last four digits or account, and give any merchant, rough amount, date or transaction id the customer
    said); list_debit_cards and look_up_customer_records show their cards and accounts. For a dispute you may not
    ask the customer anything until you have used one of them; ask only if the search finds nothing or several.
-   Never ask for a transaction id, card id or account id that a search can find. If the customer did not say
+   Never ask for a transaction id, card id or account id that a search can find. If the customer wants to dispute
+   a charge but has not said which one, and the search finds nothing or too many, end with ask_customer naming the
+   detail "transaction": the chat then shows their recent charges to tap, so do not list them yourself. If the customer did not say
    which card or account and more than one could be meant, ask. Do not choose.
    When the request has a card_ids detail (several card ids, comma separated), the customer chose all of those
    cards: plan each one (for a close, one close per card), and no other card.
@@ -259,6 +262,8 @@ def _cancel_unclear(intent: Intent) -> Optional[RouteOutcome]:
 
 def prepare(intent: Intent, user_id: str, db: Any) -> Intent | RouteOutcome:
     """Settle which card is meant, in code, before a model gets involved."""
+    if (listed := card_then_charges(intent, user_id, db)) is not None:
+        return listed
     if intent.kind not in CARD_KINDS:
         return intent
     if (unclear := _cancel_unclear(intent)) is not None:
@@ -443,6 +448,65 @@ VALIDATORS: dict[str, Validator] = {
     **{tool: activate(tool) for tool in ACTIVATION_REASONS},
 }
 
+LIST_ROWS = 10
+_WHICH_CHARGE = ("transaction", "charge")
+# Words from the customer that point at one charge. With none of them a dispute is "I want to dispute something": which card,
+# then which of its charges, both as taps, the way the credit card history works. With any, the model searches for it.
+_NAMES_A_CHARGE = ("transaction_id", "merchant", "amount", "date", "transaction_date", "description", "charge")
+
+
+def _charges_of(intent: Intent, db: Any, account: str) -> Optional[RouteOutcome]:
+    from agent.recipes.direct import _sort_key
+
+    rows = sorted(
+        (t for t in db.bank_account_transaction_history.data.values() if t.get("account_id") == account),
+        key=lambda t: _sort_key(str(t.get("date"))),
+        reverse=True,
+    )[:LIST_ROWS]
+    if not rows:
+        return None
+    level = (db.accounts.data.get(account) or {}).get("level", "your account")
+    text = "\n".join([f"Which charge on your {level} do you want to dispute? Tap Dispute on that one."] + [f"- {label_of(t)}" for t in rows])
+    return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text=text, choices=dispute_choices(rows, account))
+
+
+def card_then_charges(intent: Intent, user_id: str, db: Any, *, searched: bool = False) -> Optional[RouteOutcome]:
+    """A dispute that does not say which charge: first which card (a list to tap, or none when there is one), then that
+    card's recent charges with a Dispute button each. None when the customer's own words point at a charge or at nothing
+    this can list, so the model goes on. ``searched``: the model already looked for the charge they described and found no
+    match, so their words no longer rule the list out."""
+    if intent.kind is not K.DISPUTE_TRANSACTION or (not searched and (any((intent.slots.get(k) or "").strip() for k in _NAMES_A_CHARGE) or re.search(r"[\d$]", intent.summary))):
+        return None
+    cards = owned_cards(db, user_id)
+    named = " ".join((intent.slots.get(k) or "") for k in ("card_id", "account_id", "card")).strip()
+    account: Optional[str] = None
+    if named:
+        resolved = resolve_cards(named, cards, db, owned=owned_cards(db, user_id, statuses=_ANY_STATUS))
+        note = _unplaced(resolved)
+        if len(resolved.cards) == 1 and not note and not resolved.ambiguous:
+            account = str(resolved.cards[0]["account_id"])
+        else:
+            accounts, _ = _accounts_for(db, user_id, named)
+            checking = [a for a in (accounts or []) if (db.accounts.data.get(a) or {}).get("class") == "checking"]
+            if len(checking) == 1 and not note:
+                account = checking[0]
+            elif cards:
+                offer = [c for c in cards if c.get("last_4_digits") in resolved.ambiguous] or cards
+                return which_card(intent, db, offer, note=note)
+    elif len(cards) == 1:
+        account = str(cards[0]["account_id"])
+    elif cards:
+        return which_card(intent, db, cards)
+    return _charges_of(intent, db, account) if account else None
+
+
+def charge_list(intent: Intent, user_id: str, db: Any, details: tuple[str, ...]) -> Optional[RouteOutcome]:
+    """The model ended a dispute by asking which charge: show the card question or the card's charges instead."""
+    if not details or not any(w in details[0] for w in _WHICH_CHARGE):
+        return None
+    return card_then_charges(intent, user_id, db, searched=True)
+
+
 DEBIT_SPECIALIST = SpecialistConfig(
     name="debit",
     kinds=KINDS,
@@ -455,4 +519,5 @@ DEBIT_SPECIALIST = SpecialistConfig(
     lookups=debit_lookups,
     lookup_first=frozenset({K.DISPUTE_TRANSACTION}),
     lookup_names=LOOKUP_NAMES,
+    ask_hook=charge_list,
 )

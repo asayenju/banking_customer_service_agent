@@ -145,7 +145,7 @@ def run(script, kind=K.DISPUTE_TRANSACTION):
     shared = world("task_078")
     llm = FakeToolLLM(script)
     spec = Specialist(DEBIT_SPECIALIST, llm=llm, index=INDEX, database=shared.database, vault=SecretVault())
-    intent = Intent(id="x", kind=kind, summary="dispute the cheesecake charge", slots={})
+    intent = Intent(id="x", kind=kind, summary="dispute the cheesecake charge", slots={"merchant": "cheesecake"})
     ctx = RouteContext(intent_id="x", verified_user_id=MEI, session=scoped(shared)(SessionRequest("x")), mode="plan")
     return asyncio.run(spec.run(intent, ctx)), llm
 

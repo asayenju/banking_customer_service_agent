@@ -85,7 +85,7 @@ def precheck(message: str) -> Optional[Decomposition]:
     return Decomposition(intents=(intent,))
 
 
-CLOSING_REPLY = "You're welcome! I'm glad I could help. If you need anything else, I'm here."
+CLOSING_REPLY = "Thank you for trusting us! Let me know if you have any other questions."
 
 # Words a customer uses to say thanks or goodbye. A message is a closing only when every word is one of these and one of them
 # is gratitude or a farewell: "thanks for that, now freeze my card" has other words and is a request.

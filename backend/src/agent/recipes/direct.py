@@ -19,6 +19,7 @@ from collections.abc import Mapping
 from typing import Any, Optional
 
 from agent.cards import Card, describe, named_cards, owned_cards, resolve, which_card
+from agent.debit_charges import dispute_choices, label_of
 from agent.entities import resolve_cards
 from agent.guard import DbOwnership, Guard, GuardedSession
 from orchestrator.context import RouteContext
@@ -248,10 +249,14 @@ class DirectRunner:
             level = mine[named].get("level", "your account")
             if not rows:
                 return _done(intent, f"There are no transactions on your {level}.")
-            lines = [f"Recent activity on your {level}:"] + [
-                f"- {str(t.get('date'))[:10]}  {_money(t.get('amount'))}  {t.get('description', '')}" for t in rows
-            ]
-            return _done(intent, "\n".join(lines))
+            lines = [f"Recent activity on your {level}:"] + [f"- {label_of(t)}" for t in rows]
+            if mine[named].get("class") != "checking":
+                return _done(intent, "\n".join(lines))
+            # A checking account's charges are what a debit card dispute is about: one "Dispute" button per row, the same
+            # as the credit card history.
+            return RouteOutcome(
+                intent_id=intent.id, status=OutcomeStatus.DONE, text="\n".join(lines), choices=dispute_choices(rows, named)
+            )
         guarded.call("get_all_user_accounts_by_user_id_3847", {"user_id": user})
         cards = [c for c in self._db.credit_card_accounts.data.values() if c.get("user_id") == user]
         lines = ["Your accounts:"]

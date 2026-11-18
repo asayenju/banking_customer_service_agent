@@ -45,3 +45,30 @@ def test_a_no_thank_you_to_an_open_question_is_an_answer_not_a_goodbye():
     answer = w.turn("no thank you")
     assert answer.reply.text != CLOSING_REPLY, "the open question decides what this is"
     assert len(w.decomposer.histories) == 2, "it went to the decomposer like any other reply"
+
+
+def test_thanks_closes_a_stale_what_do_you_mean_and_it_is_not_asked_again():
+    from orchestrator.decision import CLARIFY_SLOT
+    from orchestrator.types import IntentKind
+    from orchestrator.scoring import IntentScore
+
+    unsure = IntentScore(intent_id="d", kind_confidence=0.8, slots_confidence=1.0, scope_confidence=0.99)
+    dispute = I("d", IntentKind.DISPUTE_TRANSACTION, {"merchant": "Zoom Video"}, summary="dispute the Zoom Video charge of $15.83")
+    w = World([interp(dispute, claims=GOOD_CLAIMS), interp()], [[unsure]])
+    first = w.turn("i think there is a zoom charge")
+    assert [q.slot for q in first.reply.questions] == [CLARIFY_SLOT], "an unsure reading is open as a question"
+    result = w.turn("thank you")
+    assert result.reply.text == CLOSING_REPLY and not result.reply.questions
+    assert w.orch.active_ids == (), "the stale question is closed, so it never comes back"
+
+
+def test_a_no_thanks_to_a_what_do_you_mean_is_still_an_answer():
+    from orchestrator.decision import CLARIFY_SLOT
+    from orchestrator.types import IntentKind
+    from orchestrator.scoring import IntentScore
+
+    unsure = IntentScore(intent_id="d", kind_confidence=0.8, slots_confidence=1.0, scope_confidence=0.99)
+    dispute = I("d", IntentKind.DISPUTE_TRANSACTION, {"merchant": "Zoom Video"}, summary="dispute the Zoom Video charge of $15.83")
+    w = World([interp(dispute, claims=GOOD_CLAIMS), interp()], [[unsure], [unsure]])
+    w.turn("i think there is a zoom charge")
+    assert w.turn("no thanks").reply.text != CLOSING_REPLY

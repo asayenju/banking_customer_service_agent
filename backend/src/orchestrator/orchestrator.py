@@ -450,8 +450,16 @@ class Orchestrator:
             message = self._capture_secrets(message, expecting_secret=bool(self._last_asked & SECRET_SLOTS))
         self._latest = message
         events: list[TraceEvent] = []
-        if not self._awaiting and not self._pending_confirm and is_closing(message):
-            return self._closing_turn(events)  # thanks, with nothing waiting for an answer: say so kindly and stop
+        # Thanks, with no plan on screen and nothing a request waits on: say so kindly and stop. The only open question may be a
+        # stale "what do you mean?" about a request that was never made (it kept coming back after the dispute was filed):
+        # a thank-you that is not a "no ..." closes it and is never asked again.
+        only_clarifying = bool(self._last_asked) and set(self._last_asked) <= {CLARIFY_SLOT}
+        stale_question = only_clarifying and not re.match(r"\s*no\b", message, re.IGNORECASE)
+        if not self._pending_confirm and (not self._awaiting or stale_question) and is_closing(message):
+            for stale in list(self._clarifying):
+                self._forget(stale)
+                self._active.pop(stale, None)
+            return self._closing_turn(events)
         if not self._awaiting:
             unclear = precheck(message)
             if unclear is not None:
@@ -928,7 +936,8 @@ class Orchestrator:
                 continue
             if outcome.status is OutcomeStatus.DONE:
                 self._done.append(outcome.intent_id)
-                self._note_finished(outcome.intent_id)
+                if not outcome.choices:  # a list to pick from is an offer, not a request that is finished
+                    self._note_finished(outcome.intent_id)
                 self._progress.pop(outcome.intent_id, None)
                 if self._decision_log is not None and outcome.intent_id in view:
                     self._decision_log.outcome(outcome.intent_id, view[outcome.intent_id].kind.value, "completed")
@@ -1188,7 +1197,14 @@ class Orchestrator:
             self._forget(intent_id)
         else:
             self._runner_asks[intent_id] = asked
-            self._pending_route_questions[intent_id] = outcome.questions
+            # The reply shows one detail at a time, so the one the customer was shown is the one held: a held pair would
+            # fail the "exactly one open question" check, and their answer would not be read as an answer. A yes to what
+            # is about to be done is never spread out, so those stay whole.
+            if any(q.slot == CONFIRM_SLOT for q in outcome.questions):
+                held = outcome.questions
+            else:
+                held = tuple(sorted(outcome.questions, key=lambda q: q.slot == CLARIFY_SLOT)[:1])
+            self._pending_route_questions[intent_id] = held
             decision = IntentDecision(
                 intent_id=intent_id,
                 action=Action.ASK,
