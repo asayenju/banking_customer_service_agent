@@ -53,6 +53,7 @@ from knowledge.index import KnowledgeIndex, render
 from knowledge.scopes import DocScope
 from orchestrator.context import RouteContext
 from orchestrator import observe
+from orchestrator.plain import plain_text
 from orchestrator.decision import fingerprint
 from orchestrator.executor import OutcomeStatus, RouteOutcome
 from orchestrator.plan_preview import PlanPreview, PlanStep, is_reference
@@ -118,6 +119,8 @@ class SpecialistConfig:
 BASE_RULES = """You are a bank's specialist for one kind of request. You act only for the customer who
 has been verified. Follow these rules.
 - Never ask for, use or mention another person's details, accounts or cards.
+- Write plain text for a person in a chat window: no markdown (no asterisks, no bold, no headings, no backticks),
+  short sentences. A short list is fine as lines starting with a number or a dash.
 - Look facts up with your read tools, and with look_up_customer_records, which reads the customer's own
   records (accounts, cards, transactions and their ids, referrals, disputes). Debit cards' last four digits are
   there; credit card accounts do not store theirs (the customer reads them off the card).
@@ -496,7 +499,7 @@ class Specialist:
         names = _clean_details(result.arguments.get("details"))
         if not names:
             return _failed(intent, "the specialist asked a question that could not be used")
-        asked = " ".join(self._vault.scrub(str(result.arguments.get("question") or "")).split())[:240]
+        asked = " ".join(plain_text(self._vault.scrub(str(result.arguments.get("question") or ""))).split())[:240]
         return RouteOutcome(
             intent_id=intent.id,
             status=OutcomeStatus.NEEDS_INFO,

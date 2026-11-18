@@ -261,6 +261,13 @@ def confirms_understanding(text: str) -> bool:
     return bool(words) and len(text) <= 80 and words[0] in _OPENERS and all(w in _AGREEING_WORDS for w in words)
 
 
+def says_yes(text: str) -> bool:
+    """The reply opens with a yes ("yes", "yes, I am sure", "sure, go ahead"): whatever follows, it agrees. A pick such as
+    "the green one" does not."""
+    words = [w.replace("\u2019", "'") for w in re.findall(r"[a-z'\u2019]+", text.lower())]
+    return bool(words) and words[0] in _OPENERS
+
+
 def _span(start: Optional[int], end: Optional[int]) -> Optional[tuple[int, int]]:
     if start is None or end is None or start < 0 or end < start:
         return None

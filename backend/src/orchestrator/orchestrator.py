@@ -45,7 +45,7 @@ from orchestrator.auth import (
 )
 from orchestrator.containment import Containment
 from orchestrator.context import AgentSession, Mode, RouteContext, SessionRequest
-from orchestrator.llm_decomposer import confirms_understanding, is_affirmation
+from orchestrator.llm_decomposer import confirms_understanding, is_affirmation, says_yes
 from orchestrator.bands import PROCEED_AT, WRITE_KIND_ASK_AT
 from orchestrator.talk import KEY as TALK_KEY, Talk
 from orchestrator.decision import CLARIFY_SLOT, CONFIRM_SLOT, HUMAN_AFTER_ASKS, TRANSIENT_SLOTS, Action, IntentDecision, decide, fingerprint
@@ -558,6 +558,7 @@ class Orchestrator:
             events.append(TraceEvent(kind=TraceKind.FLAGGED, detail=flag.value))
 
         asked_pending = dict(self._pending_route_questions)
+        used_as_answer: set[str] = set()  # requests whose open question this very message already answered
         for intent_id in interpretation.declined:
             if self._is_answer_no(message, asked_pending.get(intent_id, ())):
                 # "No" to the one question a route asked ("have you contacted the merchant?") is the answer, not the
@@ -565,6 +566,7 @@ class Orchestrator:
                 (asked_no,) = asked_pending[intent_id]
                 intent_now = self._active[intent_id]
                 self._talk.add(intent_id, asked_no.text or asked_no.slot.replace("_", " "), message)
+                used_as_answer.add(intent_id)
                 self._active[intent_id] = intent_now.model_copy(update={"slots": {**intent_now.slots, asked_no.slot: "no"}})
                 self._prints[intent_id] = fingerprint(self._active[intent_id])
                 self._asks[intent_id] = 0
@@ -665,6 +667,7 @@ class Orchestrator:
             # The exchange is kept in words, apart from the details: the specialist reads it like a conversation, and
             # it never changes what a yes covers (the summary stays the customer's own short statement).
             self._talk.add(answered_id, asked.text or asked_slot.replace("_", " "), said)
+            used_as_answer.add(answered_id)
             self._active[answered_id] = waiting_intent.model_copy(update={"slots": {**waiting_intent.slots, asked_slot: said}})
             self._prints[answered_id] = fingerprint(self._active[answered_id])
             self._asks[answered_id] = 0
@@ -686,6 +689,7 @@ class Orchestrator:
                     update={"slots": {**extra.slots, **current_intent.slots}, "summary": extra.summary or current_intent.summary}
                 )
             self._talk.add(clarified_id, question_shown.text or "tell me more", said_now)
+            used_as_answer.add(clarified_id)
             self._active[clarified_id] = current_intent
             self._prints[clarified_id] = fingerprint(self._active[clarified_id])
             if only_yes:
@@ -702,6 +706,7 @@ class Orchestrator:
             self._pending_route_questions.pop(intent_id, None)
 
         confirmed_now = tuple(interpretation.confirmed)
+        plain_agreement = says_yes(message) or is_affirmation(message)
         if agreeing and waiting_on_yes is not None and waiting_on_yes not in confirmed_now:
             confirmed_now = (*confirmed_now, waiting_on_yes)  # the yes was the answer even if the decomposer missed it
         for intent_id in confirmed_now:
@@ -712,8 +717,14 @@ class Orchestrator:
                 events.append(
                     TraceEvent(kind=TraceKind.DECIDED, intent_id=intent_id, detail="confirmed")
                 )
-            elif intent_id in self._active and len(asked_before.get(intent_id, ())) == 1:
+            elif (
+                intent_id in self._active
+                and (intent_id not in used_as_answer or plain_agreement)
+                and len(asked_before.get(intent_id, ())) == 1
+            ):
                 # A yes to the one question a route asked ("are you sure?") is its answer: the asked detail is "yes".
+                # Not when this message already answered it and is not a plain agreement: a decomposer that also calls a
+                # reply "confirmed" would otherwise overwrite the customer's pick ("the EcoCard") with "yes".
                 (asked,) = asked_before[intent_id]
                 self._pending_route_questions.pop(intent_id, None)
                 answered = self._active[intent_id]

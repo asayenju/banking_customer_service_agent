@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict
 from orchestrator.auth import IDENTITY_SLOT
 from orchestrator.decision import CLARIFY_SLOT, CONFIRM_SLOT, Action, IntentDecision
 from orchestrator.executor import OutcomeStatus, RouteOutcome
+from orchestrator.plain import plain_text
 from orchestrator.plan import Waiting
 from orchestrator.types import Intent, Question
 
@@ -90,9 +91,9 @@ def _batch(
 def _result_line(intents: Mapping[str, Intent], outcome: RouteOutcome) -> Optional[str]:
     what = _summary(intents, outcome.intent_id)
     if outcome.status is OutcomeStatus.DONE:
-        return outcome.text or f"Done: {what}"
+        return plain_text(outcome.text) if outcome.text else f"Done: {what}"
     if outcome.status is OutcomeStatus.PARTIAL:
-        return f"I only finished part of this ({what}): {outcome.text}"
+        return f"I only finished part of this ({what}): {plain_text(outcome.text or '')}"
     return None
 
 
