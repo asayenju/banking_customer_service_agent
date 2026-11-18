@@ -62,7 +62,8 @@ def _closure(db, balance_fix=None):
     from agent.workflows.base import WorkflowContext
     from agent.workflows.credit_closure import ClosureFacts, CreditClosure
 
-    facts = ClosureFacts(credit_card_account_id=PLAT, reason=None, pay_from_checking_account_id=None, waiver_answer=None, credit_answer=None, keeps_card=False)
+    # asked why and offered the credit, the customer turned it down and still closes: only now is the balance paid
+    facts = ClosureFacts(credit_card_account_id=PLAT, reason="not_using_card", pay_from_checking_account_id=None, waiver_answer="no", credit_answer="no", keeps_card=False)
     return CreditClosure().decide(WorkflowContext(db, USER, date(2026, 11, 17), {}), facts)
 
 
@@ -70,8 +71,10 @@ def test_closing_a_card_with_a_balance_uses_the_one_account_that_can_pay_it():
     from agent.workflows.base import Plan
 
     out = _closure(world())
-    assert isinstance(out, Plan) and out.steps[0].tool == "pay_credit_card_from_checking_9182"
-    assert out.steps[0].args["checking_account_id"] == "05" and out.steps[0].args["amount"] == 75.0
+    assert isinstance(out, Plan)
+    assert [s.tool.rsplit("_", 1)[0] for s in out.steps] == ["log_credit_card_closure_reason", "pay_credit_card_from_checking", "close_credit_card_account"]
+    pay = out.steps[1]
+    assert pay.args["checking_account_id"] == "05" and pay.args["amount"] == 75.0
 
 
 def test_closing_a_card_when_no_account_can_pay_says_the_numbers():

@@ -55,6 +55,8 @@ How to work:
    apply for a card for the customer.
    A balance is the workflow's to handle (it finds which checking account can pay it): report the closure with
    start_credit_closure and never ask the customer about paying the balance yourself.
+   A customer who says yes to the annual fee waiver or the statement credit is reporting waiver_answer or credit_answer;
+   keeps_card is only for one who decides on their own to keep the card.
 6. For a limit increase, check the requested amount against the tier's cap before you submit.
    An open dispute or a pending replacement blocks an approval: do the limit request first when
    the customer wants several things.

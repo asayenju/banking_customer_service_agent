@@ -156,3 +156,81 @@ def test_a_request_that_goes_on_is_not_blamed_for_the_step_an_earlier_plan_alrea
     assert [o.status for o in second.outcomes] == [OutcomeStatus.DONE], [(o.status, o.error) for o in second.outcomes]
     assert [e.tool for e in shared.audit_log if e.ok] == ["set_debit_card_recurring_block_7382", "freeze_debit_card_3892"]
     assert "stale" not in " ".join(d.reason for d in second.decisions), "the finished step's plan is not kept around to go stale"
+
+
+# ---------------------------------------------------------------- the waiver offer answered with a restatement
+
+class Offering:
+    """Like the credit specialist: plans, and asks the waiver question before it has a plan."""
+
+    proposes_plans = True
+
+    def __init__(self):
+        self.seen = []
+
+    async def run(self, intent, ctx):
+        self.seen.append((intent.kind, dict(intent.slots)))
+        if not intent.slots.get("waiver_answer"):
+            q = Question(intent_id=intent.id, slot="waiver_answer", text="I can waive the annual fee for a year. Would you like that?")
+            return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.NEEDS_INFO, questions=(q,))
+        return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text="Done: waived")
+
+
+def test_a_yes_that_restates_the_offer_is_its_answer_and_makes_no_second_request():
+    route = Offering()
+    fee_talk = I("t2-f", K.FEE_OR_INTEREST_ADJUSTMENT, {"note": "waive the annual fee"})
+    w = World(
+        [interp(I("x", K.CLOSE_CARD, {}), claims=GOOD_CLAIMS), interp(fee_talk)],
+        [[S("x", 0.99)], [S("x", 0.99)]],
+        sub=route,
+    )
+    first = w.turn("close my card")
+    assert first.reply.questions[0].slot == "waiver_answer", "the offer is on screen"
+    w.turn("yes, I would love that")
+    assert "t2-f" not in w.orch.active_ids, "the restated offer is not a second request"
+    assert route.seen[-1][1].get("waiver_answer") == "yes, I would love that"
+    assert all(kind is not K.FEE_OR_INTEREST_ADJUSTMENT for kind, _ in route.seen)
+
+
+def test_a_yes_to_a_plan_is_not_also_the_answer_to_a_tell_me_more_question():
+    route = Asking()
+    w = World([interp(I("x", K.FREEZE_CARD, {}), claims=GOOD_CLAIMS)], [[S("x", 0.99)]], direct=route, sub=route)
+    w.turn("freeze my card")
+    w.orch._clarifying["x"] = Question(intent_id="x", slot="clarification", text="To be sure I have this right: x?")
+    w.orch._pending_confirm["x"] = "plan-fingerprint"
+    from orchestrator.decomposer import Interpretation
+    from orchestrator.types import Decomposition
+
+    assert w.orch._clarification("yes", Decomposition(intents=()), frozenset()) is None
+    del w.orch._pending_confirm["x"]
+    assert w.orch._clarification("yes", Decomposition(intents=()), frozenset()) is not None, "without a plan waiting, the yes does answer it"
+
+
+def test_a_reply_that_opens_with_yes_cannot_change_the_kind_of_the_request_it_answers():
+    """The conversation that failed: the waiver offer was on screen, the customer said "yes, I would love that", the decomposer
+    re-sent the open request as a fee review, and the closure was lost to a request nobody made."""
+    route = Offering()
+    relabelled = I("x", K.FEE_OR_INTEREST_ADJUSTMENT, {"waiver_answer": "yes, I would love that"})
+    w = World(
+        [interp(I("x", K.CLOSE_CARD, {}), claims=GOOD_CLAIMS), interp(relabelled)],
+        [[S("x", 0.99)], [S("x", 0.82)]],
+        sub=route,
+    )
+    w.turn("close my card")
+    second = w.turn("yes, I would love that")
+    assert w.orch.done_ids == ("x",) or w.orch.active_ids == ("x",)
+    assert all(kind is K.CLOSE_CARD for kind, _ in route.seen), "the request is still the closure, whatever the decomposer called it"
+    assert route.seen[-1][1].get("waiver_answer") == "yes, I would love that"
+    assert not second.reply.escalated_intent_ids and not second.reply.failed_intent_ids
+
+
+def test_a_reply_without_a_yes_can_still_change_what_a_request_is():
+    route = Offering()
+    w = World(
+        [interp(I("x", K.CLOSE_CARD, {}), claims=GOOD_CLAIMS), interp(I("x", K.FEE_OR_INTEREST_ADJUSTMENT, {}))],
+        [[S("x", 0.99)], [S("x", 0.99)]],
+        sub=route,
+    )
+    w.turn("close my card")
+    w.turn("actually, I meant a fee on my savings")
+    assert route.seen[-1][0] is K.FEE_OR_INTEREST_ADJUSTMENT, "a real change of mind is still honoured"

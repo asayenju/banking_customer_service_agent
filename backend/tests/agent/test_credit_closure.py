@@ -95,28 +95,73 @@ def test_each_blocker_is_a_plain_reply_and_no_offer_is_made():
     assert isinstance(decide(world(status="CLOSED")), Reply)
 
 
-def test_a_balance_is_paid_first_in_its_own_plan_from_a_checking_account_the_customer_names():
+def test_the_customer_is_asked_why_before_anything_about_the_balance():
     s = world(current_balance="$75.00")
     asked = decide(s)
-    assert isinstance(asked, NeedInfo) and "$75.00" in asked.questions[0].text
+    assert isinstance(asked, NeedInfo) and [a.slot for a in asked.questions] == ["closure_reason"]
+    assert "$75" not in asked.questions[0].text, "no money is mentioned before the customer has said why"
+
+
+def test_taking_an_offer_keeps_the_card_so_nothing_is_paid_and_it_wins_over_keeps_the_card():
+    """A customer who takes the waiver keeps the card: there is no balance to settle. The waiver is never dropped, even when
+    a model also reports that the customer keeps the card (the bug: the plan was only the note on the reason)."""
+    s = long_standing(current_balance="$75.00")
+    for extra in ({}, {"keeps_card": True}):
+        waived = decide(s, reason="annual_fee", waiver_answer="yes", **extra)
+        assert isinstance(waived, Plan), extra
+        assert tools(waived) == ["log_credit_card_closure_reason", "apply_credit_card_account_flag"], extra
+        assert "annual fee" in waived.steps[1].note
+    credited = decide(s, reason="not_using_card", credit_answer="yes")
+    assert isinstance(credited, Plan) and tools(credited) == ["log_credit_card_closure_reason", "apply_statement_credit"]
+
+
+def test_a_customer_who_decides_on_their_own_to_keep_the_card_pays_nothing_and_a_waiver_not_yet_offered_is_still_offered():
+    s = long_standing(current_balance="$75.00")
+    kept = decide(s, reason="not_using_card", keeps_card=True)
+    assert isinstance(kept, Plan) and tools(kept) == ["log_credit_card_closure_reason"]
+    offered = decide(s, reason="annual_fee", keeps_card=True)
+    assert isinstance(offered, NeedInfo) and offered.questions[0].slot == "waiver_answer", "keeping the card is not an answer to an offer never made"
+
+
+def test_a_customer_who_still_closes_gets_one_plan_with_the_reason_the_payment_and_the_close():
+    s = long_standing(current_balance="$75.00")
+    asked = decide(s, reason="annual_fee", waiver_answer="no", credit_answer="no")
+    assert isinstance(asked, NeedInfo) and asked.questions[0].slot == "pay_from_checking_account_id", "two accounts can pay: the customer picks"
+    assert "$1,847.50" in asked.questions[0].text and "$127,450.00" in asked.questions[0].text
+    plan = decide(s, reason="annual_fee", waiver_answer="no", credit_answer="no", pay_from_checking_account_id=CHECKING)
+    assert isinstance(plan, Plan)
+    assert tools(plan) == ["log_credit_card_closure_reason", "pay_credit_card_from_checking", "close_credit_card_account"]
+    pay = plan.steps[1]
+    assert dict(pay.args)["amount"] == 75.0 and dict(pay.args)["checking_account_id"] == CHECKING, "the whole balance, from the account they chose"
+    assert "$75.00" in pay.note and "your Silver Rewards Card" in pay.note
+
+
+def test_a_card_whose_reason_was_logged_recently_is_paid_and_closed_in_one_plan_with_no_offers():
+    s = world(current_balance="$75.00")
+    record(s, "09/15/2025")
     plan = decide(s, pay_from_checking_account_id=CHECKING)
-    assert isinstance(plan, Plan) and tools(plan) == ["pay_credit_card_from_checking"]
-    assert dict(plan.steps[0].args)["amount"] == 75.0, "the whole balance, worked out here"
+    assert isinstance(plan, Plan) and tools(plan) == ["pay_credit_card_from_checking", "close_credit_card_account"]
 
 
-def test_the_follow_up_after_paying_asks_why_and_after_closing_reminds_about_rewards_and_the_fee_refund():
+def test_when_no_checking_account_can_pay_the_customer_is_told_so_when_they_choose_to_close():
+    s = world(current_balance="$75.00")
+    for row in s.database.accounts.data.values():
+        if row.get("user_id") == ME and row.get("class") == "checking":
+            row["current_holdings"] = "20.00"
+    said = decide(s, reason="other", waiver_answer="no", credit_answer="no")
+    assert isinstance(said, Reply) and "$75.00" in said.text and "$20.00" in said.text
+
+
+def test_the_reminder_after_closing_names_rewards_and_the_fee_refund_and_nothing_follows_other_plans():
     c = CreditClosure()
     ctx = WorkflowContext(world().database, ME, TODAY)
     from agent.workflows.base import Step
 
-    pay = [Step("pay_credit_card_from_checking_9182", {})]
-    assert c.after(ctx, pay) == "The balance is paid."
-    ask = c.follow_up(ctx, pay)
-    assert ask is not None and ask.slot == "closure_reason" and "why" in ask.text.lower(), "the next question is a question, not part of the reply"
-    assert c.follow_up(ctx, [Step("close_credit_card_account_7834", {})]) is None
     assert c.after(ctx, [Step("close_credit_card_account_7834", {})]) == AFTER_CLOSING
+    assert c.after(ctx, [Step("pay_credit_card_from_checking_9182", {}), Step("close_credit_card_account_7834", {})]) == AFTER_CLOSING
     assert "45 days" in AFTER_CLOSING and "37 days" in AFTER_CLOSING
     assert c.after(ctx, [Step("apply_statement_credit_8472", {})]) == ""
+    assert not hasattr(c, "follow_up"), "there is no payment-only plan to follow up any more"
 
 
 @pytest.mark.parametrize("card_type", ["Mystery Card"])

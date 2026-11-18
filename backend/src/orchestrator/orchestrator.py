@@ -85,6 +85,9 @@ _SIBLINGS: dict[IntentKind, frozenset[IntentKind]] = {
             IntentKind.UNFREEZE_CARD,
         }
     ),
+    # The offers made while closing a card (waive the annual fee, a statement credit) are about fees: a reply that restates one
+    # ("yes, waive the fee") is the answer to the offer, not a second request to review a fee.
+    IntentKind.CLOSE_CARD: frozenset({IntentKind.FEE_OR_INTEREST_ADJUSTMENT}),
     IntentKind.ACCOUNT_BALANCE_OR_HISTORY: frozenset({IntentKind.LOOKUP_INFO}),
     IntentKind.LOOKUP_INFO: frozenset({IntentKind.ACCOUNT_BALANCE_OR_HISTORY}),
 }
@@ -520,6 +523,7 @@ class Orchestrator:
         for found in decomposition.intents:
             if (
                 found.id == intent_id
+                and found.kind is self._active[intent_id].kind
                 and found.slots != self._active[intent_id].slots
                 and (found.slots.get(question.slot) or "").strip()
             ):
@@ -556,6 +560,8 @@ class Orchestrator:
         waiting = [iid for iid in self._clarifying if iid in self._active]
         if len(waiting) != 1 or (len(message) > 600 and waiting[0] not in told):
             return None
+        if self._pending_confirm:
+            return None  # a plan is waiting for its yes: this reply is that yes, and answers no "tell me more" question beside it
         intent_id = waiting[0]
         kind = self._active[intent_id].kind
         fold: list[Intent] = []
@@ -688,10 +694,13 @@ class Orchestrator:
             if open_now is not None and open_now.kind is not intent.kind and (
                 confirms_understanding(message)
                 or is_affirmation(message)
+                or (says_yes(message) and (intent.id in asked_before or intent.id in self._pending_confirm or intent.id in self._clarifying))
                 or (intent.kind is IntentKind.REQUEST_HUMAN and not PERSON_WORDS.search(message))
             ):
-                # "yes thank you" to an offer is its answer, and a message that never mentions a person is not a request for
-                # one: a decomposer that re-sends the open request as something else (a hand-off) does not change what it is.
+                # A reply that opens with a yes ("yes thank you", "yes, I would love that") to a question waiting for this request
+                # is its answer, and a message that never mentions a person is not a request for one. A decomposer that re-sends
+                # the open request as something else (a fee review, a hand-off) does not change what it is: the request the
+                # customer was asked about is the request that goes on.
                 continue
             if open_now is not None and open_now.kind is intent.kind:
                 # A request the decomposer sends again each turn can add or change a detail, never erase one by leaving

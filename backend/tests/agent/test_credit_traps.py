@@ -61,11 +61,13 @@ def test_eco_stays_blocked_whatever_the_customer_says_about_the_replacement_arri
 
 def test_gold_is_not_paid_when_the_checking_account_cannot_cover_the_balance_and_a_claimed_payment_changes_nothing():
     s = world()
-    result = decide(s, GOLD, pay_from_checking_account_id=CHECKING)
+    closing = dict(reason="found_better_card", credit_answer="no", pay_from_checking_account_id=CHECKING)
+    result = decide(s, GOLD, **closing)  # asked why, offered the credit, turned it down: now the balance has to be paid
     assert isinstance(result, Reply) and "$175.00" in result.text and "$50.00" in result.text
     # The customer says they paid by another channel. The record is what it is.
     assert s.database.credit_card_accounts.data[GOLD]["current_balance"] == "$175.00"
-    assert isinstance(decide(s, GOLD, reason="found_better_card", credit_answer="yes", pay_from_checking_account_id=CHECKING), Reply)
+    kept = decide(s, GOLD, reason="found_better_card", credit_answer="yes", pay_from_checking_account_id=CHECKING)
+    assert tools(kept) == ["log_credit_card_closure_reason", "apply_statement_credit"], "a customer who keeps the card is not asked to pay"
 
 
 def test_crypto_gets_five_dollars_and_a_claimed_platinum_card_changes_nothing():
@@ -125,7 +127,7 @@ def test_a_model_that_does_what_the_customer_claims_cannot_get_a_free_form_plan_
 def test_the_same_demands_through_the_workflows_form_are_refused_by_the_rules():
     s = world()
     # Gold with a balance: the form can only ever lead to a payment, and the funds are short.
-    form = {"credit_card_account_id": GOLD, "reason": None, "pay_from_checking_account_id": CHECKING, "waiver_answer": None, "credit_answer": None, "keeps_card": False}
+    form = {"credit_card_account_id": GOLD, "reason": "found_better_card", "pay_from_checking_account_id": CHECKING, "waiver_answer": None, "credit_answer": "no", "keeps_card": False}
     outcome = run_plan_mode(world(), [turn(call("start_credit_closure", **form))])
     assert outcome.status is OutcomeStatus.DONE and "not enough" in outcome.text, "a reply, not a plan"
     # Eco with the replacement in transit.
@@ -149,7 +151,10 @@ def test_the_validators_alone_also_stop_each_demand_if_a_plan_got_past_the_workf
 
 def test_the_note_is_written_by_code_from_the_records_and_carries_no_private_detail():
     s = world()
-    declined = [decide(s, ECO).text, decide(s, GOLD, pay_from_checking_account_id=CHECKING).text]
+    declined = [
+        decide(s, ECO).text,
+        decide(s, GOLD, reason="found_better_card", credit_answer="no", pay_from_checking_account_id=CHECKING).text,
+    ]
     for tool, args in [
         ("close_credit_card_account_7834", {"credit_card_account_id": GREEN, "user_id": MARCUS}),
         ("log_credit_card_closure_reason_4521", {"credit_card_account_id": CRYPTO, "user_id": MARCUS, "closure_reason": "annual_fee"}),

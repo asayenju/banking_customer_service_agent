@@ -4,9 +4,11 @@ Source: "Internal: Credit Card Retention Protocol" (``..._account_logistics_003`
 rules in the account logistics notes. The conversation is a short one, and it lives in the facts the
 model reports from the customer's answers, not in this class:
 
-  1. Eligibility, from fresh records: no dispute in progress, no replacement on its way, the account
-     at least 60 days old, and a zero balance. A balance can be paid from the customer's checking
-     account first (its own plan); nothing else is offered until it is paid.
+  1. Eligibility, from fresh records: no dispute in progress, no replacement on its way, and the
+     account at least 60 days old. A balance is not a reason to stop here: the customer is asked why
+     first and hears the offers. The balance is paid from their checking account only in the plan that
+     closes the card: a customer who takes an offer keeps the card and pays nothing, and nobody pays
+     before they are asked why.
   2. A closure reason already on file for this card from the last year means retention was tried:
      the card is closed with no offers.
   3. Otherwise the reason is asked. Then at most two offers, each asked as a question:
@@ -15,8 +17,10 @@ model reports from the customer's answers, not in this class:
          bank cannot apply, so that step is skipped);
        - the tier's statement credit (document, step 5), on top of a line of advice for the reason.
   4. The plan is shown only when the outcome is known: the reason is logged together with the waiver,
-     the credit, a decision to keep the card, or the close. A close is never in a plan the customer
-     has not seen, and never follows a plan in which an offer was accepted.
+     the credit, a decision to keep the card, or the close (with the payment of the balance between
+     the reason and the close when there is one). An accepted offer wins over "keeps the card". A
+     close is never in a plan the customer has not seen, and never follows a plan in which an offer
+     was accepted.
 
 Nothing here offers a downgrade or an upgrade, or applies for a card for the customer.
 """
@@ -69,7 +73,8 @@ class ClosureFacts(BaseModel):
     waiver_answer: Optional[YesNo]
     # Their answer to the statement credit offer, or null if it was not offered or not answered.
     credit_answer: Optional[YesNo]
-    # True if they have decided to keep the card (for example, to apply for another card instead).
+    # True only if they decided on their own to keep the card (for example, to apply for another card instead). Saying yes
+    # to the waiver or the statement credit is waiver_answer or credit_answer, never this.
     keeps_card: bool
 
 
@@ -126,10 +131,70 @@ class CreditClosure:
         balance = money(account.get("current_balance"))
         if balance is None:
             return HandOff("the balance on this card is not on file")
+        if retention_tried_recently(db, account_id, ctx.today):
+            return self._finish(ctx, facts, account, card_name, balance, (), Step("close_credit_card_account_7834", {"credit_card_account_id": account_id}, note=f"Close {card_name}"))
+        if facts.reason is None:
+            return NeedInfo((Ask("closure_reason", "I can help with that. May I ask why you would like to close this card?"),))
+        log: list[Step] = []
+        if not closure_records(db, account_id):  # the bank's tool cannot log a second reason for a card
+            log = [Step("log_credit_card_closure_reason_4521", {"credit_card_account_id": account_id, "closure_reason": facts.reason}, note=f"Note on {card_name} why you are closing it")]
+        waiver_applies = facts.reason == "annual_fee" and years_after(opened, WAIVER_MIN_YEARS) <= ctx.today
+        if waiver_applies and facts.waiver_answer == "yes":
+            # An accepted offer wins over "keeps the card": taking the waiver is how a customer keeps it.
+            waiver = Step(
+                "apply_credit_card_account_flag_6147",
+                {
+                    "credit_card_account_id": account_id,
+                    "flag_type": "annual_fee_waived",
+                    "expiration_date": years_after(ctx.today, 1).strftime("%m/%d/%Y"),
+                    "reason": "loyalty_benefit",
+                },
+                note=f"Waive {card_name}'s annual fee for a year",
+            )
+            return Plan((*log, waiver))  # the customer keeps the card: there is no balance to settle
+        amount = RETENTION_CREDIT[tier]
+        if facts.credit_answer == "yes":
+            credit = Step("apply_statement_credit_8472", {"credit_card_account_id": account_id, "amount": amount, "reason": "retention_offer"}, note=f"Add a ${amount:,.0f} statement credit to {card_name}")
+            return Plan((*log, credit))  # the customer keeps the card: there is no balance to settle
+        if facts.keeps_card and not (waiver_applies and facts.waiver_answer is None):
+            return Plan(tuple(log)) if log else Reply("Understood, the card stays open as it is.")
+        if waiver_applies and facts.waiver_answer is None:
+            return NeedInfo(
+                (
+                    Ask(
+                        "waiver_answer",
+                        "As a thank you for being a customer for more than two years, I can waive this card's annual fee "
+                        "for a year. Would you like that instead of closing the card?"
+                    ),
+                )
+            )
+        if facts.credit_answer is None:
+            advice = ADVICE.get(facts.reason, "")
+            return NeedInfo(
+                (
+                    Ask(
+                        "credit_answer",
+                        f"{advice} Before you decide, I can add a ${amount:,.0f} statement credit to your account if you keep the card. "
+                        "Would you like that?".strip()
+                    ),
+                )
+            )
+        return self._finish(ctx, facts, account, card_name, balance, tuple(log), Step("close_credit_card_account_7834", {"credit_card_account_id": account_id}, note=f"Close {card_name}"))
+
+    def _finish(
+        self, ctx: WorkflowContext, facts: ClosureFacts, account: dict[str, Any], card_name: str, balance: float,
+        log: tuple[Step, ...], outcome: Step,
+    ) -> Decision:
+        """The plan that closes the card, once the customer has said why and turned the offers down: the reason logged, the balance
+        paid from a checking account when there is one, and the close. One plan, one yes. A customer who takes an offer keeps
+        the card and pays nothing here, and nobody is asked about money before they have been asked why."""
+        db = ctx.database
+        account_id = facts.credit_card_account_id
+        steps: list[Step] = []
         if balance > 0:
             pay_from = facts.pay_from_checking_account_id
+            open_checking = [a for a in accounts.accounts_of(db, ctx.user_id) if a.is_open and a.product is Product.CHECKING]
             if not pay_from:
-                open_checking = [a for a in accounts.accounts_of(db, ctx.user_id) if a.is_open and a.product is Product.CHECKING]
                 able = [a for a in open_checking if a.balance is not None and a.balance >= balance]
                 if not able:
                     held = "; ".join(f"{accounts.label(a)} has ${a.balance or 0:,.2f}" for a in open_checking) or "you have no open checking account"
@@ -150,84 +215,27 @@ class CreditClosure:
                             ),
                         )
                     )
-            facts = facts.model_copy(update={"pay_from_checking_account_id": pay_from})
-            checking = db.accounts.data.get(facts.pay_from_checking_account_id)
+            checking = db.accounts.data.get(pay_from)
             if checking is None or checking.get("user_id") != ctx.user_id or checking.get("class") != "checking" or checking.get("status") != "OPEN":
-                return Refuse(f"{facts.pay_from_checking_account_id} is not one of this customer's open checking accounts")
+                return Refuse(f"{pay_from} is not one of this customer's open checking accounts")
             funds = money(checking.get("current_holdings")) or 0.0
             if funds < balance:
                 return Reply(
                     f"The balance on this card is ${balance:,.2f} and that checking account has ${funds:,.2f}, which is not enough "
                     "to pay it. The card can be closed once the balance is paid in full."
                 )
-            return Plan(
-                (
-                    Step(
-                        "pay_credit_card_from_checking_9182",
-                        {"checking_account_id": facts.pay_from_checking_account_id, "credit_card_account_id": account_id, "amount": balance},
-                        note=f"Pay {card_name}'s balance of ${balance:,.2f} from your {checking.get('level') or 'checking'} account (it has ${funds:,.2f})",
-                    ),
+            steps.append(
+                Step(
+                    "pay_credit_card_from_checking_9182",
+                    {"checking_account_id": pay_from, "credit_card_account_id": account_id, "amount": balance},
+                    note=f"Pay {card_name}'s balance of ${balance:,.2f} from your {checking.get('level') or 'checking'} account (it has ${funds:,.2f})",
                 )
             )
-        if retention_tried_recently(db, account_id, ctx.today):
-            return Plan((Step("close_credit_card_account_7834", {"credit_card_account_id": account_id}, note=f"Close {card_name}"),))
-        if facts.reason is None:
-            return NeedInfo((Ask("closure_reason", "I can help with that. May I ask why you would like to close this card?"),))
-        log: list[Step] = []
-        if not closure_records(db, account_id):  # the bank's tool cannot log a second reason for a card
-            log = [Step("log_credit_card_closure_reason_4521", {"credit_card_account_id": account_id, "closure_reason": facts.reason}, note=f"Note on {card_name} why you are closing it")]
-        if facts.keeps_card:
-            return Plan(tuple(log)) if log else Reply("Understood, the card stays open as it is.")
-        if facts.reason == "annual_fee" and years_after(opened, WAIVER_MIN_YEARS) <= ctx.today:
-            if facts.waiver_answer is None:
-                return NeedInfo(
-                    (
-                        Ask(
-                            "waiver_answer",
-                            "As a thank you for being a customer for more than two years, I can waive this card's annual fee "
-                            "for a year. Would you like that instead of closing the card?"
-                        ),
-                    )
-                )
-            if facts.waiver_answer == "yes":
-                waiver = Step(
-                    "apply_credit_card_account_flag_6147",
-                    {
-                        "credit_card_account_id": account_id,
-                        "flag_type": "annual_fee_waived",
-                        "expiration_date": years_after(ctx.today, 1).strftime("%m/%d/%Y"),
-                        "reason": "loyalty_benefit",
-                    },
-                )
-                return Plan((*log, waiver))
-        amount = RETENTION_CREDIT[tier]
-        if facts.credit_answer is None:
-            advice = ADVICE.get(facts.reason, "")
-            return NeedInfo(
-                (
-                    Ask(
-                        "credit_answer",
-                        f"{advice} Before you decide, I can add a ${amount:,.0f} statement credit to your account if you keep the card. "
-                        "Would you like that?".strip()
-                    ),
-                )
-            )
-        if facts.credit_answer == "yes":
-            credit = Step("apply_statement_credit_8472", {"credit_card_account_id": account_id, "amount": amount, "reason": "retention_offer"}, note=f"Add a ${amount:,.0f} statement credit to {card_name}")
-            return Plan((*log, credit))
-        return Plan((*log, Step("close_credit_card_account_7834", {"credit_card_account_id": account_id}, note=f"Close {card_name}")))
-
-    def follow_up(self, ctx: WorkflowContext, steps: Sequence[Step]) -> Optional[Ask]:
-        """The question the same request goes on with once the plan ran: after only the balance was paid, why close the card."""
-        if [s.tool for s in steps] == ["pay_credit_card_from_checking_9182"]:
-            return Ask("closure_reason", "Why would you like to close this card?")
-        return None
+        return Plan((*log, *steps, outcome))
 
     def after(self, ctx: WorkflowContext, steps: Sequence[Step]) -> str:
         """What to tell the customer once the plan has run."""
         tools = [s.tool for s in steps]
-        if tools == ["pay_credit_card_from_checking_9182"]:
-            return "The balance is paid."
         if "close_credit_card_account_7834" in tools:
             return AFTER_CLOSING
         return ""
