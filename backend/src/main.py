@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -20,6 +21,8 @@ import persona_text
 from orchestrator import observe
 
 app = FastAPI()
+# The demo page may be hosted on another domain (Vercel). No cookies are used, so any origin may call the API.
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 app.state.conversations = {}
 
 

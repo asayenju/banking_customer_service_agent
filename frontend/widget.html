@@ -176,6 +176,8 @@
 </aside>
 
 <script>
+// Served by the backend (its /demo page, or local), the paths stay relative. Anywhere else (Vercel) they go to the Railway backend.
+const API = /railway\.app$|^localhost$|^127\.0\.0\.1$/.test(location.hostname) ? "" : "https://REDACTED.example.invalid";
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 let people = [], current = null, convo = null, busy = false, area = "All";
@@ -203,7 +205,7 @@ const cards = new Map(), details = new Map();
 async function choose(p) {
   current = p; $("pick").value = p.id; reset(); select(p);
   if (!details.has(p.id)) {
-    try { details.set(p.id, await (await fetch("/personas/" + p.id)).json()); } catch (e) { return; /* the card stays collapsed */ }
+    try { details.set(p.id, await (await fetch(API + "/personas/" + p.id)).json()); } catch (e) { return; /* the card stays collapsed */ }
   }
   if (current === p) fillMore(cardFor(p), details.get(p.id));
 }
@@ -266,7 +268,7 @@ function drawPeople() {
 }
 function fillBox(text) { $("text").value = text; fit(); $("text").focus(); }
 async function load() {
-  try { people = await (await fetch("/personas")).json(); } catch (e) { people = []; }
+  try { people = await (await fetch(API + "/personas")).json(); } catch (e) { people = []; }
   // Accounts and credit come first, in the list of customers and in the area buttons; the rest keep their order after them.
   const first = ["accounts", "credit"], rank = a => { const i = first.indexOf(a); return i < 0 ? first.length : i; };
   const lead = p => Math.min(...p.areas.map(rank));
@@ -403,7 +405,7 @@ async function send(text, pick) {
   if (pick) body.pick = pick;
   if (convo.first && current) body.scenario = current.id;
   try {
-    const r = await fetch("/conversations/" + convo.id + "/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const r = await fetch(API + "/conversations/" + convo.id + "/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error("the server answered " + r.status);
     convo.first = false; const data = await r.json();
     wrap.innerHTML = ""; render(wrap, data);
@@ -436,7 +438,7 @@ function traceLine(r) {
 }
 async function loadTrace() {
   try {
-    lastTrace = await (await fetch("/debug/conversations/" + convo.id + "/trace")).json();
+    lastTrace = await (await fetch(API + "/debug/conversations/" + convo.id + "/trace")).json();
     const box = $("debug"); box.innerHTML = "";
     const bar = el("div", "bar"), copy = el("button", null, "Copy trace"); copy.type = "button";
     copy.onclick = () => navigator.clipboard.writeText(JSON.stringify(lastTrace, null, 1)).then(() => { copy.textContent = "Copied"; setTimeout(() => { copy.textContent = "Copy trace"; }, 1200); });
