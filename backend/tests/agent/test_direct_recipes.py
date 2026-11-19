@@ -352,7 +352,9 @@ def test_a_name_that_fits_two_products_is_asked_about_and_another_customers_card
     shared.database.credit_card_accounts.data["cc_mei_x"] = {"account_id": "cc_mei_x", "user_id": MEI, "card_type": "Green Rewards Card", "status": "ACTIVE", "current_balance": "$1.00"}
     ask = history(shared, "transactions on my green card", MEI)
     assert ask.status is OutcomeStatus.NEEDS_INFO and "Which card do you mean?" in ask.questions[0].text
-    assert "Silver" not in history(world("mei"), "transactions on my silver card", MEI).text
+    other = history(world("mei"), "transactions on my silver card", MEI).text
+    assert "Silver Rewards Card: balance" not in other and "Recent charges" not in other, "another customer's card is never shown"
+    assert other.startswith("I don't see a Silver Rewards Card on your profile."), "they are told it is not theirs"
 
 
 def test_no_card_named_still_gives_the_account_overview():

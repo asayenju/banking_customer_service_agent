@@ -166,6 +166,14 @@ let people = [], current = null, convo = null, busy = false, area = "All";
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()));
 const bottom = () => { $("log").scrollTop = $("log").scrollHeight; };
 const verifyLine = d => "My phone is " + d.phone + " and my email is " + d.email;
+/* Details that do not match the bank's record, for testing a failed verification: the phone with its last four digits changed and
+   the email on another provider. Never the persona's real details. */
+const falseVerifyLine = d => {
+  const phone = String(d.phone || "").replace(/\d{4}$/, m => String((Number(m) + 1111) % 10000).padStart(4, "0"));
+  const mail = String(d.email || ""), at = mail.lastIndexOf("@");
+  const email = (at < 0 ? mail : mail.slice(0, at)) + (mail.endsWith("@gmail.com") ? "@outlook.com" : "@gmail.com");
+  return "My phone is " + phone + " and my email is " + email;
+};
 let detail = null;
 const titleCase = t => t.charAt(0).toUpperCase() + t.slice(1);
 
@@ -211,6 +219,7 @@ function drawPeople() {
         const f = el("div", "fill");
         if (d.opening) { const say = el("span", null, "Use opening line"); say.onclick = e => { e.stopPropagation(); fillBox(d.opening); }; f.append(say); }
         const ver = el("span", null, "Use verification line"); ver.onclick = e => { e.stopPropagation(); fillBox(verifyLine(d)); }; f.append(ver);
+        const bad = el("span", null, "Use false verification"); bad.onclick = e => { e.stopPropagation(); fillBox(falseVerifyLine(d)); }; f.append(bad);
         more.append(f);
       }
       b.append(more);
@@ -222,7 +231,11 @@ function drawPeople() {
 function fillBox(text) { $("text").value = text; fit(); $("text").focus(); }
 async function load() {
   try { people = await (await fetch("/personas")).json(); } catch (e) { people = []; }
-  const areas = ["All", ...[...new Set(people.flatMap(p => p.areas))].sort()];
+  // Accounts and credit come first, in the list of customers and in the area buttons; the rest keep their order after them.
+  const first = ["accounts", "credit"], rank = a => { const i = first.indexOf(a); return i < 0 ? first.length : i; };
+  const lead = p => Math.min(...p.areas.map(rank));
+  people = people.map((p, i) => [p, i]).sort((x, y) => lead(x[0]) - lead(y[0]) || x[1] - y[1]).map(x => x[0]);
+  const areas = ["All", ...[...new Set(people.flatMap(p => p.areas))].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))];
   $("areas").innerHTML = "";
   for (const a of areas) { const b = el("button", null, titleCase(a)); b.type = "button"; b.setAttribute("aria-pressed", a === area);
     b.onclick = () => { area = a; [...$("areas").children].forEach(x => x.setAttribute("aria-pressed", x === b)); drawPeople(); }; $("areas").append(b); }

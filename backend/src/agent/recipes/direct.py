@@ -223,10 +223,40 @@ class DirectRunner:
         )
         return RouteOutcome(intent_id=intent.id, status=OutcomeStatus.DONE, text="\n".join(lines), choices=choices)
 
+    def _card_not_held(self, intent: Intent, user: str) -> Optional[str]:
+        """The name of a credit card the customer's words name that is not one of theirs ("Gold Rewards Card" when they hold only
+        a Silver one), so they are told so instead of being shown something else. Only a card type the bank has, named by
+        all of its distinguishing words; a card they do hold, or a better match among theirs, is never reported missing."""
+        said = " ".join([intent.summary, *(v for v in intent.slots.values() if isinstance(v, str))]).lower()
+        words = set(re.findall(r"[a-z0-9]+", said))
+        generic = {"card", "cards", "rewards", "reward", "account", "back", "cash"}
+        if not ({"card", "cards", "rewards", "reward"} & words) or {"debit", "account", "accounts"} & words:
+            return None  # "my Green Account card" is a checking account's card, not the Green Rewards card
+
+        def distinct(label: str) -> set[str]:
+            parts = [w[:-4] if w.endswith("card") and len(w) > 4 else w for w in re.findall(r"[a-z0-9]+", label.lower())]
+            return set(parts) - generic
+
+        if any(distinct(str(a.get("level"))) and distinct(str(a.get("level"))) <= words for a in self._db.accounts.data.values() if a.get("user_id") == user):
+            return None  # the words name one of their own checking accounts ("my light green card"), not a credit card
+        held = {str(a.get("card_type")) for a in self._db.credit_card_accounts.data.values() if a.get("user_id") == user}
+        best_held = max((len(distinct(t)) for t in held if distinct(t) and distinct(t) <= words), default=0)
+        missing = [
+            t for t in {str(a.get("card_type")) for a in self._db.credit_card_accounts.data.values()} - held
+            if distinct(t) and distinct(t) <= words and len(distinct(t)) > best_held
+        ]
+        return max(missing, key=lambda t: len(distinct(t))) if missing else None
+
     def _accounts(self, intent: Intent, guarded: GuardedSession, user: str) -> RouteOutcome:
         mine = {k: v for k, v in self._db.accounts.data.items() if v.get("user_id") == user}
         named = (intent.slots.get("account_id") or "").strip()
         if named not in mine:
+            absent = self._card_not_held(intent, user)
+            if absent is not None:
+                held = [f"- {c.get('card_type')}: balance {_money(c.get('current_balance'))}" for c in self._db.credit_card_accounts.data.values() if c.get("user_id") == user]
+                held += [f"- {a.get('level')} ({a.get('class')}): {_money(a.get('current_holdings'))}" for a in mine.values()]
+                tail = "Here is what you do have:\n" + "\n".join(held) if held else "I don't see any cards or accounts on your profile."
+                return _done(intent, f"I don't see a {absent} on your profile. {tail}")
             kind, picked = self._which_card(intent, user)
             if kind == "credit":
                 guarded.call("get_credit_card_transactions_by_user", {"user_id": user})

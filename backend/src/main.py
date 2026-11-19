@@ -124,7 +124,11 @@ def personas() -> list[dict[str, Any]]:
     return found
 
 
-_OPENING = re.compile(r"\*{0,2}(?:Opening|Start naturally)[^:\n]*:\*{0,2}\s*[\"“]([^\"”]+)[\"”]", re.IGNORECASE)
+_OPENING = re.compile(r"\*{0,2}(?:Opening|Start naturally)[^:\n]*:\*{0,2}[^\"“\n]*[\"“]([^\"”]+)[\"”]", re.IGNORECASE)
+# A customer whose script gives no quoted first line, only what to start by saying: that, in the customer's own voice.
+OPENINGS: dict[str, str] = {
+    "task_005": "Hi, I'd like to check the balance on my Gold Rewards card, please.",
+}
 
 
 def _card_digits(task: dict[str, Any]) -> list[str]:
@@ -157,6 +161,7 @@ def persona(task_id: str) -> Optional[dict[str, Any]]:
         return None
     full = str((task.get("user_scenario") or {}).get("instructions") or "")
     opening = _OPENING.search(full)
+    said = opening.group(1).strip() if opening else OPENINGS.get(task_id, "")
     shown = persona_text.sections(full, {str(who.get("user_id") or "")})
     by_title = {sec["title"]: sec for sec in shown}
     return {
@@ -170,7 +175,7 @@ def persona(task_id: str) -> Optional[dict[str, Any]]:
         "email": who.get("email"),
         "born": who.get("date_of_birth"),
         "address": who.get("address"),
-        "opening": opening.group(1).strip() if opening else "",
+        "opening": said,
         "card_digits": _card_digits(task),
     }
 
