@@ -111,7 +111,31 @@ Every turn through the demo is recorded as one flat record (`orchestrator/observ
 
 - **The decomposer still sometimes makes a new request out of an answer.** The fixes above catch most cases, but a customer's reply that is long, reads as an affirmation, or arrives while two questions are open can still slip through. The symptom is a stale "what do you mean?" that keeps coming back; a thank-you now closes it, but the cause is not closed.
 - **Relative dates.** "I noticed just now" has to become a calendar date. The model sometimes guesses one; the workflow refuses a date the customer's words do not back, and the retry costs time and a repeated question. The date should be worked out in code.
+- **Stale clarifications.** A "what do you mean?" is closed at a thank-you but not yet when its own request finishes.
+- **Identity re-asks** are counted as `repeated_ask` in the observability records, which makes that class noisier than it should be.
 - **Calibration.** The decision bands rest on little labelled data. `agent.calibration` reads the decision log; no band number should change before it has been run on real use.
+
+## What we learned from using the demo
+
+Offline replays passed long before the demo felt right. Each item below came from a real conversation with a test customer, and each was fixed in code, not in a prompt.
+
+| What happened | What we changed |
+|---|---|
+| A debit dispute asked "which transaction?" in words | The agent asks **which card** first, then lists **that card's charges with a Dispute button each**, built in code with no model (`agent/debit_charges.py`, `specialists/debit.py`). A press sends only the offer's id. Credit works the same way |
+| A customer said the cash back looked wrong and the agent asked them to pick the purchase | The agent now **finds the wrong rewards itself**: it reads the customer's cards and purchases and recalculates each one from the card's earning rules (`agent/rewards_audit.py`, `rewards_review.py`). For each wrong purchase it plans a `submit_cash_back_dispute_0589` step (the customer-side tool, added to the wrapper with source "user"), shows the plan, and submits after one yes |
+| A fee, interest or rewards complaint went to the wrong place or was dropped | Saying an amount "looks wrong" is a request for a review (`FEE_OR_INTEREST_ADJUSTMENT`, `orchestrator/policy.py`), so it goes to the fees specialist. The credit-card lookup also lists credit cards now |
+| A customer named a card they do not hold ("my Gold Rewards card") and the agent went looking | Code checks the customer's own cards first and says plainly that they do not have that card (`_card_not_held` in `recipes/direct.py`). A "false verification" button on the test customers lets a tester try exactly this |
+| "Thank you, that's all" opened a new request or left an old question hanging | A thank-you closes the chat kindly and clears any stale clarification (`unclear.py`, `orchestrator.py`) |
+| Test customers had no first line, or many were near-duplicates | Every customer card has an opening line taken from the script (or written by hand), and the debit and fees lists keep only distinct customers. Accounts and credit come first in the demo |
+| Pressing a customer card redrew the whole list | Each card is built once, opens and closes with an animation, and its brief is cached |
+
+Smaller lessons that kept repeating:
+- **Look before asking.** If the records can answer, a question to the customer is a bug. Every "which one?" became either a lookup or a button.
+- **Buttons beat typed answers**, and the server must be the one that offers them. A button that carries only an id cannot be spoofed into a different request.
+- **Put the logic where it can be tested.** The rewards check, the card-not-held check and the charge list are plain functions with offline tests. The model is asked only to report what the customer said.
+- **Offline first, live last.** The default test run blocks the model API on purpose, so a live call never happens by accident. 2,765 tests passed at last count, and `mypy --strict` is clean on the typed packages.
+- **Restart after every change.** The server keeps the old code in memory, so a fix looks like it did nothing until the process restarts.
+- **Observability that records no text is safe but blunt.** It tells you a question repeated, not what the customer wrote.
 
 ## Structure
 
@@ -134,6 +158,25 @@ PYTHONPATH=src:../tau2-bench/src uv run uvicorn main:app --port 8765
 ```
 
 Restart the server after any code change; the running process keeps the old code.
+
+## Deploying
+
+The backend runs on **Railway** and the demo page can run on **Vercel**. The page works from either: served by the backend at `/demo` it uses relative URLs, and anywhere else it calls the Railway backend (the `API` constant at the top of the script in `frontend/widget.html`).
+
+**Backend on Railway**
+- The `Dockerfile` at the repo root builds it. `tau2-bench` is a submodule, so the build fetches the pinned commit from GitHub instead of uploading its 880 MB of data (update `TAU2_COMMIT` in the Dockerfile when the submodule moves).
+- Set `OPENAI_KEY` and `JEV_KEY` as Railway variables. The app reads real environment variables first, and there is no `.env` in the image.
+- Deploy with `railway up --service backend --ci` from the repo root. It is not connected to GitHub, so a push does not deploy.
+- `.railwayignore` keeps the submodule, caches and local logs out of the upload.
+
+**Page on Vercel**
+- Import the repo, set the root directory to `frontend`, framework "Other", no build command. `frontend/vercel.json` maps `/` to `widget.html`.
+- The backend allows browser calls only from the Vercel page's origin and a local server (`CORSMiddleware` in `main.py`). A new domain, or Vercel preview URLs, must be added to that list.
+
+**Things to know**
+- CORS only controls browsers. Anyone with the backend URL can still call the API directly and spend OpenAI credits, so set a spending limit on Railway (workspace Usage settings) and a monthly budget on OpenAI, and consider a password or rate limit.
+- `evals/turns.jsonl` and `decisions.jsonl` are written to the container's disk, which is wiped on every deploy. Add a Railway volume if the history must survive. The Debug button still works live.
+- Railway Hobby allows 50 projects and includes $5 of usage a month. This backend is one small container.
 
 ## Results so far
 
