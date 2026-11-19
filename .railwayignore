@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+tau2-bench
+docs
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.mypy_cache
+**/.pytest_cache
+backend/evals/cassettes
+backend/evals/turns.jsonl
+backend/evals/decisions.jsonl
