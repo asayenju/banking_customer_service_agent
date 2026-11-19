@@ -36,19 +36,35 @@
   .areas button[aria-pressed="true"] { background:var(--ink); border-color:var(--ink); color:var(--page); }
   .count { color:var(--muted); font-size:13.5px; margin:0 0 12px; }
   .people { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; align-items:start; }
-  .person { text-align:left; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:14px 16px; cursor:pointer; display:block; width:100%; }
+  /* A card is built once and only changes state (selected, open), so pressing one never redraws the others. */
+  .person { background:var(--panel); border:1px solid var(--line); border-radius:14px; overflow:hidden;
+            transition:border-color .16s ease, box-shadow .2s ease, transform .12s ease; }
+  .person[hidden] { display:none; }
   .person:hover { border-color:var(--muted); }
-  .person[aria-pressed="true"] { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+  .person.on { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+  .head { display:block; width:100%; text-align:left; background:none; border:0; padding:14px 16px; cursor:pointer; }
+  .head:active { transform:scale(.995); }
   .person b { display:block; font-weight:600; }
-  .person .tags { font-size:12.5px; color:var(--accent); margin:1px 0 6px; }
-  .person .about { font-size:13.5px; color:var(--muted); display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
-  .person .id { font-size:12.5px; color:var(--muted); margin-top:8px; overflow-wrap:anywhere; }
-  .more { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); cursor:default; }
+  .person .tags { font-size:12.5px; color:var(--accent); margin:1px 0 0; }
+  /* Opening is a height animation of the card's own content: the grid row goes from 0 to its natural height, so the cards
+     below move with it instead of jumping. */
+  .reveal { display:grid; grid-template-rows:0fr; opacity:0; transition:grid-template-rows .3s cubic-bezier(.2,.8,.2,1), opacity .22s ease; }
+  .person.on .reveal { grid-template-rows:1fr; opacity:1; }
+  .more { min-height:0; overflow:hidden; padding:0 16px; cursor:default; }
+  .person.on .more { padding-bottom:14px; }
+  .more > :first-child { border-top:1px solid var(--line); padding-top:12px; }
+  .more .body { animation:in .25s ease both; }
+  @keyframes in { from { opacity:0; transform:translateY(4px) } to { opacity:1; transform:none } }
+  .skel i { display:block; height:10px; border-radius:6px; background:var(--soft); margin:0 0 10px; animation:pulse 1.2s ease-in-out infinite; }
+  .skel i:nth-child(1) { width:42%; } .skel i:nth-child(2) { width:92%; } .skel i:nth-child(3) { width:76%; }
+  @keyframes pulse { 0%,100% { opacity:.5 } 50% { opacity:1 } }
   .blk h3 { margin:0 0 2px; font-size:13px; font-weight:600; }
   .blk p { margin:0 0 10px; font-size:13.5px; color:var(--muted); overflow-wrap:anywhere; white-space:pre-line; }
-  .fill { display:flex; gap:6px; margin-top:10px; }
-  .fill span { font-size:12.5px; font-weight:600; border:1px solid var(--line); border-radius:8px; padding:3px 9px; color:var(--ink); }
-  .fill span:hover { border-color:var(--accent); color:var(--accent); }
+  .fill { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+  .fill button { font:inherit; font-size:12.5px; font-weight:600; background:transparent; cursor:pointer; border:1px solid var(--line); border-radius:8px; padding:3px 9px; color:var(--ink);
+                 transition:border-color .15s ease, color .15s ease, transform .1s ease; }
+  .fill button:hover { border-color:var(--accent); color:var(--accent); }
+  .fill button:active { transform:scale(.96); }
   @media (max-width:1000px) { .stage { display:none; } }
 
   /* ---------- the docked assistant ---------- */
@@ -174,7 +190,6 @@ const falseVerifyLine = d => {
   const email = (at < 0 ? mail : mail.slice(0, at)) + (mail.endsWith("@gmail.com") ? "@outlook.com" : "@gmail.com");
   return "My phone is " + phone + " and my email is " + email;
 };
-let detail = null;
 const titleCase = t => t.charAt(0).toUpperCase() + t.slice(1);
 
 function reset() {
@@ -184,49 +199,70 @@ function reset() {
   const hi = el("div", "says"); hi.append(el("p", "hello", "How can I help?"), el("p", null, current ? "You are " + current.name + ". Say what they would say." : "Pick a test customer on the left."));
   $("log").append(hi);
 }
+const cards = new Map(), details = new Map();
 async function choose(p) {
-  current = p; detail = null; $("pick").value = p.id; reset(); drawPeople();
-  try { const d = await (await fetch("/personas/" + p.id)).json(); if (current === p) { detail = d; drawPeople(); } } catch (e) { /* the card stays collapsed */ }
+  current = p; $("pick").value = p.id; reset(); select(p);
+  if (!details.has(p.id)) {
+    try { details.set(p.id, await (await fetch("/personas/" + p.id)).json()); } catch (e) { return; /* the card stays collapsed */ }
+  }
+  if (current === p) fillMore(cardFor(p), details.get(p.id));
+}
+/* Mark one card as selected and open it; the one that was open closes. Nothing is rebuilt, so both animate. */
+function select(p) {
+  for (const [id, c] of cards) c.classList.toggle("on", id === p.id);
+  const card = cardFor(p), more = card.querySelector(".more");
+  if (!details.has(p.id)) { more.replaceChildren(skeleton()); }
+  else fillMore(card, details.get(p.id));
+  // Bring the opened card into view once it has grown, only if part of it is off screen.
+  setTimeout(() => { if (current === p) card.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, 320);
+}
+const skeleton = () => { const k = el("div", "skel"); k.append(el("i"), el("i"), el("i")); return k; };
+function cardFor(p) {
+  let card = cards.get(p.id);
+  if (card) return card;
+  card = el("div", "person");
+  const head = el("button", "head"); head.type = "button";
+  head.append(el("b", null, p.name), el("div", "tags", p.areas.map(titleCase).join(", ")));
+  head.onclick = () => { if (!current || current.id !== p.id) choose(p); };
+  const reveal = el("div", "reveal"); reveal.append(el("div", "more"));
+  card.append(head, reveal); cards.set(p.id, card);
+  return card;
+}
+function fillMore(card, d) {
+  const more = card.querySelector(".more");
+  // The brief can be long (Claire has 16 disputes to make): it scrolls inside the card, and the buttons below stay in view.
+  const body = el("div", "body"), scroller = el("div", "scroll"); body.append(scroller);
+  const block = (title, text) => { if (!text) return; const w = el("div", "blk"); w.append(el("h3", null, title), el("p", null, text)); scroller.append(w); };
+  // The whole brief, a section per block, as plain text (the long script of how they talk starts closed).
+  const section = s => {
+    const w = el("div", "blk"), inner = el("div");
+    if (s.text) inner.append(el("p", null, s.text));
+    if (s.items.length) { const ul = el("ul"); for (const i of s.items) ul.append(el("li", null, i)); inner.append(ul); }
+    if (s.title === "How they talk") { const dt = el("details"); dt.append(el("summary", null, s.title), inner); w.append(dt); }
+    else w.append(el("h3", null, s.title), inner);
+    scroller.append(w);
+  };
+  for (const s of d.sections || []) section(s);
+  block("To verify, they give", "Phone " + d.phone + ", email " + d.email + ", born " + d.born + ", " + d.address);
+  if (d.card_digits && d.card_digits.length) block("If asked, they read from the card", "Last four digits: " + d.card_digits.join(" or "));
+  const f = el("div", "fill");
+  const add = (label, text) => { const b = el("button", null, label); b.type = "button"; b.onclick = () => fillBox(text); f.append(b); };
+  if (d.opening) add("Use opening line", d.opening);
+  add("Use verification line", verifyLine(d));
+  add("Use false verification", falseVerifyLine(d));
+  body.append(f);
+  more.replaceChildren(body);
 }
 function drawPeople() {
   const q = $("search").value.trim().toLowerCase();
-  const shown = people.filter(p => (area === "All" || p.areas.includes(area)) &&
-    (!q || (p.name + " " + p.areas.join(" ")).toLowerCase().includes(q)));
-  $("count").textContent = shown.length + " of " + people.length + " test customers";
-  const box = $("people"); box.innerHTML = "";
-  for (const p of shown) {
-    const b = el("button", "person"); b.type = "button"; b.setAttribute("aria-pressed", current && current.id === p.id);
-    b.append(el("b", null, p.name), el("div", "tags", p.areas.map(titleCase).join(", ")));
-    if (current && current.id === p.id) {
-      const d = detail, more = el("div", "more");
-      if (!d) more.append(el("p", "about", "Loading..."));
-      else {
-        // The brief can be long (Claire has 16 disputes to make): it scrolls inside the card, and the buttons below stay in view.
-        const scroller = el("div", "scroll"); more.append(scroller);
-        const block = (title, text) => { if (!text) return; const w = el("div", "blk"); w.append(el("h3", null, title), el("p", null, text)); scroller.append(w); };
-        // The whole brief, a section per block, as plain text (the long script of how they talk starts closed).
-        const section = s => {
-          const w = el("div", "blk"), body = el("div");
-          if (s.text) body.append(el("p", null, s.text));
-          if (s.items.length) { const ul = el("ul"); for (const i of s.items) ul.append(el("li", null, i)); body.append(ul); }
-          if (s.title === "How they talk") { const dt = el("details"); dt.append(el("summary", null, s.title), body); w.append(dt); }
-          else w.append(el("h3", null, s.title), body);
-          scroller.append(w);
-        };
-        for (const s of d.sections || []) section(s);
-        block("To verify, they give", "Phone " + d.phone + ", email " + d.email + ", born " + d.born + ", " + d.address);
-        if (d.card_digits && d.card_digits.length) block("If asked, they read from the card", "Last four digits: " + d.card_digits.join(" or "));
-        const f = el("div", "fill");
-        if (d.opening) { const say = el("span", null, "Use opening line"); say.onclick = e => { e.stopPropagation(); fillBox(d.opening); }; f.append(say); }
-        const ver = el("span", null, "Use verification line"); ver.onclick = e => { e.stopPropagation(); fillBox(verifyLine(d)); }; f.append(ver);
-        const bad = el("span", null, "Use false verification"); bad.onclick = e => { e.stopPropagation(); fillBox(falseVerifyLine(d)); }; f.append(bad);
-        more.append(f);
-      }
-      b.append(more);
-    }
-    b.onclick = () => { if (!current || current.id !== p.id) choose(p); };
-    box.append(b);
+  const box = $("people"); let shown = 0;
+  for (const p of people) {
+    const card = cardFor(p);
+    if (card.parentNode !== box) box.append(card);  // appended in list order, once
+    const fits = (area === "All" || p.areas.includes(area)) && (!q || (p.name + " " + p.areas.join(" ")).toLowerCase().includes(q));
+    card.hidden = !fits; if (fits) shown++;
   }
+  $("count").textContent = shown + " of " + people.length + " test customers";
 }
 function fillBox(text) { $("text").value = text; fit(); $("text").focus(); }
 async function load() {
@@ -242,6 +278,7 @@ async function load() {
   $("pick").innerHTML = people.map(p => "<option value=\"" + p.id + "\">" + p.name + "</option>").join("");
   $("pick").onchange = () => choose(people.find(p => p.id === $("pick").value));
   $("search").oninput = drawPeople;
+  drawPeople();
   if (people.length) choose(people.find(p => p.id === "task_078") || people[0]); else reset();
 }
 
