@@ -30,7 +30,7 @@ class ToolSpec(BaseModel):
     reversibility: Optional[Reversibility] = None
     description: str
     # "visible" tools are registered with tau2; "discoverable" ones need an unlock there.
-    source: Literal["visible", "discoverable"]
+    source: Literal["visible", "discoverable", "user"]
     # Set by the argument-model generator.
     args_model: Optional[type[BaseModel]] = None
 

@@ -10,7 +10,7 @@ import typing
 from typing import Annotated, Any
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, create_model
-from tau2.domains.banking_knowledge.tools import KnowledgeTools
+from tau2.domains.banking_knowledge.tools import KnowledgeTools, KnowledgeUserTools
 
 
 def _integral_float_to_int(value: Any) -> Any:
@@ -28,7 +28,7 @@ def _field_type(hint: Any) -> Any:
 
 def build_args_model(name: str) -> type[BaseModel]:
     """Strict model for one tool's arguments; unknown or mistyped arguments fail."""
-    func = getattr(KnowledgeTools, name)
+    func = getattr(KnowledgeTools, name, None) or getattr(KnowledgeUserTools, name)
     hints = typing.get_type_hints(func)
     fields: dict[str, Any] = {}
     for param in inspect.signature(func).parameters.values():

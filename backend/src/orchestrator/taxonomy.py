@@ -65,6 +65,7 @@ TOOL_INTENT: dict[str, IntentKind] = {
     "request_temporary_debit_card_limit_increase_8374": K.CREDIT_LIMIT_REQUEST,
     # --- fees, interest and credits ---
     "update_transaction_rewards_3847": K.FEE_OR_INTEREST_ADJUSTMENT,
+    "submit_cash_back_dispute_0589": K.FEE_OR_INTEREST_ADJUSTMENT,
     "apply_statement_credit_8472": K.FEE_OR_INTEREST_ADJUSTMENT,
     "apply_credit_card_account_flag_6147": K.FEE_OR_INTEREST_ADJUSTMENT,
     "apply_checking_account_credit_5829": K.FEE_OR_INTEREST_ADJUSTMENT,

@@ -83,6 +83,7 @@ CLUSTER_TOOLS: Mapping[Cluster, frozenset[str]] = {
             "apply_savings_account_credit_6831",
             "submit_interest_discrepancy_report_7294",
             "update_transaction_rewards_3847",
+            "submit_cash_back_dispute_0589",
         }
     ),
     "profile": frozenset({"change_user_email"}),

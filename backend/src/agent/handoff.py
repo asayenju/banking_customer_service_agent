@@ -75,6 +75,9 @@ def describe(db: Any, entry: AuditEntry) -> str:
         return f"A {_dollars(a.get('amount'))} interest correction was applied to a savings account."
     if tool == "submit_interest_discrepancy_report_7294":
         return "An interest discrepancy report was submitted for review (a report only, not a credit)."
+    if tool == "submit_cash_back_dispute_0589":
+        txn = db.credit_card_transaction_history.data.get(str(a.get("transaction_id")), {})
+        return f"A cash back dispute was submitted for a {txn.get('merchant_name', 'card')} purchase."
     if tool == "update_transaction_rewards_3847":
         txn = db.credit_card_transaction_history.data.get(str(a.get("transaction_id")), {})
         return f"The rewards on a {txn.get('merchant_name', 'card')} purchase were corrected to {a.get('new_rewards_earned')}."

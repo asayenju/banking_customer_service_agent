@@ -14,12 +14,12 @@ from functools import cache
 from types import MappingProxyType
 from typing import Literal, Optional
 
-from tau2.domains.banking_knowledge.tools import KnowledgeTools
+from tau2.domains.banking_knowledge.tools import KnowledgeTools, KnowledgeUserTools
 
 from banking_tools.args import build_args_model
 from banking_tools.types import Reversibility, ToolKind, ToolSpec
 
-Source = Literal["visible", "discoverable"]
+Source = Literal["visible", "discoverable", "user"]
 
 R, W, H = ToolKind.READ, ToolKind.WRITE, ToolKind.HANDOFF
 REV, IRREV = Reversibility.REVERSIBLE, Reversibility.IRREVERSIBLE
@@ -88,6 +88,14 @@ _LABELS: dict[str, tuple[Source, ToolKind, Optional[Reversibility]]] = {
     "request_temporary_debit_card_limit_increase_8374": ("discoverable", W, IRREV),
 }
 
+# Customer-side tau2 tools the agent may run for a verified customer who asked for it. In tau2 the agent hands the tool to the
+# customer (``give_discoverable_user_tool``) and the customer calls it; here the session does both, in one step, and it goes
+# through the same plan, validators, guard and customer's yes as any other write.
+_USER_LABELS: dict[str, tuple[Source, ToolKind, Optional[Reversibility]]] = {
+    "submit_cash_back_dispute_0589": ("user", W, IRREV),
+}
+USER_TOOLS = frozenset(_USER_LABELS)
+
 # tau2 tools deliberately left out of the wrapper, with the reason.
 EXCLUDED: dict[str, str] = {
     "example_agent_tool_0000": "placeholder that does nothing",
@@ -99,7 +107,7 @@ EXCLUDED: dict[str, str] = {
 
 
 def _description(name: str) -> str:
-    doc = getattr(KnowledgeTools, name).__doc__ or ""
+    doc = (getattr(KnowledgeTools, name, None) or getattr(KnowledgeUserTools, name)).__doc__ or ""
     first = doc.strip().splitlines()[0] if doc.strip() else ""
     return first or name
 
@@ -115,7 +123,7 @@ def build_catalog() -> dict[str, ToolSpec]:
             source=source,
             args_model=build_args_model(name),
         )
-        for name, (source, kind, reversibility) in _LABELS.items()
+        for name, (source, kind, reversibility) in {**_LABELS, **_USER_LABELS}.items()
     }
 
 

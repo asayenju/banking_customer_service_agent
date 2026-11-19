@@ -1114,6 +1114,25 @@
     "title": "SetDebitCardRecurringBlock7382Args",
     "type": "object"
   },
+  "submit_cash_back_dispute_0589": {
+    "additionalProperties": false,
+    "properties": {
+      "transaction_id": {
+        "title": "Transaction Id",
+        "type": "string"
+      },
+      "user_id": {
+        "title": "User Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "user_id",
+      "transaction_id"
+    ],
+    "title": "SubmitCashBackDispute0589Args",
+    "type": "object"
+  },
   "submit_credit_limit_increase_request_7392": {
     "additionalProperties": false,
     "properties": {

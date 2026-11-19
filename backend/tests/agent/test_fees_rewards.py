@@ -79,9 +79,40 @@ def test_the_plan_names_the_purchase_and_the_promotion() -> None:
     assert "double-rewards promotion" in first.note
 
 
-def test_no_dispute_means_no_write_and_a_way_forward() -> None:
-    result = decide("task_026", [], world("task_026", approve=False))
-    assert isinstance(result, Reply) and "submit one" in result.text
+def test_no_dispute_yet_means_the_agent_plans_a_cash_back_dispute_for_every_wrong_purchase_itself() -> None:
+    shared = world("task_026", approve=False)
+    result = decide("task_026", [], shared)
+    assert isinstance(result, Plan) and result.steps
+    assert {step.tool for step in result.steps} == {rules.DISPUTE_TOOL}, "only disputes; no rewards are changed before one is approved"
+    assert all("on file" in step.note and "the card's rules give" in step.note for step in result.steps)
+    user = user_of("task_026")
+    ctx = ValidationContext(shared.database, user, date(2025, 11, 14))
+    assert all(rules.dispute_submit(ctx, step.args) is None for step in result.steps), "each step passes its own check"
+    assert not shared.database.cash_back_disputes.data, "planning writes nothing"
+
+
+def test_the_planned_disputes_run_once_and_a_second_one_for_the_same_purchase_is_refused() -> None:
+    shared = world("task_026", approve=False)
+    plan = decide("task_026", [], shared)
+    assert isinstance(plan, Plan)
+    ctx = ValidationContext(shared.database, user_of("task_026"), date(2025, 11, 14))
+    for step in plan.steps:
+        assert shared.call(step.tool, step.args).ok
+        assert rules.dispute_readback(ctx, step.args) is None
+    assert rules.dispute_submit(ctx, plan.steps[0].args) == "a cash back dispute for this purchase already exists"
+    # the bank approved them (the task auto-resolves), so asking again plans the rewards corrections
+    corrected = decide("task_026", [], shared)
+    assert isinstance(corrected, Plan) and {step.tool for step in corrected.steps} == {rules.REWARDS_TOOL}
+
+
+def test_a_customer_whose_purchases_all_match_is_told_so_and_nothing_is_planned() -> None:
+    shared = world("task_026", approve=False)
+    user = user_of("task_026")
+    for txn in list(shared.database.credit_card_transaction_history.data.values()):
+        if txn.get("user_id") == user:
+            txn["rewards_earned"] = "0 points"
+    result = decide("task_026", ["no such merchant ever"], shared)
+    assert isinstance(result, Reply) and "already matches" in result.text
 
 
 def test_a_dispute_still_under_review_is_not_acted_on() -> None:

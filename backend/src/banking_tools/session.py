@@ -31,7 +31,7 @@ from typing import Any, Callable, Optional, Protocol
 from pydantic import ValidationError
 from tau2.domains.banking_knowledge.data_model import TransactionalDB
 from tau2.domains.banking_knowledge.environment import get_db
-from tau2.domains.banking_knowledge.tools import KnowledgeTools
+from tau2.domains.banking_knowledge.tools import KnowledgeTools, KnowledgeUserTools
 from tau2.domains.banking_knowledge.utils import get_now
 
 from banking_tools.args import call_kwargs
@@ -88,6 +88,7 @@ class BankingSession:
         self._clock = clock
         self._fidelity = fidelity
         self._toolkit = KnowledgeTools(self._db)
+        self._customer_tools: Optional[KnowledgeUserTools] = None
         # tau2 logs a discoverable read only if the task's gold trajectory names it.
         self._toolkit.set_read_log_allowlist(set(read_log_allowlist))
         self._lock = threading.Lock()
@@ -226,7 +227,19 @@ class BankingSession:
         )
         return result
 
+    def _as_customer(self, name: str, kwargs: dict[str, Any]) -> str:
+        """A customer-side tool run for the customer: the tool is given to them, then they call it."""
+        given: str = self._toolkit.give_discoverable_user_tool(name, json.dumps(kwargs, default=str))
+        if given.startswith(ERROR_PREFIX):
+            return given
+        if self._customer_tools is None:
+            self._customer_tools = KnowledgeUserTools(self._db)
+        result: str = getattr(self._customer_tools, name)(**kwargs)
+        return result
+
     def _method(self, source: str, name: str) -> Callable[..., str]:
+        if source == "user":
+            return lambda **kwargs: self._as_customer(name, kwargs)
         if source == "discoverable":
             return self._toolkit.get_discoverable_tools()[name]  # type: ignore[no-any-return]
         return getattr(self._toolkit, name)  # type: ignore[no-any-return]

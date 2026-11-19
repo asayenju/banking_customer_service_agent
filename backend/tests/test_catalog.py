@@ -4,7 +4,7 @@ import pytest
 from tau2.domains.banking_knowledge.environment import get_db
 from tau2.domains.banking_knowledge.tools import KnowledgeTools
 
-from banking_tools.catalog import EXCLUDED, build_catalog, render_markdown
+from banking_tools.catalog import EXCLUDED, USER_TOOLS, build_catalog, render_markdown
 from banking_tools.types import ToolKind
 
 DOC = Path(__file__).parents[2] / "docs" / "banking-tool-catalog.md"
@@ -26,9 +26,21 @@ def catalog():
 
 def test_every_tau2_tool_is_catalogued_or_excluded(toolkit, catalog):
     upstream = set(toolkit.get_tools()) | set(toolkit.get_discoverable_tools())
-    known = set(catalog) | set(EXCLUDED)
+    known = (set(catalog) - USER_TOOLS) | set(EXCLUDED)  # customer-side tools are checked against KnowledgeUserTools below
     assert upstream - known == set(), "new tau2 tools need a label or an exclusion"
     assert known - upstream == set(), "catalog names tools tau2 no longer has"
+
+
+def test_customer_side_tools_exist_in_tau2_and_are_writes():
+    from tau2.domains.banking_knowledge.tools import KnowledgeUserTools
+
+    for name in USER_TOOLS:
+        assert callable(getattr(KnowledgeUserTools, name)), name
+        assert catalog_spec(name).kind is ToolKind.WRITE and catalog_spec(name).source == "user", name
+
+
+def catalog_spec(name):
+    return build_catalog()[name]
 
 
 def test_catalog_and_exclusions_do_not_overlap(catalog):
@@ -48,7 +60,7 @@ def test_labels_agree_with_tau2_decorator(toolkit, catalog):
         ToolKind.HANDOFF: ("generic", False),
     }
     for name, spec in catalog.items():
-        if name in DECORATOR_EXCEPTIONS:
+        if name in DECORATOR_EXCEPTIONS or name in USER_TOOLS:
             continue
         tau2_type, mutates = expected[spec.kind]
         assert toolkit.tool_type(name).value == tau2_type, name

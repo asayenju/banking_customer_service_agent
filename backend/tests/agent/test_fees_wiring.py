@@ -59,7 +59,7 @@ def test_it_plans_only_tools_that_are_its_own():
     writable = set(FEES_SPECIALIST.validators)
     assert writable == {
         "apply_checking_account_credit_5829", "apply_savings_account_credit_6831",
-        "submit_interest_discrepancy_report_7294", "update_transaction_rewards_3847",
+        "submit_interest_discrepancy_report_7294", "update_transaction_rewards_3847", "submit_cash_back_dispute_0589",
     }
     assert writable <= KIND_WRITE_TOOLS[K.FEE_OR_INTEREST_ADJUSTMENT]
     assert "apply_statement_credit_8472" not in writable and "apply_credit_card_account_flag_6147" not in writable

@@ -7,13 +7,17 @@ from the customer or a model; the bank's own tools check almost nothing. Every d
 evidence, is in ``docs/fees-policy-decisions.md``; the plan is in ``docs/prd-fees-interest-rewards-specialist.md``.
 """
 
+from agent.rewards_audit import WHICH_PURCHASE, is_rewards_complaint
+from typing import Optional
+
 from agent.specialist import SpecialistConfig, Validator
 from agent.specialists import fees_rules as rules
 from agent.workflows.fee_checking import CheckingFeeCredit
 from agent.workflows.fee_interest import SavingsInterestCorrection
 from agent.workflows.fee_rewards import RewardsCorrection
 from knowledge.scopes import FEES
-from orchestrator.types import IntentKind as K
+from orchestrator.executor import RouteOutcome
+from orchestrator.types import Intent, IntentKind as K
 
 KINDS = frozenset({K.FEE_OR_INTEREST_ADJUSTMENT})
 
@@ -34,7 +38,8 @@ How to work:
    only which savings accounts the customer named (none if they did not). The rate the account should earn,
    the amount owed and the report that follows are worked out for you; never use a figure the customer gives.
 6. Wrong rewards on a card purchase has a workflow: end with start_rewards_correction. Report only which
-   purchases the customer named (none if they did not). Rewards are corrected only after the customer's cash back
+   purchases the customer named (none if they did not; a transaction_id detail on the request is a named purchase:
+   report that id). Rewards are corrected only after the customer's cash back
    dispute for the purchase was approved; the right number of points is worked out for you, never taken from the
    customer or the dispute record.
 7. A credit card's annual fee, late fee or interest charge is not handled here; say a person will review it."""
@@ -54,13 +59,25 @@ VALIDATORS: dict[str, Validator] = {
     rules.SAVINGS_CREDIT_TOOL: rules.savings_credit,
     rules.REPORT_TOOL: rules.interest_report,
     rules.REWARDS_TOOL: rules.rewards_update,
+    rules.DISPUTE_TOOL: rules.dispute_submit,
 }
 READBACKS: dict[str, Validator] = {
     rules.CHECKING_CREDIT_TOOL: rules.checking_credit_readback,
     rules.SAVINGS_CREDIT_TOOL: rules.savings_credit_readback,
     rules.REPORT_TOOL: rules.interest_report_readback,
     rules.REWARDS_TOOL: rules.rewards_readback,
+    rules.DISPUTE_TOOL: rules.dispute_readback,
 }
+
+def refuse_ask(intent: Intent, details: tuple[str, ...]) -> Optional[str]:
+    """A rewards complaint is never answered by asking the customer to name the wrong purchase: finding them is the job."""
+    if is_rewards_complaint(intent) and details and any(w in details[0] for w in WHICH_PURCHASE):
+        return (
+            "do not ask the customer which purchase: end with start_rewards_correction and no purchases. The workflow checks "
+            "every purchase on their cards itself and shows what it would do"
+        )
+    return None
+
 
 FEES_SPECIALIST = SpecialistConfig(
     name="fees",
@@ -71,4 +88,5 @@ FEES_SPECIALIST = SpecialistConfig(
     readbacks=READBACKS,
     reads=READS,
     workflows=(CheckingFeeCredit(), SavingsInterestCorrection(), RewardsCorrection()),
+    refuse_ask=refuse_ask,
 )

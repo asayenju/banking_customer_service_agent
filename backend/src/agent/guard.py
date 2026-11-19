@@ -107,6 +107,7 @@ KIND_WRITE_TOOLS: Mapping[IntentKind, frozenset[str]] = {
     K.FEE_OR_INTEREST_ADJUSTMENT: frozenset(
         {
             "update_transaction_rewards_3847",
+            "submit_cash_back_dispute_0589",
             "apply_statement_credit_8472",
             "apply_checking_account_credit_5829",
             "apply_savings_account_credit_6831",

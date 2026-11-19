@@ -189,6 +189,7 @@ def interest_report_readback(v: ValidationContext, args: Mapping[str, Any]) -> O
 # ---------------------------------------------------------------- rewards
 
 REWARDS_TOOL = "update_transaction_rewards_3847"
+DISPUTE_TOOL = "submit_cash_back_dispute_0589"
 
 
 def approved_dispute(db: Any, user_id: str, transaction_id: str) -> bool:
@@ -203,6 +204,43 @@ def approved_dispute(db: Any, user_id: str, transaction_id: str) -> bool:
         ):
             return True
     return False
+
+
+def _dispute_rows(db: Any, user_id: str, transaction_id: str) -> list[Mapping[str, Any]]:
+    return [
+        r
+        for r in db.cash_back_disputes.data.values()
+        if isinstance(r, Mapping) and r.get("user_id") == user_id and r.get("transaction_id") == transaction_id
+    ]
+
+
+def dispute_submit(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
+    """A cash back dispute is submitted for the customer only for their own completed purchase that the card's earning rules
+    say earned the wrong rewards, and only once (a second one is a silent no-op in the bank's tool)."""
+    from agent.rewards_review import review_transaction
+
+    if str(args.get("user_id")) != v.user_id:
+        return "a cash back dispute is submitted only for the verified customer"
+    transaction_id = str(args.get("transaction_id"))
+    row = v.database.credit_card_transaction_history.data.get(transaction_id)
+    if not isinstance(row, Mapping) or row.get("user_id") != v.user_id:
+        return "that purchase is not on one of this customer's cards"
+    if str(row.get("status") or "").upper() != "COMPLETED":
+        return "a dispute is submitted only for a completed purchase"
+    if _dispute_rows(v.database, v.user_id, transaction_id):
+        return "a cash back dispute for this purchase already exists"
+    review = review_transaction(v.database, row, v.user_id)
+    if review.cannot_decide is not None:
+        return f"I cannot confirm the rewards on this purchase: {review.cannot_decide}"
+    if not review.wrong:
+        return "the rewards on this purchase are already correct, so there is nothing to dispute"
+    return None
+
+
+def dispute_readback(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:
+    if not _dispute_rows(v.database, v.user_id, str(args.get("transaction_id"))):
+        return "the cash back dispute was not recorded"
+    return None
 
 
 def rewards_update(v: ValidationContext, args: Mapping[str, Any]) -> Optional[str]:

@@ -117,6 +117,8 @@ class SpecialistConfig:
     # Runs when the model ends by asking the customer for details (intent, user, database, the detail names). It may
     # answer in code with an outcome of its own instead, such as a list of the customer's charges to tap.
     ask_hook: Optional[Callable[[Intent, str, Any, tuple[str, ...]], Optional[RouteOutcome]]] = None
+    # Why asking the customer for these details is not allowed (intent, the detail names): the model is told and must go on.
+    refuse_ask: Optional[Callable[[Intent, tuple[str, ...]], Optional[str]]] = None
 
 
 BASE_RULES = """You are a bank's specialist for one kind of request. You act only for the customer who
@@ -342,6 +344,10 @@ class Specialist:
                 f"{' or '.join(sorted(self.config.lookup_names))} with whatever they have said, and ask only if it "
                 "finds nothing or several"
             )
+        if name == "ask_customer" and self.config.refuse_ask is not None:
+            why = self.config.refuse_ask(intent, tuple(_clean_details(arguments.get("details"))))
+            if why is not None:
+                return why
         if name == "propose_plan":
             covered = self._workflows_for(intent.kind)
             if covered:
