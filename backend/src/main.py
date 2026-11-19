@@ -21,8 +21,13 @@ import persona_text
 from orchestrator import observe
 
 app = FastAPI()
-# The demo page may be hosted on another domain (Vercel). No cookies are used, so any origin may call the API.
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# The demo page may be hosted on another domain (Vercel): only that page's origin (and a local server) may call the API from a browser.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://REDACTED.example.invalid", "http://localhost:8765", "http://127.0.0.1:8765"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 app.state.conversations = {}
 
 
