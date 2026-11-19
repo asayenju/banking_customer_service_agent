@@ -11,6 +11,7 @@ so "nothing was asked of the bank" is an ordinary result and not a failure. A
 reply that cannot be read as any of these goes to a person (OTHER).
 """
 
+import re
 from collections.abc import Iterable, Mapping
 from enum import StrEnum
 
@@ -41,7 +42,18 @@ _READ_FOR: Mapping[CommunicationType, IntentKind] = {
 # but only when the quote says so: "my cards are locked" is a symptom.
 _ALSO_FINE: Mapping[IntentKind, frozenset[CommunicationType]] = {
     IntentKind.REPORT_FRAUD_OR_LOSS: frozenset({CommunicationType.PROBLEM_STATEMENT}),
+    # "My cash back looks wrong" is asking for the review: for fees, interest and rewards the review is the service. The
+    # fix itself is still shown as a plan and runs only after the customer's yes. Only when the quote names the topic.
+    IntentKind.FEE_OR_INTEREST_ADJUSTMENT: frozenset({CommunicationType.PROBLEM_STATEMENT, CommunicationType.COMPLAINT}),
 }
+# What a fee, interest or rewards problem is about: without one of these words a problem statement stays a read.
+_FEE_TOPIC = re.compile(r"\b(?:fees?|interest|apy|rewards?|cash ?back|points|atm|charged)\b", re.IGNORECASE)
+
+
+def _stated_problem_with_review(kind: IntentKind, t: CommunicationType, evidence: str) -> bool:
+    if kind is IntentKind.FEE_OR_INTEREST_ADJUSTMENT:
+        return t in _ALSO_FINE[kind] and _FEE_TOPIC.search(evidence) is not None
+    return t in _ALSO_FINE.get(kind, frozenset()) and has_trigger_words(kind, evidence)
 
 
 def unrequested_writes(
@@ -55,7 +67,7 @@ def unrequested_writes(
         if kind not in READ_ONLY_KINDS
         and kind is not IntentKind.OTHER
         and t is not CommunicationType.ACTION_REQUEST
-        and not (t in _ALSO_FINE.get(kind, frozenset()) and has_trigger_words(kind, evidence))
+        and not _stated_problem_with_review(kind, t, evidence)
     ]
     if not unrequested:
         return frozenset(), {}

@@ -292,6 +292,19 @@ def with_type(intent, communication_type, evidence):
 
 
 def test_a_write_the_model_calls_a_complaint_is_dropped_when_a_real_request_remains() -> None:
+    message = "Please freeze card c1. My card is annoying."
+    fake = FakeLLMClient(
+        [
+            reply(
+                with_type(raw("i1", "FREEZE_CARD"), "ACTION_REQUEST", "Please freeze card c1"),
+                with_type(raw("i2", "CARD_CONTROLS"), "COMPLAINT", "My card is annoying"),
+            )
+        ]
+    )
+    assert kinds(interpret(fake, message)) == [K.FREEZE_CARD]
+
+
+def test_a_fee_interest_or_rewards_problem_is_kept_as_the_request_for_a_review() -> None:
     message = "Please freeze card c1. My interest looks low."
     fake = FakeLLMClient(
         [
@@ -301,7 +314,16 @@ def test_a_write_the_model_calls_a_complaint_is_dropped_when_a_real_request_rema
             )
         ]
     )
-    assert kinds(interpret(fake, message)) == [K.FREEZE_CARD]
+    assert kinds(interpret(fake, message)) == [K.FREEZE_CARD, K.FEE_OR_INTEREST_ADJUSTMENT]
+
+
+def test_a_lone_rewards_problem_stays_a_fees_request_but_one_that_names_no_such_topic_becomes_a_read() -> None:
+    said = "Something doesn't seem right with my cash back."
+    kept = interpret(FakeLLMClient([reply(with_type(raw("i1", "FEE_OR_INTEREST_ADJUSTMENT"), "PROBLEM_STATEMENT", said))]), said)
+    assert kinds(kept) == [K.FEE_OR_INTEREST_ADJUSTMENT]
+    vague = "Something is wrong with my account."
+    read = interpret(FakeLLMClient([reply(with_type(raw("i1", "FEE_OR_INTEREST_ADJUSTMENT"), "PROBLEM_STATEMENT", vague))]), vague)
+    assert kinds(read) == [K.ACCOUNT_BALANCE_OR_HISTORY]
 
 
 def test_a_lone_write_that_is_only_a_symptom_becomes_a_read_not_a_failure() -> None:

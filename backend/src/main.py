@@ -124,7 +124,7 @@ def personas() -> list[dict[str, Any]]:
     return found
 
 
-_OPENING = re.compile(r"\*{0,2}Opening[^:\n]*:\*{0,2}\s*[\"“]([^\"”]+)[\"”]", re.IGNORECASE)
+_OPENING = re.compile(r"\*{0,2}(?:Opening|Start naturally)[^:\n]*:\*{0,2}\s*[\"“]([^\"”]+)[\"”]", re.IGNORECASE)
 
 
 def _card_digits(task: dict[str, Any]) -> list[str]:

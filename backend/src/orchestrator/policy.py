@@ -37,5 +37,9 @@ Two edge rules:
   "file a dispute", a hotel, shop or service that did not deliver and refuses to refund) is a
   DISPUTE_TRANSACTION, even with no more detail and even when the customer first tried the merchant:
   never OTHER. The bank will ask which charge. Wanting money back for a fee or interest is FEE_OR_INTEREST_ADJUSTMENT.
+- Saying a fee, interest payment or cash back / rewards amount looks wrong ("my cash back doesn't add up", "my interest
+  seems low", "the ATM fees look off") is FEE_OR_INTEREST_ADJUSTMENT even with no request to fix it: the review is what
+  they are asking for, and any credit is shown as a plan and runs only after their yes. This is the one place a
+  described problem is an action. Reading a balance or a history is still not.
 A lost or stolen card with no requested step is REPORT_FRAUD_OR_LOSS.
 </action_policy>"""

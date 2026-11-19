@@ -18,7 +18,7 @@ import re
 from collections.abc import Mapping
 from typing import Any, Optional
 
-from agent.cards import Card, describe, named_cards, owned_cards, resolve, which_card
+from agent.cards import Card, describe, describe_credit, named_cards, owned_cards, owned_credit_accounts, resolve, which_card
 from agent.debit_charges import dispute_choices, label_of
 from agent.entities import resolve_cards
 from agent.guard import DbOwnership, Guard, GuardedSession
@@ -284,8 +284,10 @@ class DirectRunner:
                 + "\n".join(f"- {r.get('referred_account_type')}: {str(r.get('referral_status')).lower().replace('_', ' ')}" for r in rows),
             )
         if "card" in text:
-            cards = owned_cards(self._db, user, statuses=None)
-            return _done(intent, "Your cards:\n" + "\n".join(f"- {describe(self._db, c)}" for c in cards) if cards else "You have no cards on file.")
+            # Debit and credit alike: a customer with only credit cards still has cards on file.
+            lines = [f"- {describe(self._db, c)}" for c in owned_cards(self._db, user, statuses=None)]
+            lines += [f"- {describe_credit(a)}" for a in owned_credit_accounts(self._db, user)]
+            return _done(intent, "Your cards:\n" + "\n".join(lines) if lines else "You have no cards on file.")
         guarded.call("get_user_information_by_id", {"user_id": user})
         row: Mapping[str, Any] = self._db.users.data.get(user, {})
         return _done(
