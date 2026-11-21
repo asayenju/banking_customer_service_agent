@@ -175,9 +175,11 @@
   </form>
 </aside>
 
+<script src="config.js"></script>
 <script>
-// Served by the backend (its /demo page, or local), the paths stay relative. Anywhere else (Vercel) they go to the Railway backend.
-const API = /railway\.app$|^localhost$|^127\.0\.0\.1$/.test(location.hostname) ? "" : "https://REDACTED.example.invalid";
+// Served by the backend (its /demo page, or local), the paths stay relative. Anywhere else (Vercel) they go to the backend named in
+// config.js, which the Vercel build writes from the API_BASE_URL environment variable (see config.example.js). No URL lives in the repo.
+const API = /railway\.app$|^localhost$|^127\.0\.0\.1$/.test(location.hostname) ? "" : (window.API_BASE || "");
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 let people = [], current = null, convo = null, busy = false, area = "All";

@@ -7,6 +7,9 @@ __pycache__/
 .env.*
 !.env.example
 
+# Written by the Vercel build from API_BASE_URL; holds the backend address
+frontend/config.js
+
 # Recorded model conversations from live runs (they hold customer-like data)
 backend/evals/cassettes/
 

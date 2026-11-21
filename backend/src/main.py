@@ -6,6 +6,7 @@ factory that builds one is ``app.state.factory``: the real one needs the keys in
 replace it with scripted parts.
 """
 
+import os
 import re
 import time
 from collections.abc import Callable
@@ -22,9 +23,13 @@ from orchestrator import observe
 
 app = FastAPI()
 # The demo page may be hosted on another domain (Vercel): only that page's origin (and a local server) may call the API from a browser.
+# The hosted page's origin comes from the ALLOWED_ORIGINS environment variable (comma separated), not from the code.
+_ALLOWED_ORIGINS = ["http://localhost:8765", "http://127.0.0.1:8765"] + [
+    origin.strip() for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",") if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://REDACTED.example.invalid", "http://localhost:8765", "http://127.0.0.1:8765"],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type"],
 )

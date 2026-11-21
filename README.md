@@ -161,17 +161,17 @@ Restart the server after any code change; the running process keeps the old code
 
 ## Deploying
 
-The backend runs on **Railway** and the demo page can run on **Vercel**. The page works from either: served by the backend at `/demo` it uses relative URLs, and anywhere else it calls the Railway backend (the `API` constant at the top of the script in `frontend/widget.html`).
+The backend runs on **Railway** and the demo page can run on **Vercel**. The page works from either: served by the backend at `/demo` it uses relative URLs, and anywhere else it calls the backend named by the `API_BASE_URL` environment variable (the Vercel build writes it to `frontend/config.js`; no address is committed).
 
 **Backend on Railway**
 - The `Dockerfile` at the repo root builds it. `tau2-bench` is a submodule, so the build fetches the pinned commit from GitHub instead of uploading its 880 MB of data (update `TAU2_COMMIT` in the Dockerfile when the submodule moves).
-- Set `OPENAI_KEY` and `JEV_KEY` as Railway variables. The app reads real environment variables first, and there is no `.env` in the image.
+- Set `OPENAI_KEY`, `JEV_KEY` and `ALLOWED_ORIGINS` (the hosted page's origin) as Railway variables. The app reads real environment variables first, and there is no `.env` in the image.
 - Deploy with `railway up --service backend --ci` from the repo root. It is not connected to GitHub, so a push does not deploy.
 - `.railwayignore` keeps the submodule, caches and local logs out of the upload.
 
 **Page on Vercel**
-- Import the repo, set the root directory to `frontend`, framework "Other", no build command. `frontend/vercel.json` maps `/` to `widget.html`.
-- The backend allows browser calls only from the Vercel page's origin and a local server (`CORSMiddleware` in `main.py`). A new domain, or Vercel preview URLs, must be added to that list.
+- Import the repo, set the root directory to `frontend`, framework "Other". Set the build command to `echo "window.API_BASE='$API_BASE_URL'" > config.js` and add `API_BASE_URL` (the backend's address) as a Vercel environment variable. `frontend/vercel.json` maps `/` to `widget.html`.
+- The backend allows browser calls only from the origins in `ALLOWED_ORIGINS` and a local server (`CORSMiddleware` in `main.py`). A new domain, or Vercel preview URLs, must be added to that variable.
 
 **Things to know**
 - CORS only controls browsers. Anyone with the backend URL can still call the API directly and spend OpenAI credits, so set a spending limit on Railway (workspace Usage settings) and a monthly budget on OpenAI, and consider a password or rate limit.
